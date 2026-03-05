@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Case Info</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header centered">
+      <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
+    </header>
+
+    <main class="layout single">
+      <section class="panel" id="case-info">
+        <div class="panel-header">
+          <h2 id="case-title">Case</h2>
+          <div id="case-meta" class="muted">Loading...</div>
+        </div>
+        <div id="toast" class="toast hidden">Saved ✓</div>
+        <div class="case-grid">
+          <div class="info-card">
+            <div class="info-card-header">
+              <h3>Case Info</h3>
+              <button class="ghost-button" id="case-info-save" type="button">Save</button>
+            </div>
+            <div id="case-info-list" class="info-list"></div>
+          </div>
+          <div class="info-card">
+            <h3>Information</h3>
+            <div class="link-list">
+              <a href="#" class="link-item">Evidence</a>
+              <a href="#" class="link-item">Data Download Page</a>
+              <a id="bulk-upload-link" href="#" class="link-item">Bulk Defendant Upload</a>
+              <a id="listing-upload-link" href="#" class="link-item">Bulk Listings Upload</a>
+            </div>
+          </div>
+          <div class="info-card">
+            <div class="info-card-header">
+              <h3>Recent Docket Entries</h3>
+              <button class="ghost-button" type="button">Add</button>
+            </div>
+            <div id="docket-list" class="info-list"></div>
+          </div>
+        </div>
+
+        <div class="notes-card">
+          <div class="info-card-header">
+            <h3>Notes</h3>
+            <button class="ghost-button hidden" id="case-save" type="button">Save</button>
+          </div>
+          <textarea id="case-notes" rows="5" placeholder="Add notes..."></textarea>
+        </div>
+
+        <div class="table-card">
+          <div class="info-card-header">
+            <h3>IP Claims</h3>
+            <button class="ghost-button" type="button">Add</button>
+          </div>
+          <div class="table-wrap">
+            <table id="claims-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Brand Name</th>
+                  <th>Type</th>
+                  <th>Sub Type</th>
+                  <th>Application Date</th>
+                  <th>Reg. Date</th>
+                  <th>Serial Number</th>
+                  <th>Reg. Number</th>
+                  <th>Specimen Folder</th>
+                  <th>Listings Count</th>
+                  <th>Defendant Count</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="table-card">
+          <div class="info-card-header">
+            <h3>Defendants</h3>
+            <div class="tab-switch">
+              <button class="ghost-button active" id="defendants-view" type="button">
+                Defendants
+              </button>
+              <button class="ghost-button" id="groups-view" type="button">
+                Groups
+              </button>
+              <button class="ghost-button" id="add-group" type="button">
+                Add New Group
+              </button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table id="defendants-table">
+              <thead>
+                <tr>
+                  <th>Doe #</th>
+                  <th>Group Name</th>
+                  <th>Marketplace</th>
+                  <th>Merchant ID</th>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Status</th>
+                  <th>Def. Rep Email</th>
+                  <th>Listings Count</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+            <table id="groups-table" class="hidden">
+              <thead>
+                <tr>
+                  <th>Group Name</th>
+                  <th># Defendants</th>
+                  <th>Plaintiff Rep Name</th>
+                  <th>Def. Rep Email</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="group-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="info-card-header">
+          <h3>Create Group</h3>
+          <button class="ghost-button" id="close-group-modal" type="button">
+            Close
+          </button>
+        </div>
+        <form id="group-form" class="form-grid">
+          <label class="form-field">
+            <span>Group Name</span>
+            <input name="groupName" required />
+          </label>
+          <label class="form-field">
+            <span>Plaintiff Rep Name</span>
+            <input name="plaintiffRepName" />
+          </label>
+          <label class="form-field">
+            <span>Def. Rep Email</span>
+            <input name="defendantRepEmail" type="email" />
+          </label>
+        </form>
+        <div class="modal-list">
+          <div class="muted">Select defendants to include (one group per defendant).</div>
+          <div id="group-defendants" class="checkbox-list"></div>
+        </div>
+        <div class="form-actions">
+          <div class="form-error" id="group-error"></div>
+          <button class="ghost-button" type="submit" form="group-form">
+            Create Group
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script>
+      requireAuth();
+    </script>
+    <script src="data.js"></script>
+    <script src="case.js"></script>
+  </body>
+</html>

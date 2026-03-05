@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Defendant</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="pill" id="back-to-case" href="index.html">Back to Case</a>
+      <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
+      <div class="header-spacer"></div>
+    </header>
+
+    <main class="layout single">
+      <section class="panel" id="defendant-info">
+        <div class="panel-header">
+          <div class="panel-header-row">
+            <div>
+              <h2 id="defendant-title">Defendant</h2>
+              <div id="defendant-meta" class="muted">Loading...</div>
+            </div>
+            <button class="ghost-button hidden" id="defendant-save-all" type="button">
+              Save All
+            </button>
+          </div>
+        </div>
+        <div class="case-grid">
+          <div class="info-card">
+            <h3>Case Info</h3>
+            <div id="defendant-case-info" class="info-list"></div>
+          </div>
+          <div class="info-card">
+            <div class="info-card-header">
+              <h3>Defendant Info</h3>
+              <button class="ghost-button" id="defendant-info-save" type="button">
+                Save
+              </button>
+            </div>
+            <div id="defendant-info-list" class="info-list"></div>
+          </div>
+        </div>
+
+        <div class="notes-card">
+          <div class="info-card-header">
+            <h3>Defendant Notes</h3>
+            <button class="ghost-button hidden" id="defendant-save" type="button">
+              Save
+            </button>
+          </div>
+          <textarea id="defendant-notes" rows="5" placeholder="Add notes..."></textarea>
+        </div>
+
+        <div class="info-card table-card">
+          <h3>Representation</h3>
+          <div id="representation-list" class="info-list"></div>
+        </div>
+
+        <div class="table-card">
+          <div class="info-card-header">
+            <h3>Defendant IP Claims</h3>
+          </div>
+          <div class="table-wrap">
+            <table id="defendant-claims-table">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Brand Name</th>
+                  <th>Type</th>
+                  <th>Sub Type</th>
+                  <th>App Date</th>
+                  <th>Reg Date</th>
+                  <th>Serial Number</th>
+                  <th>Reg Number</th>
+                  <th>Specimen Folder</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="triple-tabs">
+          <div class="info-card">
+            <div class="info-card-header">
+              <h3>Negotiation</h3>
+              <button class="ghost-button" type="button">Upload Agreement</button>
+            </div>
+            <div id="negotiation-list" class="info-list"></div>
+            <button class="ghost-button hidden" id="negotiation-save" type="button">
+              Save
+            </button>
+          </div>
+          <div class="info-card">
+            <div class="info-card-header">
+              <h3>Collection</h3>
+            </div>
+            <div id="collection-list" class="info-list"></div>
+            <button class="ghost-button hidden" id="collection-save" type="button">
+              Save
+            </button>
+          </div>
+          <div class="info-card">
+            <div class="info-card-header">
+              <h3>Bookkeeping</h3>
+            </div>
+            <div id="bookkeeping-list" class="info-list"></div>
+            <button class="ghost-button hidden" id="bookkeeping-save" type="button">
+              Save
+            </button>
+          </div>
+        </div>
+
+        <div class="table-card">
+          <div class="info-card-header">
+            <h3>Listings</h3>
+          </div>
+          <div class="table-wrap">
+            <table id="listings-table">
+              <thead>
+                <tr>
+                  <th>Product ID</th>
+                  <th>Marketplace ID</th>
+                  <th>URL</th>
+                  <th>Sales</th>
+                  <th>Screenshot Date</th>
+                  <th>Screenshots</th>
+                  <th>Test Purchase</th>
+                  <th>Test Purchase Status</th>
+                  <th>Notes</th>
+                  <th>Listing Copyright Links</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="auth.js"></script>
+    <script>
+      requireAuth();
+    </script>
+    <script src="data.js"></script>
+    <script src="defendant.js"></script>
+  </body>
+</html>

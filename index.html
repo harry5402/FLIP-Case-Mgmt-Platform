@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FLIP Case Management</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header centered">
+      <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
+    </header>
+
+    <main class="layout single">
+      <section class="panel" id="dashboard">
+        <div class="panel-header">
+          <div class="panel-header-row">
+            <div>
+              <h2>Cases</h2>
+              <div class="muted">Grouped by status</div>
+            </div>
+            <a class="ghost-button" href="new-case.html">New Case</a>
+          </div>
+        </div>
+        <div id="case-groups" class="group-stack"></div>
+      </section>
+    </main>
+
+    <script src="auth.js"></script>
+    <script>
+      requireAuth();
+    </script>
+    <script src="data.js"></script>
+    <script src="dashboard.js"></script>
+  </body>
+</html>

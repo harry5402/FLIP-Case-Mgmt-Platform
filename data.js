@@ -1,0 +1,142 @@
+const CASES_STORAGE_KEY = "cases:local";
+const USE_API = true;
+const API_BASE = "";
+
+const loadCases = async () => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/cases`);
+    return response.json();
+  }
+  const response = await fetch("data/cases.json");
+  const data = await response.json();
+  const baseCases = data.cases || [];
+  const localRaw = localStorage.getItem(CASES_STORAGE_KEY);
+  const localCases = localRaw ? JSON.parse(localRaw) : [];
+  const merged = [...baseCases];
+  localCases.forEach((localCase) => {
+    if (!merged.some((item) => item.id === localCase.id)) {
+      merged.push(localCase);
+    }
+  });
+  return merged;
+};
+
+const saveCase = async (newCase) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/cases`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newCase),
+    });
+    return response.json();
+  }
+  const localRaw = localStorage.getItem(CASES_STORAGE_KEY);
+  const localCases = localRaw ? JSON.parse(localRaw) : [];
+  localCases.push(newCase);
+  localStorage.setItem(CASES_STORAGE_KEY, JSON.stringify(localCases));
+  return newCase;
+};
+
+const updateCase = async (caseId, updates) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/cases/${caseId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+    return response.json();
+  }
+  const localRaw = localStorage.getItem(CASES_STORAGE_KEY);
+  const localCases = localRaw ? JSON.parse(localRaw) : [];
+  const index = localCases.findIndex((item) => item.id === caseId);
+  if (index >= 0) {
+    localCases[index] = { ...localCases[index], ...updates };
+    localStorage.setItem(CASES_STORAGE_KEY, JSON.stringify(localCases));
+    return localCases[index];
+  }
+  return null;
+};
+
+const loadDefendants = async (caseId) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/cases/${caseId}/defendants`);
+    return response.json();
+  }
+  const cases = await loadCases();
+  const currentCase = cases.find((item) => item.id === caseId);
+  return currentCase?.defendants || [];
+};
+
+const updateDefendant = async (defendantId, updates) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+    return response.json();
+  }
+  return null;
+};
+
+const loadListings = async (defendantId) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/listings`);
+    return response.json();
+  }
+  return [];
+};
+
+const loadGroups = async (caseId) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/cases/${caseId}/groups`);
+    return response.json();
+  }
+  return [];
+};
+
+const createGroup = async (caseId, payload) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/cases/${caseId}/groups`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return response.json();
+  }
+  return null;
+};
+
+const loadCase = async (caseId) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/cases/${caseId}`);
+    if (!response.ok) return null;
+    return response.json();
+  }
+  const cases = await loadCases();
+  return cases.find((item) => item.id === caseId) || null;
+};
+
+const getParam = (name) => {
+  const params = new URLSearchParams(window.location.search);
+  return params.get(name);
+};
+
+const formatDate = (value) => {
+  if (!value) return "—";
+  const date = new Date(value);
+  return date.toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+};
+
+const formatMoney = (value) => {
+  if (value === null || value === undefined) return "—";
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+};
