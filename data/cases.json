@@ -1,0 +1,253 @@
+{
+  "cases": [
+    {
+      "id": "CASE-001",
+      "title": "Schedule A - Alpha Brands",
+      "caseNumber": "1:26-cv-10234",
+      "plaintiff": "Alpha Brands LLC",
+      "status": "Active",
+      "recentStatus": "Case Filed · 11 months, 2 days",
+      "clientName": "Alpha Holdings Group",
+      "brandName": "Alpha Brands",
+      "ipClaimsSummary": "Trademark + Copyright",
+      "plaintiffProfitPerUnit": 38,
+      "jurisdiction": "N.D. Illinois",
+      "judge": "Hon. Virginia M. Kendall",
+      "updatedAt": "2026-03-02",
+      "updatedBy": "A. Morales",
+      "docketEntries": [
+        {
+          "date": "2026-02-10",
+          "entry": "Complaint filed"
+        },
+        {
+          "date": "2026-02-14",
+          "entry": "TRO motion filed"
+        }
+      ],
+      "notes": "Initial case review completed. Awaiting defendant responses.",
+      "ipClaims": [
+        {
+          "id": 1,
+          "brandName": "Alpha Brands",
+          "type": "Trademark",
+          "subType": "Word Mark",
+          "applicationDate": "2024-05-10",
+          "registrationDate": "2025-01-22",
+          "serialNumber": "90123456",
+          "registrationNumber": "7654321",
+          "specimenFolder": "Alpha_TM_2025",
+          "listingsCount": 132,
+          "defendantCount": 18
+        }
+      ],
+      "filedDate": "2026-02-10",
+      "court": "N.D. Illinois",
+      "defendants": [
+        {
+          "id": "DEF-001",
+          "doeNumber": "Doe 1",
+          "groupName": "",
+          "name": "Marketplace Store A",
+          "platform": "Amazon",
+          "merchantId": "AMZ-11883",
+          "backendId": "BK-10021",
+          "email": "sellerA@example.com",
+          "status": "In Negotiation",
+          "defendantRepEmail": "repA@example.com",
+          "defendantRepName": "Jordan Blake",
+          "plaintiffRepName": "Taylor Avery",
+          "updatedAt": "2026-03-02",
+          "updatedBy": "A. Morales",
+          "settlementAgreementLink": "",
+          "representation": {
+            "plaintiffRepName": "Taylor Avery",
+            "defendantRepName": "Jordan Blake",
+            "defendantRepEmail": "repA@example.com",
+            "groupName": ""
+          },
+          "ipClaims": [
+            {
+              "id": 1,
+              "brandName": "Alpha Brands",
+              "type": "Trademark",
+              "subType": "Word Mark",
+              "applicationDate": "2024-05-10",
+              "registrationDate": "2025-01-22",
+              "serialNumber": "90123456",
+              "registrationNumber": "7654321",
+              "specimenFolder": "Alpha_TM_2025"
+            }
+          ],
+          "negotiation": {
+            "legalStatus": "Active",
+            "plaintiffLastOffer": 4500,
+            "defendantLastOffer": 3200,
+            "settlementDate": "2026-02-28",
+            "settlementAmount": 4200,
+            "agreementUploaded": "No"
+          },
+          "collection": {
+            "settlementCollectedDate": "",
+            "collectedAmount": 0,
+            "settlementPaymentId": "",
+            "restrainedFundsCollectedAmount": 0,
+            "totalCollectedAmount": 0
+          },
+          "bookkeeping": {
+            "status": "Open",
+            "agreementProcessed": "No"
+          },
+          "listings": [
+            {
+              "productId": "SKU-001",
+              "marketplaceId": "AMZ-11883",
+              "url": "https://example.com/listing/sku-001",
+              "sales": 42,
+              "screenshotDate": "2026-02-12",
+              "screenshots": "Folder A",
+              "testPurchase": "Yes",
+              "testPurchaseStatus": "Received",
+              "notes": "Packaging matches exhibit.",
+              "listingCopyrightLinks": "https://example.com/copyright/1"
+            }
+          ],
+          "lastContact": "2026-02-28",
+          "settlementTarget": 4500,
+          "notes": "Initial demand sent."
+        },
+        {
+          "id": "DEF-002",
+          "doeNumber": "Doe 2",
+          "groupName": "",
+          "name": "Online Seller B",
+          "platform": "Shopify",
+          "merchantId": "SHP-55201",
+          "backendId": "BK-10022",
+          "email": "sellerB@example.com",
+          "status": "No Response",
+          "defendantRepEmail": "repB@example.com",
+          "defendantRepName": "A. Stone",
+          "plaintiffRepName": "Taylor Avery",
+          "updatedAt": "2026-02-26",
+          "updatedBy": "J. Kim",
+          "settlementAgreementLink": "",
+          "representation": {
+            "plaintiffRepName": "Taylor Avery",
+            "defendantRepName": "A. Stone",
+            "defendantRepEmail": "repB@example.com",
+            "groupName": ""
+          },
+          "ipClaims": [],
+          "negotiation": {
+            "legalStatus": "No Response",
+            "plaintiffLastOffer": 3500,
+            "defendantLastOffer": 0,
+            "settlementDate": "",
+            "settlementAmount": 0,
+            "agreementUploaded": "No"
+          },
+          "collection": {
+            "settlementCollectedDate": "",
+            "collectedAmount": 0,
+            "settlementPaymentId": "",
+            "restrainedFundsCollectedAmount": 0,
+            "totalCollectedAmount": 0
+          },
+          "bookkeeping": {
+            "status": "Open",
+            "agreementProcessed": "No"
+          },
+          "listings": [],
+          "lastContact": "2026-02-20",
+          "settlementTarget": 3500,
+          "notes": "Follow-up needed."
+        }
+      ]
+    },
+    {
+      "id": "CASE-002",
+      "title": "Schedule A - Beta IP",
+      "caseNumber": "1:26-cv-10901",
+      "plaintiff": "Beta IP Holdings",
+      "status": "Pre-Filing",
+      "recentStatus": "Draft Complaint · 14 days",
+      "clientName": "Beta IP Holdings",
+      "brandName": "Beta Gear",
+      "ipClaimsSummary": "Trademark",
+      "plaintiffProfitPerUnit": 24,
+      "jurisdiction": "S.D. New York",
+      "judge": "Hon. Analisa Torres",
+      "updatedAt": "2026-03-03",
+      "updatedBy": "J. Kim",
+      "docketEntries": [],
+      "notes": "Drafting complaint and exhibits.",
+      "ipClaims": [
+        {
+          "id": 1,
+          "brandName": "Beta Gear",
+          "type": "Trademark",
+          "subType": "Design Mark",
+          "applicationDate": "2023-11-08",
+          "registrationDate": "2024-07-19",
+          "serialNumber": "88990011",
+          "registrationNumber": "7123456",
+          "specimenFolder": "Beta_TM_2024",
+          "listingsCount": 64,
+          "defendantCount": 9
+        }
+      ],
+      "filedDate": "2026-03-01",
+      "court": "S.D. New York",
+      "defendants": [
+        {
+          "id": "DEF-003",
+          "doeNumber": "Doe 1",
+          "groupName": "",
+          "platform": "eBay",
+          "merchantId": "EBY-39211",
+          "backendId": "BK-20011",
+          "name": "Marketplace Store C",
+          "email": "sellerC@example.com",
+          "status": "Drafting",
+          "defendantRepEmail": "counsel@example.com",
+          "defendantRepName": "Sam Lee",
+          "plaintiffRepName": "R. Patel",
+          "updatedAt": "2026-03-03",
+          "updatedBy": "R. Patel",
+          "settlementAgreementLink": "",
+          "representation": {
+            "plaintiffRepName": "R. Patel",
+            "defendantRepName": "Sam Lee",
+            "defendantRepEmail": "counsel@example.com",
+            "groupName": ""
+          },
+          "ipClaims": [],
+          "negotiation": {
+            "legalStatus": "Drafting",
+            "plaintiffLastOffer": 2500,
+            "defendantLastOffer": 0,
+            "settlementDate": "",
+            "settlementAmount": 0,
+            "agreementUploaded": "No"
+          },
+          "collection": {
+            "settlementCollectedDate": "",
+            "collectedAmount": 0,
+            "settlementPaymentId": "",
+            "restrainedFundsCollectedAmount": 0,
+            "totalCollectedAmount": 0
+          },
+          "bookkeeping": {
+            "status": "Open",
+            "agreementProcessed": "No"
+          },
+          "listings": [],
+          "lastContact": "2026-03-02",
+          "settlementTarget": 2500,
+          "notes": "Waiting on exhibits."
+        }
+      ]
+    }
+  ]
+}
