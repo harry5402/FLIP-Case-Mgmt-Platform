@@ -47,14 +47,22 @@
           </div>
         </div>
 
-        <div class="notes-card">
-          <div class="info-card-header">
-            <h3>Defendant Notes</h3>
-            <button class="ghost-button hidden" id="defendant-save" type="button">
-              Save
-            </button>
+        <div class="dual-cards">
+          <div class="notes-card compact">
+            <div class="info-card-header">
+              <h3>Defendant Notes</h3>
+              <button class="ghost-button hidden" id="defendant-save" type="button">
+                Save
+              </button>
+            </div>
+            <textarea id="defendant-notes" rows="5" placeholder="Add notes..."></textarea>
           </div>
-          <textarea id="defendant-notes" rows="5" placeholder="Add notes..."></textarea>
+          <div class="notes-card compact">
+            <div class="info-card-header">
+              <h3>Templates</h3>
+            </div>
+            <div class="empty-state">No templates configured yet.</div>
+          </div>
         </div>
 
         <div class="info-card table-card">
