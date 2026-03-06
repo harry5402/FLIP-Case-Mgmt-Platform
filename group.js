@@ -5,6 +5,8 @@ const groupCaseInfo = document.getElementById("group-case-info");
 const groupInfoList = document.getElementById("group-info-list");
 const groupTemplates = document.getElementById("group-templates");
 const groupSnapshot = document.getElementById("group-snapshot");
+const groupNegotiation = document.getElementById("group-negotiation");
+const groupNegotiationSave = document.getElementById("group-negotiation-save");
 const groupDefendantsTableBody = document.querySelector("#group-defendants-table tbody");
 const groupListingsTableBody = document.querySelector("#group-listings-table tbody");
 
@@ -75,6 +77,49 @@ const renderSnapshot = (defendants, listings) => {
     .join("");
 };
 
+const renderNegotiation = (negotiation = {}) => {
+  groupNegotiation.innerHTML = `
+    <div class="info-row">
+      <span>Legal Status</span>
+      <span>
+        <select name="legalStatus">
+          ${["Active", "No Response", "Drafting", "Closed"].map(
+            (option) =>
+              `<option ${option === negotiation.legalStatus ? "selected" : ""}>${option}</option>`
+          )}
+        </select>
+      </span>
+    </div>
+    <div class="info-row">
+      <span>Pl. Last Offer</span>
+      <span><input name="plaintiffLastOffer" type="number" value="${negotiation.plaintiffLastOffer ?? 0}" /></span>
+    </div>
+    <div class="info-row">
+      <span>Def Last Offer</span>
+      <span><input name="defendantLastOffer" type="number" value="${negotiation.defendantLastOffer ?? 0}" /></span>
+    </div>
+    <div class="info-row">
+      <span>Settlement Date</span>
+      <span><input name="settlementDate" type="date" value="${negotiation.settlementDate || ""}" /></span>
+    </div>
+    <div class="info-row">
+      <span>Settlement Amount</span>
+      <span><input name="settlementAmount" type="number" value="${negotiation.settlementAmount ?? 0}" /></span>
+    </div>
+    <div class="info-row">
+      <span>Agreement Uploaded</span>
+      <span>
+        <select name="agreementUploaded">
+          ${["No", "Yes"].map(
+            (option) =>
+              `<option ${option === negotiation.agreementUploaded ? "selected" : ""}>${option}</option>`
+          )}
+        </select>
+      </span>
+    </div>
+  `;
+};
+
 const renderDefendants = (defendants) => {
   groupDefendantsTableBody.innerHTML = "";
   defendants.forEach((def) => {
@@ -128,6 +173,7 @@ const init = async () => {
   const defendants = await loadGroupDefendants(group.id);
   const listings = await loadGroupListings(group.id);
   const templates = await loadCaseTemplates(group.caseId);
+  const negotiation = await loadGroupNegotiation(group.id);
 
   groupTitle.textContent = group.groupName || "Group";
   groupMeta.textContent = `${group.id} • ${defendants.length} defendants`;
@@ -137,8 +183,25 @@ const init = async () => {
   renderGroupInfo(group, defendants);
   renderTemplates(templates);
   renderSnapshot(defendants, listings);
+  renderNegotiation(negotiation);
   renderDefendants(defendants);
   renderListings(listings);
+
+  groupNegotiationSave.addEventListener("click", async () => {
+    const payload = {};
+    groupNegotiation.querySelectorAll("input, select").forEach((el) => {
+      if (el.type === "number") {
+        payload[el.name] = el.value === "" ? null : Number(el.value);
+        return;
+      }
+      payload[el.name] = el.value;
+    });
+    await saveGroupNegotiation(group.id, payload);
+    groupNegotiationSave.textContent = "Saved";
+    setTimeout(() => {
+      groupNegotiationSave.textContent = "Save";
+    }, 900);
+  });
 };
 
 init();

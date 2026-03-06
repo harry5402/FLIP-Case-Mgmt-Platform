@@ -716,6 +716,117 @@ app.get("/api/groups/:id/listings", async (req, res) => {
   );
 });
 
+app.get("/api/groups/:id/negotiation", async (req, res) => {
+  const result = await query(
+    "SELECT * FROM group_negotiations WHERE group_id = $1 LIMIT 1",
+    [req.params.id]
+  );
+  if (!result.rows.length) {
+    return res.json({});
+  }
+  const row = result.rows[0];
+  res.json({
+    legalStatus: row.legal_status,
+    plaintiffLastOffer: row.plaintiff_last_offer,
+    defendantLastOffer: row.defendant_last_offer,
+    settlementDate: row.settlement_date,
+    settlementAmount: row.settlement_amount,
+    agreementUploaded: row.agreement_uploaded,
+  });
+});
+
+app.put("/api/groups/:id/negotiation", async (req, res) => {
+  const {
+    legalStatus,
+    plaintiffLastOffer,
+    defendantLastOffer,
+    settlementDate,
+    settlementAmount,
+    agreementUploaded,
+  } = req.body;
+
+  await query(
+    `INSERT INTO group_negotiations
+      (group_id, legal_status, plaintiff_last_offer, defendant_last_offer, settlement_date, settlement_amount, agreement_uploaded, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+     ON CONFLICT (group_id)
+     DO UPDATE SET
+       legal_status = EXCLUDED.legal_status,
+       plaintiff_last_offer = EXCLUDED.plaintiff_last_offer,
+       defendant_last_offer = EXCLUDED.defendant_last_offer,
+       settlement_date = EXCLUDED.settlement_date,
+       settlement_amount = EXCLUDED.settlement_amount,
+       agreement_uploaded = EXCLUDED.agreement_uploaded,
+       updated_at = NOW()`,
+    [
+      req.params.id,
+      legalStatus || null,
+      plaintiffLastOffer ?? null,
+      defendantLastOffer ?? null,
+      settlementDate || null,
+      settlementAmount ?? null,
+      agreementUploaded || null,
+    ]
+  );
+
+  const defendantsResult = await query(
+    "SELECT id FROM defendants WHERE group_id = $1",
+    [req.params.id]
+  );
+  const defendantIds = defendantsResult.rows.map((row) => row.id);
+
+  if (defendantIds.length) {
+    await query(
+      `UPDATE defendants
+       SET status = COALESCE($2, status)
+       WHERE id = ANY($1::uuid[])`,
+      [defendantIds, legalStatus || null]
+    );
+
+    await query(
+      `UPDATE negotiations
+       SET legal_status = $2,
+           plaintiff_last_offer = $3,
+           defendant_last_offer = $4,
+           settlement_date = $5,
+           settlement_amount = $6,
+           agreement_uploaded = $7
+       WHERE defendant_id = ANY($1::uuid[])`,
+      [
+        defendantIds,
+        legalStatus || null,
+        plaintiffLastOffer ?? null,
+        defendantLastOffer ?? null,
+        settlementDate || null,
+        settlementAmount ?? null,
+        agreementUploaded || null,
+      ]
+    );
+
+    await query(
+      `INSERT INTO negotiations
+        (defendant_id, legal_status, plaintiff_last_offer, defendant_last_offer, settlement_date, settlement_amount, agreement_uploaded)
+       SELECT d.id, $2, $3, $4, $5, $6, $7
+       FROM defendants d
+       WHERE d.group_id = $1
+         AND NOT EXISTS (
+           SELECT 1 FROM negotiations n WHERE n.defendant_id = d.id
+         )`,
+      [
+        req.params.id,
+        legalStatus || null,
+        plaintiffLastOffer ?? null,
+        defendantLastOffer ?? null,
+        settlementDate || null,
+        settlementAmount ?? null,
+        agreementUploaded || null,
+      ]
+    );
+  }
+
+  res.json({ ok: true });
+});
+
 app.post("/api/cases/:id/groups", async (req, res) => {
   const { groupName, plaintiffRepName, defendantRepEmail, status, defendantIds } =
     req.body;

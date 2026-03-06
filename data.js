@@ -268,6 +268,26 @@ const loadGroupListings = async (groupId) => {
   return [];
 };
 
+const loadGroupNegotiation = async (groupId) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/groups/${groupId}/negotiation`);
+    return response.json();
+  }
+  return {};
+};
+
+const saveGroupNegotiation = async (groupId, payload) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/groups/${groupId}/negotiation`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return response.json();
+  }
+  return null;
+};
+
 const getParam = (name) => {
   const params = new URLSearchParams(window.location.search);
   return params.get(name);

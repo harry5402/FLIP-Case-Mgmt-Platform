@@ -153,3 +153,15 @@ CREATE TABLE IF NOT EXISTS case_templates (
   data_file_url TEXT,
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS group_negotiations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  group_id UUID UNIQUE REFERENCES groups(id) ON DELETE CASCADE,
+  legal_status TEXT,
+  plaintiff_last_offer NUMERIC,
+  defendant_last_offer NUMERIC,
+  settlement_date DATE,
+  settlement_amount NUMERIC,
+  agreement_uploaded TEXT,
+  updated_at TIMESTAMP DEFAULT NOW()
+);
