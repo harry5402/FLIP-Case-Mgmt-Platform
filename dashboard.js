@@ -76,21 +76,34 @@ const renderTasks = (tasks) => {
   }
 
   tasks.forEach((task) => {
-    const row = document.createElement("a");
+    const row = document.createElement("div");
     row.className = "card row";
-    row.href = `defendant.html?caseId=${encodeURIComponent(
+    const defendantUrl = `defendant.html?caseId=${encodeURIComponent(
       task.caseId
     )}&defendantId=${encodeURIComponent(task.defendantId)}`;
     row.innerHTML = `
       <div class="row-left">
-        <div class="card-title">${task.taskType}</div>
+        <a class="card-title task-link" href="${defendantUrl}">${task.taskType}</a>
         <div class="card-meta">
           <span>${task.caseName || "Case"}</span>
           <span>${task.defendantName || "Defendant"}</span>
         </div>
       </div>
-      <div class="row-right">Due ${formatDate(task.dueDate)}</div>
+      <div class="row-right task-actions">
+        <span>Due ${formatDate(task.dueDate)}</span>
+        <button class="ghost-button complete-task" type="button">Task Complete</button>
+      </div>
     `;
+    const button = row.querySelector(".complete-task");
+    button.addEventListener("click", async () => {
+      const result = await completeTask(task.id);
+      if (!result?.error) {
+        row.remove();
+        if (!tasksList.children.length) {
+          renderTasks([]);
+        }
+      }
+    });
     tasksList.appendChild(row);
   });
 };

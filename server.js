@@ -155,6 +155,7 @@ app.get("/api/tasks/my", async (req, res) => {
      JOIN cases c ON c.id = t.case_id
      JOIN defendants d ON d.id = t.defendant_id
      WHERE t.assigned_to_user_id = $1
+       AND t.status = 'Open'
      ORDER BY t.due_date NULLS LAST, t.created_at DESC`,
     [req.session.userId]
   );
@@ -193,6 +194,23 @@ app.post("/api/tasks", async (req, res) => {
     ]
   );
   res.status(201).json(result.rows[0]);
+});
+
+app.put("/api/tasks/:id/complete", async (req, res) => {
+  const result = await query(
+    `UPDATE tasks
+     SET status = 'Complete'
+     WHERE id = $1
+       AND assigned_to_user_id = $2
+     RETURNING id`,
+    [req.params.id, req.session.userId]
+  );
+
+  if (!result.rows.length) {
+    return res.status(404).json({ error: "Task not found." });
+  }
+
+  res.json({ ok: true });
 });
 
 const mapCase = (row) => ({

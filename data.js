@@ -205,6 +205,16 @@ const loadMyTasks = async () => {
   return [];
 };
 
+const completeTask = async (taskId) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/tasks/${taskId}/complete`, {
+      method: "PUT",
+    });
+    return response.json();
+  }
+  return null;
+};
+
 const getParam = (name) => {
   const params = new URLSearchParams(window.location.search);
   return params.get(name);

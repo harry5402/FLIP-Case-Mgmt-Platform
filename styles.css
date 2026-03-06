@@ -429,6 +429,16 @@ tbody td {
   white-space: nowrap;
 }
 
+.task-actions {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.task-link {
+  color: inherit;
+}
+
 .empty-state {
   font-family: "Inter", "Segoe UI", sans-serif;
   font-size: 13px;
