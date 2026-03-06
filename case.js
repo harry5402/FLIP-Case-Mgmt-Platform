@@ -162,7 +162,7 @@ const renderGroupsFromApi = (groups) => {
   groups.forEach((group) => {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td>${group.groupName || "—"}</td>
+      <td><a href="group.html?groupId=${encodeURIComponent(group.id)}">${group.groupName || "—"}</a></td>
       <td>${group.defendantCount ?? 0}</td>
       <td>${group.plaintiffRepName || "—"}</td>
       <td>${group.defendantRepEmail || "—"}</td>

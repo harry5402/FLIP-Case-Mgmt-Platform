@@ -601,6 +601,121 @@ app.get("/api/cases/:id/groups", async (req, res) => {
   );
 });
 
+app.get("/api/groups/:id", async (req, res) => {
+  const result = await query(
+    `SELECT g.id,
+            g.case_id,
+            g.group_name,
+            g.plaintiff_rep_name,
+            g.defendant_rep_email,
+            g.status,
+            c.case_name,
+            c.client_name,
+            c.brand_name,
+            c.ip_claims_summary,
+            c.plaintiff_profit_per_unit,
+            c.jurisdiction,
+            c.case_number,
+            c.judge,
+            c.updated_at,
+            c.updated_by
+     FROM groups g
+     JOIN cases c ON c.id = g.case_id
+     WHERE g.id = $1`,
+    [req.params.id]
+  );
+  if (!result.rows.length) {
+    return res.status(404).json({ error: "Group not found" });
+  }
+  const row = result.rows[0];
+  res.json({
+    id: row.id,
+    caseId: row.case_id,
+    groupName: row.group_name,
+    plaintiffRepName: row.plaintiff_rep_name,
+    defendantRepEmail: row.defendant_rep_email,
+    status: row.status,
+    caseInfo: {
+      caseName: row.case_name,
+      clientName: row.client_name,
+      brandName: row.brand_name,
+      ipClaimsSummary: row.ip_claims_summary,
+      plaintiffProfitPerUnit: row.plaintiff_profit_per_unit,
+      jurisdiction: row.jurisdiction,
+      caseNumber: row.case_number,
+      judge: row.judge,
+      updatedAt: row.updated_at,
+      updatedBy: row.updated_by,
+    },
+  });
+});
+
+app.get("/api/groups/:id/defendants", async (req, res) => {
+  const result = await query(
+    `SELECT d.*, n.legal_status AS negotiation_legal_status
+     FROM defendants d
+     LEFT JOIN LATERAL (
+       SELECT legal_status
+       FROM negotiations
+       WHERE defendant_id = d.id
+       ORDER BY id DESC
+       LIMIT 1
+     ) n ON TRUE
+     WHERE d.group_id = $1
+     ORDER BY
+       COALESCE(NULLIF(regexp_replace(d.doe_number, '[^0-9]', '', 'g'), ''), '0')::int`,
+    [req.params.id]
+  );
+  res.json(
+    result.rows.map((row) => ({
+      id: row.id,
+      caseId: row.case_id,
+      doeNumber: row.doe_number,
+      groupName: row.group_name,
+      platform: row.platform,
+      merchantId: row.merchant_id,
+      backendId: row.backend_id,
+      name: row.name,
+      email: row.email,
+      status: row.negotiation_legal_status || row.status,
+      defendantRepEmail: row.defendant_rep_email,
+      defendantRepName: row.defendant_rep_name,
+      updatedAt: row.updated_at,
+      updatedBy: row.updated_by,
+      notes: row.notes,
+      listingsCount: row.listings_count ?? 0,
+    }))
+  );
+});
+
+app.get("/api/groups/:id/listings", async (req, res) => {
+  const result = await query(
+    `SELECT l.*, d.name AS defendant_name
+     FROM listings l
+     JOIN defendants d ON d.id = l.defendant_id
+     WHERE d.group_id = $1
+     ORDER BY d.name`,
+    [req.params.id]
+  );
+  res.json(
+    result.rows.map((row) => ({
+      id: row.id,
+      defendantName: row.defendant_name,
+      defendantId: row.defendant_id,
+      productId: row.product_id,
+      marketplaceId: row.marketplace_id,
+      url: row.url,
+      sales: row.sales,
+      screenshotDate: row.screenshot_date,
+      screenshots: row.screenshots,
+      testPurchase: row.test_purchase,
+      testPurchaseStatus: row.test_purchase_status,
+      notes: row.notes,
+      listingCopyrightLinks: row.listing_copyright_links,
+    }))
+  );
+});
+
 app.post("/api/cases/:id/groups", async (req, res) => {
   const { groupName, plaintiffRepName, defendantRepEmail, status, defendantIds } =
     req.body;

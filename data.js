@@ -243,6 +243,31 @@ const uploadCaseTemplate = async (
   return null;
 };
 
+const loadGroup = async (groupId) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/groups/${groupId}`);
+    if (!response.ok) return null;
+    return response.json();
+  }
+  return null;
+};
+
+const loadGroupDefendants = async (groupId) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/groups/${groupId}/defendants`);
+    return response.json();
+  }
+  return [];
+};
+
+const loadGroupListings = async (groupId) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/groups/${groupId}/listings`);
+    return response.json();
+  }
+  return [];
+};
+
 const getParam = (name) => {
   const params = new URLSearchParams(window.location.search);
   return params.get(name);
