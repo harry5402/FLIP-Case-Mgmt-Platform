@@ -117,6 +117,66 @@ const loadCase = async (caseId) => {
   return cases.find((item) => item.id === caseId) || null;
 };
 
+const loadNegotiation = async (defendantId) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/negotiation`);
+    return response.json();
+  }
+  return null;
+};
+
+const saveNegotiation = async (defendantId, payload) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/negotiation`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return response.json();
+  }
+  return null;
+};
+
+const loadCollection = async (defendantId) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/collection`);
+    return response.json();
+  }
+  return null;
+};
+
+const saveCollection = async (defendantId, payload) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/collection`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return response.json();
+  }
+  return null;
+};
+
+const loadBookkeeping = async (defendantId) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/bookkeeping`);
+    return response.json();
+  }
+  return null;
+};
+
+const saveBookkeeping = async (defendantId, payload) => {
+  if (USE_API) {
+    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/bookkeeping`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return response.json();
+  }
+  return null;
+};
+
 const getParam = (name) => {
   const params = new URLSearchParams(window.location.search);
   return params.get(name);

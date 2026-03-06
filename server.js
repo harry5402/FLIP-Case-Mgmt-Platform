@@ -35,7 +35,7 @@ const mapCase = (row) => ({
   court: row.court,
   defendants: [],
   docketEntries: [],
-  notes: "",
+  notes: row.notes || "",
   ipClaims: [],
 });
 
@@ -65,6 +65,7 @@ app.post("/api/cases", async (req, res) => {
     judge,
     status,
     updatedBy,
+    notes,
   } = req.body;
 
   if (!caseName || !clientName) {
@@ -75,8 +76,8 @@ app.post("/api/cases", async (req, res) => {
   const result = await query(
     `INSERT INTO cases
       (case_name, client_name, plaintiff, brand_name, ip_claims_summary, plaintiff_profit_per_unit,
-       jurisdiction, case_number, judge, status, recent_status, filed_date, updated_at, updated_by, court)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+       jurisdiction, case_number, judge, status, recent_status, filed_date, updated_at, updated_by, court, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
      RETURNING *`,
     [
       caseName,
@@ -94,6 +95,7 @@ app.post("/api/cases", async (req, res) => {
       now,
       updatedBy || null,
       jurisdiction || null,
+      notes || "",
     ]
   );
 
@@ -114,6 +116,7 @@ app.put("/api/cases/:id", async (req, res) => {
     status,
     updatedBy,
     updatedAt,
+    notes,
   } = req.body;
 
   const result = await query(
@@ -130,8 +133,9 @@ app.put("/api/cases/:id", async (req, res) => {
       status = COALESCE($10, status),
       updated_by = COALESCE($11, updated_by),
       updated_at = COALESCE($12, updated_at),
-      court = COALESCE($7, court)
-     WHERE id = $13
+      court = COALESCE($7, court),
+      notes = COALESCE($13, notes)
+     WHERE id = $14
      RETURNING *`,
     [
       caseName,
@@ -146,6 +150,7 @@ app.put("/api/cases/:id", async (req, res) => {
       status,
       updatedBy,
       updatedAt,
+      notes,
       req.params.id,
     ]
   );
@@ -464,6 +469,7 @@ app.put("/api/defendants/:id", async (req, res) => {
     defendantRepName,
     updatedAt,
     updatedBy,
+    notes,
   } = req.body;
 
   const result = await query(
@@ -479,8 +485,9 @@ app.put("/api/defendants/:id", async (req, res) => {
       defendant_rep_email = COALESCE($9, defendant_rep_email),
       defendant_rep_name = COALESCE($10, defendant_rep_name),
       updated_at = COALESCE($11, updated_at),
-      updated_by = COALESCE($12, updated_by)
-     WHERE id = $13
+      updated_by = COALESCE($12, updated_by),
+      notes = COALESCE($13, notes)
+     WHERE id = $14
      RETURNING *`,
     [
       doeNumber,
@@ -495,6 +502,7 @@ app.put("/api/defendants/:id", async (req, res) => {
       defendantRepName,
       updatedAt,
       updatedBy,
+      notes,
       req.params.id,
     ]
   );
@@ -526,6 +534,179 @@ app.get("/api/defendants/:id/listings", async (req, res) => {
       listingCopyrightLinks: row.listing_copyright_links,
     }))
   );
+});
+
+app.get("/api/defendants/:id/negotiation", async (req, res) => {
+  const result = await query(
+    "SELECT * FROM negotiations WHERE defendant_id = $1 ORDER BY id LIMIT 1",
+    [req.params.id]
+  );
+  if (!result.rows.length) {
+    return res.json({});
+  }
+  const row = result.rows[0];
+  res.json({
+    legalStatus: row.legal_status,
+    plaintiffLastOffer: row.plaintiff_last_offer,
+    defendantLastOffer: row.defendant_last_offer,
+    settlementDate: row.settlement_date,
+    settlementAmount: row.settlement_amount,
+    agreementUploaded: row.agreement_uploaded,
+  });
+});
+
+app.put("/api/defendants/:id/negotiation", async (req, res) => {
+  const {
+    legalStatus,
+    plaintiffLastOffer,
+    defendantLastOffer,
+    settlementDate,
+    settlementAmount,
+    agreementUploaded,
+  } = req.body;
+
+  const updated = await query(
+    `UPDATE negotiations
+     SET legal_status = $2,
+         plaintiff_last_offer = $3,
+         defendant_last_offer = $4,
+         settlement_date = $5,
+         settlement_amount = $6,
+         agreement_uploaded = $7
+     WHERE defendant_id = $1
+     RETURNING *`,
+    [
+      req.params.id,
+      legalStatus || null,
+      plaintiffLastOffer ?? null,
+      defendantLastOffer ?? null,
+      settlementDate || null,
+      settlementAmount ?? null,
+      agreementUploaded || null,
+    ]
+  );
+
+  if (!updated.rows.length) {
+    await query(
+      `INSERT INTO negotiations
+        (defendant_id, legal_status, plaintiff_last_offer, defendant_last_offer, settlement_date, settlement_amount, agreement_uploaded)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+      [
+        req.params.id,
+        legalStatus || null,
+        plaintiffLastOffer ?? null,
+        defendantLastOffer ?? null,
+        settlementDate || null,
+        settlementAmount ?? null,
+        agreementUploaded || null,
+      ]
+    );
+  }
+
+  res.json({ ok: true });
+});
+
+app.get("/api/defendants/:id/collection", async (req, res) => {
+  const result = await query(
+    "SELECT * FROM collections WHERE defendant_id = $1 ORDER BY id LIMIT 1",
+    [req.params.id]
+  );
+  if (!result.rows.length) {
+    return res.json({});
+  }
+  const row = result.rows[0];
+  res.json({
+    settlementCollectedDate: row.settlement_collected_date,
+    collectedAmount: row.collected_amount,
+    settlementPaymentId: row.settlement_payment_id,
+    restrainedFundsCollectedAmount: row.restrained_funds_collected_amount,
+    totalCollectedAmount: row.total_collected_amount,
+  });
+});
+
+app.put("/api/defendants/:id/collection", async (req, res) => {
+  const {
+    settlementCollectedDate,
+    collectedAmount,
+    settlementPaymentId,
+    restrainedFundsCollectedAmount,
+    totalCollectedAmount,
+  } = req.body;
+
+  const updated = await query(
+    `UPDATE collections
+     SET settlement_collected_date = $2,
+         collected_amount = $3,
+         settlement_payment_id = $4,
+         restrained_funds_collected_amount = $5,
+         total_collected_amount = $6
+     WHERE defendant_id = $1
+     RETURNING *`,
+    [
+      req.params.id,
+      settlementCollectedDate || null,
+      collectedAmount ?? null,
+      settlementPaymentId || null,
+      restrainedFundsCollectedAmount ?? null,
+      totalCollectedAmount ?? null,
+    ]
+  );
+
+  if (!updated.rows.length) {
+    await query(
+      `INSERT INTO collections
+        (defendant_id, settlement_collected_date, collected_amount, settlement_payment_id, restrained_funds_collected_amount, total_collected_amount)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [
+        req.params.id,
+        settlementCollectedDate || null,
+        collectedAmount ?? null,
+        settlementPaymentId || null,
+        restrainedFundsCollectedAmount ?? null,
+        totalCollectedAmount ?? null,
+      ]
+    );
+  }
+
+  res.json({ ok: true });
+});
+
+app.get("/api/defendants/:id/bookkeeping", async (req, res) => {
+  const result = await query(
+    "SELECT * FROM bookkeeping WHERE defendant_id = $1 ORDER BY id LIMIT 1",
+    [req.params.id]
+  );
+  if (!result.rows.length) {
+    return res.json({});
+  }
+  const row = result.rows[0];
+  res.json({
+    status: row.status,
+    agreementProcessed: row.agreement_processed,
+  });
+});
+
+app.put("/api/defendants/:id/bookkeeping", async (req, res) => {
+  const { status, agreementProcessed } = req.body;
+
+  const updated = await query(
+    `UPDATE bookkeeping
+     SET status = $2,
+         agreement_processed = $3
+     WHERE defendant_id = $1
+     RETURNING *`,
+    [req.params.id, status || null, agreementProcessed || null]
+  );
+
+  if (!updated.rows.length) {
+    await query(
+      `INSERT INTO bookkeeping (defendant_id, status, agreement_processed)
+       VALUES ($1,$2,$3)`,
+      [req.params.id, status || null, agreementProcessed || null]
+    );
+  }
+
+  res.json({ ok: true });
 });
 
 app.listen(PORT, () => {

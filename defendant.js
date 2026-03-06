@@ -17,18 +17,6 @@ const bookkeepingSave = document.getElementById("bookkeeping-save");
 const defendantSaveAll = document.getElementById("defendant-save-all");
 const defendantInfoSave = document.getElementById("defendant-info-save");
 
-const defendantKey = (caseId, defendantId) =>
-  `defendantData:${caseId}:${defendantId}`;
-
-const loadDefendantEdits = (caseId, defendantId) => {
-  const raw = localStorage.getItem(defendantKey(caseId, defendantId));
-  return raw ? JSON.parse(raw) : null;
-};
-
-const saveDefendantEdits = (caseId, defendantId, data) => {
-  localStorage.setItem(defendantKey(caseId, defendantId), JSON.stringify(data));
-};
-
 const renderCaseInfo = (currentCase) => {
   const rows = [
     ["Case Name", currentCase.caseName || currentCase.title || "—"],
@@ -222,8 +210,7 @@ const renderBookkeeping = (bookkeeping = {}) => {
   `;
 };
 
-const wireEditableSections = (caseId, defendantId, state) => {
-  const writeState = () => saveDefendantEdits(caseId, defendantId, state);
+const wireEditableSections = (defendantId, state) => {
   const dirty = {
     notes: false,
     negotiation: false,
@@ -266,13 +253,37 @@ const wireEditableSections = (caseId, defendantId, state) => {
     markDirty("notes", defendantSave);
   });
 
+  const showSaved = (button) => {
+    button.textContent = "Saved";
+    setTimeout(() => {
+      button.textContent = button === defendantSaveAll ? "Save All" : "Save";
+    }, 900);
+  };
+
+  const persist = async (key) => {
+    if (key === "notes") {
+      await updateDefendant(defendantId, { notes: state.notes });
+      return;
+    }
+    if (key === "negotiation") {
+      await saveNegotiation(defendantId, state.negotiation);
+      return;
+    }
+    if (key === "collection") {
+      await saveCollection(defendantId, state.collection);
+      return;
+    }
+    if (key === "bookkeeping") {
+      await saveBookkeeping(defendantId, state.bookkeeping);
+    }
+  };
+
   const wireSaveButton = (button, key) => {
-    button.addEventListener("click", () => {
-      writeState();
+    button.addEventListener("click", async () => {
+      await persist(key);
       dirty[key] = false;
-      button.textContent = "Saved";
+      showSaved(button);
       setTimeout(() => {
-        button.textContent = "Save";
         if (!dirty[key]) {
           toggle(button, false);
         }
@@ -286,8 +297,11 @@ const wireEditableSections = (caseId, defendantId, state) => {
   wireSaveButton(collectionSave, "collection");
   wireSaveButton(bookkeepingSave, "bookkeeping");
 
-  defendantSaveAll.addEventListener("click", () => {
-    writeState();
+  defendantSaveAll.addEventListener("click", async () => {
+    const keys = Object.keys(dirty).filter((key) => dirty[key]);
+    for (const key of keys) {
+      await persist(key);
+    }
     Object.keys(dirty).forEach((key) => {
       dirty[key] = false;
     });
@@ -295,10 +309,7 @@ const wireEditableSections = (caseId, defendantId, state) => {
       (button) => toggle(button, false)
     );
     toggle(defendantSaveAll, false);
-    defendantSaveAll.textContent = "Saved";
-    setTimeout(() => {
-      defendantSaveAll.textContent = "Save All";
-    }, 900);
+    showSaved(defendantSaveAll);
   });
 };
 
@@ -344,12 +355,14 @@ const init = async () => {
   backToCase.href = `case.html?caseId=${encodeURIComponent(currentCase.id)}`;
   defendantTitle.textContent = defendant.name;
   defendantMeta.textContent = `${defendant.id} • ${defendant.platform}`;
-  const localEdits = loadDefendantEdits(currentCase.id, defendant.id) || {};
+  const negotiationData = (await loadNegotiation(defendant.id)) || {};
+  const collectionData = (await loadCollection(defendant.id)) || {};
+  const bookkeepingData = (await loadBookkeeping(defendant.id)) || {};
   const state = {
-    notes: localEdits.notes ?? defendant.notes ?? "",
-    negotiation: { ...(defendant.negotiation || {}), ...(localEdits.negotiation || {}) },
-    collection: { ...(defendant.collection || {}), ...(localEdits.collection || {}) },
-    bookkeeping: { ...(defendant.bookkeeping || {}), ...(localEdits.bookkeeping || {}) },
+    notes: defendant.notes ?? "",
+    negotiation: { ...(defendant.negotiation || {}), ...negotiationData },
+    collection: { ...(defendant.collection || {}), ...collectionData },
+    bookkeeping: { ...(defendant.bookkeeping || {}), ...bookkeepingData },
   };
 
   renderCaseInfo(currentCase);
@@ -362,7 +375,7 @@ const init = async () => {
   renderBookkeeping(state.bookkeeping);
   const listings = await loadListings(defendant.id);
   renderListings(listings);
-  wireEditableSections(currentCase.id, defendant.id, state);
+  wireEditableSections(defendant.id, state);
 
   defendantInfoSave.addEventListener("click", async () => {
     const fields = {};

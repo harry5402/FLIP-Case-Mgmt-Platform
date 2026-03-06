@@ -22,7 +22,6 @@ const groupForm = document.getElementById("group-form");
 const groupDefendants = document.getElementById("group-defendants");
 const groupError = document.getElementById("group-error");
 
-const notesKey = (caseId) => `caseNotes:${caseId}`;
 let notesDirty = false;
 
 const renderCaseInfo = (currentCase) => {
@@ -261,14 +260,13 @@ const init = async () => {
   )} • ${defendants.length} defendants`;
   renderCaseInfo(currentCase);
   renderDocket(currentCase);
-  const savedNotes = localStorage.getItem(notesKey(currentCase.id));
-  caseNotes.value = savedNotes ?? currentCase.notes ?? "";
+  caseNotes.value = currentCase.notes ?? "";
   caseNotes.addEventListener("input", () => {
     notesDirty = true;
     caseSave.classList.remove("hidden");
   });
-  caseSave.addEventListener("click", () => {
-    localStorage.setItem(notesKey(currentCase.id), caseNotes.value);
+  caseSave.addEventListener("click", async () => {
+    await updateCase(currentCase.id, { notes: caseNotes.value });
     notesDirty = false;
     caseSave.textContent = "Saved";
     setTimeout(() => {

@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS cases (
   updated_at DATE,
   updated_by TEXT,
   court TEXT,
+  notes TEXT,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
