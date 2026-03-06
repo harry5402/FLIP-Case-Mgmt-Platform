@@ -26,6 +26,8 @@ const templateModal = document.getElementById("template-modal");
 const closeTemplateModal = document.getElementById("close-template-modal");
 const templateForm = document.getElementById("template-form");
 const templateError = document.getElementById("template-error");
+const evidenceButton = document.getElementById("evidence-button");
+const dataDownloadButton = document.getElementById("data-download-button");
 
 let notesDirty = false;
 
@@ -311,6 +313,16 @@ const init = async () => {
   }
   wireViewToggle();
   wireGroupModal(currentCase.id, refresh);
+  evidenceButton.addEventListener("click", () => {
+    toast.textContent = "Evidence action not configured yet.";
+    toast.classList.remove("hidden");
+    setTimeout(() => toast.classList.add("hidden"), 1200);
+  });
+  dataDownloadButton.addEventListener("click", () => {
+    toast.textContent = "Data download action not configured yet.";
+    toast.classList.remove("hidden");
+    setTimeout(() => toast.classList.add("hidden"), 1200);
+  });
   templateUploadButton.addEventListener("click", openTemplateModal);
   closeTemplateModal.addEventListener("click", closeTemplate);
   templateModal.addEventListener("click", (event) => {
