@@ -136,6 +136,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
   defendant_id UUID REFERENCES defendants(id) ON DELETE CASCADE,
+  group_id UUID REFERENCES groups(id) ON DELETE CASCADE,
   task_type TEXT NOT NULL,
   assigned_to_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   due_date DATE,

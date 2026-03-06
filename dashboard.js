@@ -78,15 +78,22 @@ const renderTasks = (tasks) => {
   tasks.forEach((task) => {
     const row = document.createElement("div");
     row.className = "card row";
-    const defendantUrl = `defendant.html?caseId=${encodeURIComponent(
-      task.caseId
-    )}&defendantId=${encodeURIComponent(task.defendantId)}`;
+    const targetUrl =
+      task.targetType === "group"
+        ? `group.html?groupId=${encodeURIComponent(task.groupId)}`
+        : `defendant.html?caseId=${encodeURIComponent(
+            task.caseId
+          )}&defendantId=${encodeURIComponent(task.defendantId)}`;
     row.innerHTML = `
       <div class="row-left">
-        <a class="card-title task-link" href="${defendantUrl}">${task.taskType}</a>
+        <a class="card-title task-link" href="${targetUrl}">${task.taskType}</a>
         <div class="card-meta">
           <span>${task.caseName || "Case"}</span>
-          <span>${task.defendantName || "Defendant"}</span>
+          <span>${
+            task.targetType === "group"
+              ? task.groupName || "Group"
+              : task.defendantName || "Defendant"
+          }</span>
         </div>
       </div>
       <div class="row-right task-actions">

@@ -268,6 +268,18 @@ const loadGroupListings = async (groupId) => {
   return [];
 };
 
+const createGroupTask = async (groupId, payload) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/groups/${groupId}/tasks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return response.json();
+  }
+  return null;
+};
+
 const loadGroupNegotiation = async (groupId) => {
   if (USE_API) {
     const response = await authFetch(`${API_BASE}/api/groups/${groupId}/negotiation`);

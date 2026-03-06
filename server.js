@@ -155,10 +155,14 @@ app.get("/api/users/options", async (req, res) => {
 
 app.get("/api/tasks/my", async (req, res) => {
   const result = await query(
-    `SELECT t.*, c.case_name, d.name AS defendant_name
+    `SELECT t.*,
+            c.case_name,
+            d.name AS defendant_name,
+            g.group_name
      FROM tasks t
      JOIN cases c ON c.id = t.case_id
-     JOIN defendants d ON d.id = t.defendant_id
+     LEFT JOIN defendants d ON d.id = t.defendant_id
+     LEFT JOIN groups g ON g.id = t.group_id
      WHERE t.assigned_to_user_id = $1
        AND t.status = 'Open'
      ORDER BY t.due_date NULLS LAST, t.created_at DESC`,
@@ -169,11 +173,14 @@ app.get("/api/tasks/my", async (req, res) => {
       id: row.id,
       caseId: row.case_id,
       defendantId: row.defendant_id,
+      groupId: row.group_id,
+      targetType: row.group_id ? "group" : "defendant",
       taskType: row.task_type,
       dueDate: row.due_date,
       status: row.status,
       caseName: row.case_name,
       defendantName: row.defendant_name,
+      groupName: row.group_name,
     }))
   );
 });
@@ -198,6 +205,31 @@ app.post("/api/tasks", async (req, res) => {
       req.session.userId,
     ]
   );
+  res.status(201).json(result.rows[0]);
+});
+
+app.post("/api/groups/:id/tasks", async (req, res) => {
+  const { taskType, assignedToUserId, dueDate } = req.body;
+  if (!taskType || !assignedToUserId || !dueDate) {
+    return res.status(400).json({ error: "Missing required task fields." });
+  }
+
+  const groupResult = await query("SELECT case_id FROM groups WHERE id = $1", [
+    req.params.id,
+  ]);
+  if (!groupResult.rows.length) {
+    return res.status(404).json({ error: "Group not found." });
+  }
+  const caseId = groupResult.rows[0].case_id;
+
+  const result = await query(
+    `INSERT INTO tasks
+      (case_id, group_id, defendant_id, task_type, assigned_to_user_id, due_date, status, created_by_user_id)
+     VALUES ($1,$2,NULL,$3,$4,$5,'Open',$6)
+     RETURNING *`,
+    [caseId, req.params.id, taskType, assignedToUserId, dueDate, req.session.userId]
+  );
+
   res.status(201).json(result.rows[0]);
 });
 

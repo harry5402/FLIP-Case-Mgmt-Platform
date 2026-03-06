@@ -10,7 +10,9 @@
     <header class="app-header">
       <a class="pill" id="back-to-case" href="index.html">Back to Case</a>
       <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
-      <div class="header-spacer"></div>
+      <button class="ghost-button" id="assign-group-task-button" type="button">
+        Assign Task
+      </button>
     </header>
 
     <main class="layout single">
@@ -98,6 +100,36 @@
         </div>
       </section>
     </main>
+
+    <div id="group-task-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="info-card-header">
+          <h3>Assign Group Task</h3>
+          <button class="ghost-button" id="close-group-task-modal" type="button">Close</button>
+        </div>
+        <form id="group-task-form" class="form-grid">
+          <label class="form-field">
+            <span>Task Type</span>
+            <select name="taskType" required>
+              <option value="Settlement Agreement">Settlement Agreement</option>
+              <option value="Send Evidence">Send Evidence</option>
+            </select>
+          </label>
+          <label class="form-field">
+            <span>To</span>
+            <select name="assignedToUserId" id="group-task-user-select" required></select>
+          </label>
+          <label class="form-field">
+            <span>Due Date</span>
+            <input name="dueDate" type="date" required />
+          </label>
+        </form>
+        <div class="form-actions">
+          <div id="group-task-error" class="form-error"></div>
+          <button class="ghost-button" type="submit" form="group-task-form">Assign</button>
+        </div>
+      </div>
+    </div>
 
     <script src="auth.js"></script>
     <script>

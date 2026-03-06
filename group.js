@@ -9,6 +9,12 @@ const groupNegotiation = document.getElementById("group-negotiation");
 const groupNegotiationSave = document.getElementById("group-negotiation-save");
 const groupDefendantsTableBody = document.querySelector("#group-defendants-table tbody");
 const groupListingsTableBody = document.querySelector("#group-listings-table tbody");
+const assignGroupTaskButton = document.getElementById("assign-group-task-button");
+const groupTaskModal = document.getElementById("group-task-modal");
+const closeGroupTaskModal = document.getElementById("close-group-task-modal");
+const groupTaskForm = document.getElementById("group-task-form");
+const groupTaskUserSelect = document.getElementById("group-task-user-select");
+const groupTaskError = document.getElementById("group-task-error");
 
 const renderCaseInfo = (info) => {
   const rows = [
@@ -161,6 +167,28 @@ const renderListings = (listings) => {
   });
 };
 
+const openGroupTaskModal = () => {
+  groupTaskError.textContent = "";
+  groupTaskModal.classList.remove("hidden");
+};
+
+const closeGroupTask = () => {
+  groupTaskModal.classList.add("hidden");
+};
+
+const loadTaskUsers = async () => {
+  const users = await loadUserOptions();
+  groupTaskUserSelect.innerHTML = "";
+  users.forEach((user) => {
+    const option = document.createElement("option");
+    option.value = user.id;
+    option.textContent = user.name
+      ? `${user.name} (${user.email})`
+      : user.email;
+    groupTaskUserSelect.appendChild(option);
+  });
+};
+
 const init = async () => {
   const groupId = getParam("groupId");
   const group = await loadGroup(groupId);
@@ -186,6 +214,30 @@ const init = async () => {
   renderNegotiation(negotiation);
   renderDefendants(defendants);
   renderListings(listings);
+  await loadTaskUsers();
+
+  assignGroupTaskButton.addEventListener("click", openGroupTaskModal);
+  closeGroupTaskModal.addEventListener("click", closeGroupTask);
+  groupTaskModal.addEventListener("click", (event) => {
+    if (event.target === groupTaskModal) closeGroupTask();
+  });
+  groupTaskForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    groupTaskError.textContent = "";
+    const formData = new FormData(groupTaskForm);
+    const payload = {
+      taskType: formData.get("taskType"),
+      assignedToUserId: formData.get("assignedToUserId"),
+      dueDate: formData.get("dueDate"),
+    };
+    const result = await createGroupTask(group.id, payload);
+    if (result?.error) {
+      groupTaskError.textContent = result.error;
+      return;
+    }
+    groupTaskForm.reset();
+    closeGroupTask();
+  });
 
   groupNegotiationSave.addEventListener("click", async () => {
     const payload = {};
