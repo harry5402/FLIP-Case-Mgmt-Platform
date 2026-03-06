@@ -254,8 +254,15 @@ app.post(
 
 app.get("/api/cases/:id/defendants", async (req, res) => {
   const result = await query(
-    `SELECT d.*
+    `SELECT d.*, n.legal_status AS negotiation_legal_status
      FROM defendants d
+     LEFT JOIN LATERAL (
+       SELECT legal_status
+       FROM negotiations
+       WHERE defendant_id = d.id
+       ORDER BY id DESC
+       LIMIT 1
+     ) n ON TRUE
      WHERE d.case_id = $1
      ORDER BY
        COALESCE(NULLIF(regexp_replace(d.doe_number, '[^0-9]', '', 'g'), ''), '0')::int`,
@@ -272,7 +279,7 @@ app.get("/api/cases/:id/defendants", async (req, res) => {
       backendId: row.backend_id,
       name: row.name,
       email: row.email,
-      status: row.status,
+      status: row.negotiation_legal_status || row.status,
       defendantRepEmail: row.defendant_rep_email,
       defendantRepName: row.defendant_rep_name,
       updatedAt: row.updated_at,
@@ -602,6 +609,14 @@ app.put("/api/defendants/:id/negotiation", async (req, res) => {
       ]
     );
   }
+
+  // Keep defendant status aligned with negotiation legal status for table views.
+  await query(
+    `UPDATE defendants
+     SET status = COALESCE($2, status)
+     WHERE id = $1`,
+    [req.params.id, legalStatus || null]
+  );
 
   res.json({ ok: true });
 });
