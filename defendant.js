@@ -16,6 +16,12 @@ const collectionSave = document.getElementById("collection-save");
 const bookkeepingSave = document.getElementById("bookkeeping-save");
 const defendantSaveAll = document.getElementById("defendant-save-all");
 const defendantInfoSave = document.getElementById("defendant-info-save");
+const assignTaskButton = document.getElementById("assign-task-button");
+const taskModal = document.getElementById("task-modal");
+const closeTaskModal = document.getElementById("close-task-modal");
+const taskForm = document.getElementById("task-form");
+const taskUserSelect = document.getElementById("task-user-select");
+const taskError = document.getElementById("task-error");
 
 const renderCaseInfo = (currentCase) => {
   const rows = [
@@ -339,6 +345,28 @@ const renderListings = (listings) => {
   });
 };
 
+const openTaskModal = () => {
+  taskError.textContent = "";
+  taskModal.classList.remove("hidden");
+};
+
+const closeTask = () => {
+  taskModal.classList.add("hidden");
+};
+
+const loadTaskUsers = async () => {
+  const users = await loadUserOptions();
+  taskUserSelect.innerHTML = "";
+  users.forEach((user) => {
+    const option = document.createElement("option");
+    option.value = user.id;
+    option.textContent = user.name
+      ? `${user.name} (${user.email})`
+      : user.email;
+    taskUserSelect.appendChild(option);
+  });
+};
+
 const init = async () => {
   const caseId = getParam("caseId");
   const defendantId = getParam("defendantId");
@@ -376,6 +404,32 @@ const init = async () => {
   const listings = await loadListings(defendant.id);
   renderListings(listings);
   wireEditableSections(defendant.id, state);
+  await loadTaskUsers();
+
+  assignTaskButton.addEventListener("click", openTaskModal);
+  closeTaskModal.addEventListener("click", closeTask);
+  taskModal.addEventListener("click", (event) => {
+    if (event.target === taskModal) closeTask();
+  });
+  taskForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    taskError.textContent = "";
+    const formData = new FormData(taskForm);
+    const payload = {
+      caseId: currentCase.id,
+      defendantId: defendant.id,
+      taskType: formData.get("taskType"),
+      assignedToUserId: formData.get("assignedToUserId"),
+      dueDate: formData.get("dueDate"),
+    };
+    const response = await createTask(payload);
+    if (response?.error) {
+      taskError.textContent = response.error;
+      return;
+    }
+    taskForm.reset();
+    closeTask();
+  });
 
   defendantInfoSave.addEventListener("click", async () => {
     const fields = {};

@@ -21,9 +21,14 @@
               <h2 id="defendant-title">Defendant</h2>
               <div id="defendant-meta" class="muted">Loading...</div>
             </div>
-            <button class="ghost-button hidden" id="defendant-save-all" type="button">
-              Save All
-            </button>
+            <div class="tab-switch">
+              <button class="ghost-button" id="assign-task-button" type="button">
+                Assign Task
+              </button>
+              <button class="ghost-button hidden" id="defendant-save-all" type="button">
+                Save All
+              </button>
+            </div>
           </div>
         </div>
         <div class="case-grid">
@@ -138,6 +143,36 @@
         </div>
       </section>
     </main>
+
+    <div id="task-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="info-card-header">
+          <h3>Assign Task</h3>
+          <button class="ghost-button" id="close-task-modal" type="button">Close</button>
+        </div>
+        <form id="task-form" class="form-grid">
+          <label class="form-field">
+            <span>Task Type</span>
+            <select name="taskType" required>
+              <option value="Settlement Agreement">Settlement Agreement</option>
+              <option value="Send Evidence">Send Evidence</option>
+            </select>
+          </label>
+          <label class="form-field">
+            <span>To</span>
+            <select name="assignedToUserId" id="task-user-select" required></select>
+          </label>
+          <label class="form-field">
+            <span>Due Date</span>
+            <input name="dueDate" type="date" required />
+          </label>
+        </form>
+        <div class="form-actions">
+          <div id="task-error" class="form-error"></div>
+          <button class="ghost-button" type="submit" form="task-form">Assign</button>
+        </div>
+      </div>
+    </div>
 
     <script src="auth.js"></script>
     <script>

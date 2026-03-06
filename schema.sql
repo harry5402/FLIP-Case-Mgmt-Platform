@@ -131,3 +131,15 @@ CREATE TABLE IF NOT EXISTS listings (
   notes TEXT,
   listing_copyright_links TEXT
 );
+
+CREATE TABLE IF NOT EXISTS tasks (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
+  defendant_id UUID REFERENCES defendants(id) ON DELETE CASCADE,
+  task_type TEXT NOT NULL,
+  assigned_to_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  due_date DATE,
+  status TEXT NOT NULL DEFAULT 'Open',
+  created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);

@@ -1,6 +1,7 @@
 const caseGroups = document.getElementById("case-groups");
 const usersLink = document.getElementById("users-link");
 const logoutButton = document.getElementById("logout-button");
+const tasksList = document.getElementById("tasks-list");
 
 const statusToGroup = (status) => {
   if (!status) return "Undelivered";
@@ -64,11 +65,43 @@ const renderGroups = (cases) => {
   });
 };
 
+const renderTasks = (tasks) => {
+  tasksList.innerHTML = "";
+  if (!tasks.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No tasks assigned.";
+    tasksList.appendChild(empty);
+    return;
+  }
+
+  tasks.forEach((task) => {
+    const row = document.createElement("a");
+    row.className = "card row";
+    row.href = `defendant.html?caseId=${encodeURIComponent(
+      task.caseId
+    )}&defendantId=${encodeURIComponent(task.defendantId)}`;
+    row.innerHTML = `
+      <div class="row-left">
+        <div class="card-title">${task.taskType}</div>
+        <div class="card-meta">
+          <span>${task.caseName || "Case"}</span>
+          <span>${task.defendantName || "Defendant"}</span>
+        </div>
+      </div>
+      <div class="row-right">Due ${formatDate(task.dueDate)}</div>
+    `;
+    tasksList.appendChild(row);
+  });
+};
+
 const init = async () => {
   if (isAdmin()) {
     usersLink.classList.remove("hidden");
   }
   logoutButton.addEventListener("click", signOut);
+  const tasks = await loadMyTasks();
+  renderTasks(tasks);
   const cases = await loadCases();
   renderGroups(cases);
 };

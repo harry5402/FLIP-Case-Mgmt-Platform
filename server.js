@@ -141,6 +141,60 @@ app.post("/api/users", requireSession, requireAdmin, async (req, res) => {
 
 app.use("/api", requireSession);
 
+app.get("/api/users/options", async (req, res) => {
+  const result = await query(
+    "SELECT id, name, email FROM users ORDER BY lower(email)"
+  );
+  res.json(result.rows);
+});
+
+app.get("/api/tasks/my", async (req, res) => {
+  const result = await query(
+    `SELECT t.*, c.case_name, d.name AS defendant_name
+     FROM tasks t
+     JOIN cases c ON c.id = t.case_id
+     JOIN defendants d ON d.id = t.defendant_id
+     WHERE t.assigned_to_user_id = $1
+     ORDER BY t.due_date NULLS LAST, t.created_at DESC`,
+    [req.session.userId]
+  );
+  res.json(
+    result.rows.map((row) => ({
+      id: row.id,
+      caseId: row.case_id,
+      defendantId: row.defendant_id,
+      taskType: row.task_type,
+      dueDate: row.due_date,
+      status: row.status,
+      caseName: row.case_name,
+      defendantName: row.defendant_name,
+    }))
+  );
+});
+
+app.post("/api/tasks", async (req, res) => {
+  const { caseId, defendantId, taskType, assignedToUserId, dueDate } = req.body;
+  if (!caseId || !defendantId || !taskType || !assignedToUserId || !dueDate) {
+    return res.status(400).json({ error: "Missing required task fields." });
+  }
+
+  const result = await query(
+    `INSERT INTO tasks
+      (case_id, defendant_id, task_type, assigned_to_user_id, due_date, status, created_by_user_id)
+     VALUES ($1,$2,$3,$4,$5,'Open',$6)
+     RETURNING *`,
+    [
+      caseId,
+      defendantId,
+      taskType,
+      assignedToUserId,
+      dueDate,
+      req.session.userId,
+    ]
+  );
+  res.status(201).json(result.rows[0]);
+});
+
 const mapCase = (row) => ({
   id: row.id,
   caseName: row.case_name,

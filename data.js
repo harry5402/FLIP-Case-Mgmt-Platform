@@ -177,6 +177,34 @@ const saveBookkeeping = async (defendantId, payload) => {
   return null;
 };
 
+const loadUserOptions = async () => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/users/options`);
+    return response.json();
+  }
+  return [];
+};
+
+const createTask = async (payload) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/tasks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return response.json();
+  }
+  return null;
+};
+
+const loadMyTasks = async () => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/tasks/my`);
+    return response.json();
+  }
+  return [];
+};
+
 const getParam = (name) => {
   const params = new URLSearchParams(window.location.search);
   return params.get(name);
