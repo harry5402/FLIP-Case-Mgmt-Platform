@@ -223,10 +223,16 @@ const loadCaseTemplates = async (caseId) => {
   return [];
 };
 
-const uploadCaseTemplate = async (caseId, file, displayName) => {
+const uploadCaseTemplate = async (
+  caseId,
+  templateFile,
+  dataFile,
+  displayName
+) => {
   if (USE_API) {
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("templateFile", templateFile);
+    formData.append("dataFile", dataFile);
     formData.append("displayName", displayName || "");
     const response = await authFetch(`${API_BASE}/api/cases/${caseId}/templates`, {
       method: "POST",

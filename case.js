@@ -320,13 +320,19 @@ const init = async () => {
     event.preventDefault();
     templateError.textContent = "";
     const formData = new FormData(templateForm);
-    const file = formData.get("file");
+    const templateFile = formData.get("templateFile");
+    const dataFile = formData.get("dataFile");
     const displayName = formData.get("displayName");
-    if (!file || !file.name) {
-      templateError.textContent = "Please select a file.";
+    if (!templateFile || !templateFile.name || !dataFile || !dataFile.name) {
+      templateError.textContent = "Please select both template files.";
       return;
     }
-    const result = await uploadCaseTemplate(currentCase.id, file, displayName);
+    const result = await uploadCaseTemplate(
+      currentCase.id,
+      templateFile,
+      dataFile,
+      displayName
+    );
     if (result?.error) {
       templateError.textContent = result.error;
       return;

@@ -218,9 +218,70 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post(
+  "/api/cases/:id/templates",
+  upload.fields([
+    { name: "templateFile", maxCount: 1 },
+    { name: "dataFile", maxCount: 1 },
+  ]),
+  async (req, res) => {
+    const templateFile = req.files?.templateFile?.[0];
+    const dataFile = req.files?.dataFile?.[0];
+    if (!templateFile || !dataFile) {
+      return res
+        .status(400)
+        .json({ error: "Both template files are required." });
+    }
+
+    const saveUpload = (file) => {
+      const originalName = file.originalname || "template";
+      const ext = path.extname(originalName) || ".bin";
+      const baseName = path
+        .basename(originalName, ext)
+        .replace(/[^a-zA-Z0-9-_ ]/g, "")
+        .trim();
+      const fileName = `${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2, 8)}-${(baseName || "file").replace(/\s+/g, "-")}${ext}`;
+      const filePath = path.join(templateUploadsDir, fileName);
+      fs.writeFileSync(filePath, file.buffer);
+      return `/uploads/templates/${fileName}`;
+    };
+
+    const templateFileUrl = saveUpload(templateFile);
+    const dataFileUrl = saveUpload(dataFile);
+    const displayName =
+      (req.body.displayName || "").trim() ||
+      path.basename(templateFile.originalname || "Template Package");
+
+    const result = await query(
+      `INSERT INTO case_templates (case_id, display_name, file_url, template_file_url, data_file_url)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, display_name, file_url, template_file_url, data_file_url, created_at`,
+      [
+        req.params.id,
+        displayName,
+        templateFileUrl,
+        templateFileUrl,
+        dataFileUrl,
+      ]
+    );
+
+    const row = result.rows[0];
+    res.status(201).json({
+      id: row.id,
+      displayName: row.display_name,
+      fileUrl: row.file_url,
+      templateFileUrl: row.template_file_url || row.file_url,
+      dataFileUrl: row.data_file_url || null,
+      createdAt: row.created_at,
+    });
+  }
+);
+
 app.get("/api/cases/:id/templates", async (req, res) => {
   const result = await query(
-    `SELECT id, display_name, file_url, created_at
+    `SELECT id, display_name, file_url, template_file_url, data_file_url, created_at
      FROM case_templates
      WHERE case_id = $1
      ORDER BY created_at DESC`,
@@ -231,41 +292,11 @@ app.get("/api/cases/:id/templates", async (req, res) => {
       id: row.id,
       displayName: row.display_name,
       fileUrl: row.file_url,
+      templateFileUrl: row.template_file_url || row.file_url,
+      dataFileUrl: row.data_file_url || null,
       createdAt: row.created_at,
     }))
   );
-});
-
-app.post("/api/cases/:id/templates", upload.single("file"), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: "Template file is required." });
-  }
-
-  const originalName = req.file.originalname || "template";
-  const ext = path.extname(originalName) || ".pdf";
-  const baseName = path
-    .basename(originalName, ext)
-    .replace(/[^a-zA-Z0-9-_ ]/g, "")
-    .trim();
-  const fileName = `${Date.now()}-${(baseName || "template").replace(/\s+/g, "-")}${ext}`;
-  const filePath = path.join(templateUploadsDir, fileName);
-  fs.writeFileSync(filePath, req.file.buffer);
-
-  const displayName = (req.body.displayName || "").trim() || originalName;
-  const fileUrl = `/uploads/templates/${fileName}`;
-  const result = await query(
-    `INSERT INTO case_templates (case_id, display_name, file_url)
-     VALUES ($1, $2, $3)
-     RETURNING id, display_name, file_url, created_at`,
-    [req.params.id, displayName, fileUrl]
-  );
-  const row = result.rows[0];
-  res.status(201).json({
-    id: row.id,
-    displayName: row.display_name,
-    fileUrl: row.file_url,
-    createdAt: row.created_at,
-  });
 });
 
 const mapCase = (row) => ({

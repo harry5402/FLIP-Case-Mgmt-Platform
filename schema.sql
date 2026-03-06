@@ -149,5 +149,7 @@ CREATE TABLE IF NOT EXISTS case_templates (
   case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
   display_name TEXT NOT NULL,
   file_url TEXT NOT NULL,
+  template_file_url TEXT,
+  data_file_url TEXT,
   created_at TIMESTAMP DEFAULT NOW()
 );

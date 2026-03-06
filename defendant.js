@@ -353,15 +353,20 @@ const renderTemplates = (templates) => {
     return;
   }
   templates.forEach((template) => {
-    const card = document.createElement("a");
+    const card = document.createElement("div");
     card.className = "card";
-    card.href = template.fileUrl;
-    card.target = "_blank";
-    card.rel = "noopener";
     card.innerHTML = `
       <div class="card-title">${template.displayName || "Template"}</div>
       <div class="card-meta">
         <span>Uploaded ${formatDate(template.createdAt)}</span>
+      </div>
+      <div class="card-meta">
+        <a href="${template.templateFileUrl || template.fileUrl}" target="_blank" rel="noopener">Open Template</a>
+        ${
+          template.dataFileUrl
+            ? `<a href="${template.dataFileUrl}" target="_blank" rel="noopener">Open Merge File</a>`
+            : ""
+        }
       </div>
     `;
     templatesList.appendChild(card);
