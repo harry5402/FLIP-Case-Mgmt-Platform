@@ -199,7 +199,9 @@ h1 {
 }
 
 .centered-action {
-  justify-self: center;
+  justify-self: stretch;
+  width: 100%;
+  text-align: center;
 }
 
 .notes-card {
