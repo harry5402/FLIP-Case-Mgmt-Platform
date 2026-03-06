@@ -33,7 +33,7 @@ const init = async () => {
     const formData = new FormData();
     formData.append("file", fileInput.files[0]);
 
-    const response = await fetch(`/api/cases/${currentCase.id}/defendants/import`, {
+    const response = await authFetch(`/api/cases/${currentCase.id}/defendants/import`, {
       method: "POST",
       body: formData,
     });

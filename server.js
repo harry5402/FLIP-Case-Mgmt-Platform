@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const multer = require("multer");
+const crypto = require("crypto");
 const { parse } = require("csv-parse/sync");
 const { query } = require("./db");
 
@@ -14,6 +15,131 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname)));
 
 const upload = multer({ storage: multer.memoryStorage() });
+const sessions = new Map();
+
+const ADMIN_EMAIL = "hlesak@fleneriplaw.com";
+const ADMIN_PASSWORD = "Flener224!!";
+
+const hashPassword = (password) => {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return `${salt}:${hash}`;
+};
+
+const verifyPassword = (password, stored) => {
+  const [salt, expected] = String(stored || "").split(":");
+  if (!salt || !expected) return false;
+  const actual = crypto.scryptSync(password, salt, 64).toString("hex");
+  return crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
+};
+
+const sessionFromRequest = (req) => {
+  const auth = req.headers.authorization || "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  if (!token) return null;
+  return sessions.get(token) || null;
+};
+
+const requireSession = (req, res, next) => {
+  const session = sessionFromRequest(req);
+  if (!session) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+  req.session = session;
+  next();
+};
+
+const requireAdmin = (req, res, next) => {
+  if (!req.session || req.session.role !== "admin") {
+    return res.status(403).json({ error: "Admin access required" });
+  }
+  next();
+};
+
+const ensureAdminUser = async () => {
+  const passwordHash = hashPassword(ADMIN_PASSWORD);
+  await query(
+    `INSERT INTO users (name, email, password_hash, role)
+     VALUES ($1, $2, $3, 'admin')
+     ON CONFLICT (email)
+     DO UPDATE SET
+       password_hash = EXCLUDED.password_hash,
+       role = 'admin'`,
+    ["Harry Lesak", ADMIN_EMAIL, passwordHash]
+  );
+};
+
+app.post("/api/auth/login", async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password are required." });
+  }
+
+  const result = await query("SELECT * FROM users WHERE lower(email) = lower($1)", [
+    email.trim(),
+  ]);
+  if (!result.rows.length) {
+    return res.status(401).json({ error: "Invalid credentials." });
+  }
+
+  const user = result.rows[0];
+  if (!verifyPassword(password, user.password_hash)) {
+    return res.status(401).json({ error: "Invalid credentials." });
+  }
+
+  const token = crypto.randomUUID();
+  const session = {
+    token,
+    userId: user.id,
+    name: user.name || "",
+    email: user.email,
+    role: user.role,
+  };
+  sessions.set(token, session);
+
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      name: user.name || "",
+      email: user.email,
+      role: user.role,
+    },
+  });
+});
+
+app.get("/api/auth/me", requireSession, async (req, res) => {
+  res.json({ user: req.session });
+});
+
+app.post("/api/auth/logout", requireSession, async (req, res) => {
+  sessions.delete(req.session.token);
+  res.json({ ok: true });
+});
+
+app.get("/api/users", requireSession, requireAdmin, async (req, res) => {
+  const result = await query(
+    "SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC"
+  );
+  res.json(result.rows);
+});
+
+app.post("/api/users", requireSession, requireAdmin, async (req, res) => {
+  const { name, email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password are required." });
+  }
+  const passwordHash = hashPassword(password);
+  const result = await query(
+    `INSERT INTO users (name, email, password_hash, role)
+     VALUES ($1, $2, $3, 'user')
+     RETURNING id, name, email, role, created_at`,
+    [name || "", email.trim(), passwordHash]
+  );
+  res.status(201).json(result.rows[0]);
+});
+
+app.use("/api", requireSession);
 
 const mapCase = (row) => ({
   id: row.id,
@@ -724,6 +850,14 @@ app.put("/api/defendants/:id/bookkeeping", async (req, res) => {
   res.json({ ok: true });
 });
 
-app.listen(PORT, () => {
-  console.log(`API running on http://localhost:${PORT}`);
+const start = async () => {
+  await ensureAdminUser();
+  app.listen(PORT, () => {
+    console.log(`API running on http://localhost:${PORT}`);
+  });
+};
+
+start().catch((error) => {
+  console.error("Startup failed:", error);
+  process.exit(1);
 });

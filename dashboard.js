@@ -1,4 +1,6 @@
 const caseGroups = document.getElementById("case-groups");
+const usersLink = document.getElementById("users-link");
+const logoutButton = document.getElementById("logout-button");
 
 const statusToGroup = (status) => {
   if (!status) return "Undelivered";
@@ -63,6 +65,10 @@ const renderGroups = (cases) => {
 };
 
 const init = async () => {
+  if (isAdmin()) {
+    usersLink.classList.remove("hidden");
+  }
+  logoutButton.addEventListener("click", signOut);
   const cases = await loadCases();
   renderGroups(cases);
 };

@@ -15,24 +15,24 @@
       <section class="panel">
         <div class="panel-header">
           <h2>Sign In</h2>
-          <div class="muted">Placeholder login (permissions later)</div>
+          <div class="muted">Enter your account credentials</div>
         </div>
 
         <form id="login-form" class="form-grid">
           <label class="form-field">
-            <span>Your Name</span>
-            <input name="name" required />
-          </label>
-          <label class="form-field">
             <span>Email</span>
             <input name="email" type="email" required />
+          </label>
+          <label class="form-field">
+            <span>Password</span>
+            <input name="password" type="password" required />
           </label>
         </form>
 
         <div class="form-actions">
           <div class="form-error" id="login-error"></div>
           <button class="ghost-button" type="submit" form="login-form">
-            Continue
+            Sign In
           </button>
         </div>
       </section>

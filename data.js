@@ -4,7 +4,7 @@ const API_BASE = "";
 
 const loadCases = async () => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/cases`);
+    const response = await authFetch(`${API_BASE}/api/cases`);
     return response.json();
   }
   const response = await fetch("data/cases.json");
@@ -23,7 +23,7 @@ const loadCases = async () => {
 
 const saveCase = async (newCase) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/cases`, {
+    const response = await authFetch(`${API_BASE}/api/cases`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(newCase),
@@ -39,7 +39,7 @@ const saveCase = async (newCase) => {
 
 const updateCase = async (caseId, updates) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/cases/${caseId}`, {
+    const response = await authFetch(`${API_BASE}/api/cases/${caseId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
@@ -59,7 +59,7 @@ const updateCase = async (caseId, updates) => {
 
 const loadDefendants = async (caseId) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/cases/${caseId}/defendants`);
+    const response = await authFetch(`${API_BASE}/api/cases/${caseId}/defendants`);
     return response.json();
   }
   const cases = await loadCases();
@@ -69,7 +69,7 @@ const loadDefendants = async (caseId) => {
 
 const updateDefendant = async (defendantId, updates) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}`, {
+    const response = await authFetch(`${API_BASE}/api/defendants/${defendantId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
@@ -81,7 +81,7 @@ const updateDefendant = async (defendantId, updates) => {
 
 const loadListings = async (defendantId) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/listings`);
+    const response = await authFetch(`${API_BASE}/api/defendants/${defendantId}/listings`);
     return response.json();
   }
   return [];
@@ -89,7 +89,7 @@ const loadListings = async (defendantId) => {
 
 const loadGroups = async (caseId) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/cases/${caseId}/groups`);
+    const response = await authFetch(`${API_BASE}/api/cases/${caseId}/groups`);
     return response.json();
   }
   return [];
@@ -97,7 +97,7 @@ const loadGroups = async (caseId) => {
 
 const createGroup = async (caseId, payload) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/cases/${caseId}/groups`, {
+    const response = await authFetch(`${API_BASE}/api/cases/${caseId}/groups`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -109,7 +109,7 @@ const createGroup = async (caseId, payload) => {
 
 const loadCase = async (caseId) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/cases/${caseId}`);
+    const response = await authFetch(`${API_BASE}/api/cases/${caseId}`);
     if (!response.ok) return null;
     return response.json();
   }
@@ -119,7 +119,7 @@ const loadCase = async (caseId) => {
 
 const loadNegotiation = async (defendantId) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/negotiation`);
+    const response = await authFetch(`${API_BASE}/api/defendants/${defendantId}/negotiation`);
     return response.json();
   }
   return null;
@@ -127,7 +127,7 @@ const loadNegotiation = async (defendantId) => {
 
 const saveNegotiation = async (defendantId, payload) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/negotiation`, {
+    const response = await authFetch(`${API_BASE}/api/defendants/${defendantId}/negotiation`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -139,7 +139,7 @@ const saveNegotiation = async (defendantId, payload) => {
 
 const loadCollection = async (defendantId) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/collection`);
+    const response = await authFetch(`${API_BASE}/api/defendants/${defendantId}/collection`);
     return response.json();
   }
   return null;
@@ -147,7 +147,7 @@ const loadCollection = async (defendantId) => {
 
 const saveCollection = async (defendantId, payload) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/collection`, {
+    const response = await authFetch(`${API_BASE}/api/defendants/${defendantId}/collection`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -159,7 +159,7 @@ const saveCollection = async (defendantId, payload) => {
 
 const loadBookkeeping = async (defendantId) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/bookkeeping`);
+    const response = await authFetch(`${API_BASE}/api/defendants/${defendantId}/bookkeeping`);
     return response.json();
   }
   return null;
@@ -167,7 +167,7 @@ const loadBookkeeping = async (defendantId) => {
 
 const saveBookkeeping = async (defendantId, payload) => {
   if (USE_API) {
-    const response = await fetch(`${API_BASE}/api/defendants/${defendantId}/bookkeeping`, {
+    const response = await authFetch(`${API_BASE}/api/defendants/${defendantId}/bookkeeping`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
