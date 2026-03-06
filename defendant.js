@@ -9,6 +9,7 @@ const negotiationList = document.getElementById("negotiation-list");
 const collectionList = document.getElementById("collection-list");
 const bookkeepingList = document.getElementById("bookkeeping-list");
 const listingsTableBody = document.querySelector("#listings-table tbody");
+const templatesList = document.getElementById("templates-list");
 const backToCase = document.getElementById("back-to-case");
 const defendantSave = document.getElementById("defendant-save");
 const negotiationSave = document.getElementById("negotiation-save");
@@ -345,6 +346,28 @@ const renderListings = (listings) => {
   });
 };
 
+const renderTemplates = (templates) => {
+  templatesList.innerHTML = "";
+  if (!templates.length) {
+    templatesList.innerHTML = `<div class="empty-state">No templates configured yet.</div>`;
+    return;
+  }
+  templates.forEach((template) => {
+    const card = document.createElement("a");
+    card.className = "card";
+    card.href = template.fileUrl;
+    card.target = "_blank";
+    card.rel = "noopener";
+    card.innerHTML = `
+      <div class="card-title">${template.displayName || "Template"}</div>
+      <div class="card-meta">
+        <span>Uploaded ${formatDate(template.createdAt)}</span>
+      </div>
+    `;
+    templatesList.appendChild(card);
+  });
+};
+
 const openTaskModal = () => {
   taskError.textContent = "";
   taskModal.classList.remove("hidden");
@@ -403,6 +426,8 @@ const init = async () => {
   renderBookkeeping(state.bookkeeping);
   const listings = await loadListings(defendant.id);
   renderListings(listings);
+  const templates = await loadCaseTemplates(currentCase.id);
+  renderTemplates(templates);
   wireEditableSections(defendant.id, state);
   await loadTaskUsers();
 

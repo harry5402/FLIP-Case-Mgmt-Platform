@@ -33,6 +33,9 @@
               <a href="#" class="link-item">Data Download Page</a>
               <a id="bulk-upload-link" href="#" class="link-item">Bulk Defendant Upload</a>
               <a id="listing-upload-link" href="#" class="link-item">Bulk Listings Upload</a>
+              <button id="template-upload-button" class="ghost-button" type="button">
+                Upload Sample Template
+              </button>
             </div>
           </div>
           <div class="info-card">
@@ -158,6 +161,33 @@
           <div class="form-error" id="group-error"></div>
           <button class="ghost-button" type="submit" form="group-form">
             Create Group
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="template-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="info-card-header">
+          <h3>Upload Sample Template</h3>
+          <button class="ghost-button" id="close-template-modal" type="button">
+            Close
+          </button>
+        </div>
+        <form id="template-form" class="form-grid">
+          <label class="form-field">
+            <span>Display Name</span>
+            <input name="displayName" />
+          </label>
+          <label class="form-field">
+            <span>Template File</span>
+            <input name="file" type="file" required />
+          </label>
+        </form>
+        <div class="form-actions">
+          <div id="template-error" class="form-error"></div>
+          <button class="ghost-button" type="submit" form="template-form">
+            Upload
           </button>
         </div>
       </div>

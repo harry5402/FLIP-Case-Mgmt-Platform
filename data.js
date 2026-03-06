@@ -215,6 +215,28 @@ const completeTask = async (taskId) => {
   return null;
 };
 
+const loadCaseTemplates = async (caseId) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/cases/${caseId}/templates`);
+    return response.json();
+  }
+  return [];
+};
+
+const uploadCaseTemplate = async (caseId, file, displayName) => {
+  if (USE_API) {
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("displayName", displayName || "");
+    const response = await authFetch(`${API_BASE}/api/cases/${caseId}/templates`, {
+      method: "POST",
+      body: formData,
+    });
+    return response.json();
+  }
+  return null;
+};
+
 const getParam = (name) => {
   const params = new URLSearchParams(window.location.search);
   return params.get(name);

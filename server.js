@@ -4,6 +4,7 @@ const cors = require("cors");
 const path = require("path");
 const multer = require("multer");
 const crypto = require("crypto");
+const fs = require("fs");
 const { parse } = require("csv-parse/sync");
 const { query } = require("./db");
 
@@ -13,6 +14,10 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname)));
+const uploadsDir = path.join(__dirname, "uploads");
+const templateUploadsDir = path.join(uploadsDir, "templates");
+fs.mkdirSync(templateUploadsDir, { recursive: true });
+app.use("/uploads", express.static(uploadsDir));
 
 const upload = multer({ storage: multer.memoryStorage() });
 const sessions = new Map();
@@ -211,6 +216,56 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
   }
 
   res.json({ ok: true });
+});
+
+app.get("/api/cases/:id/templates", async (req, res) => {
+  const result = await query(
+    `SELECT id, display_name, file_url, created_at
+     FROM case_templates
+     WHERE case_id = $1
+     ORDER BY created_at DESC`,
+    [req.params.id]
+  );
+  res.json(
+    result.rows.map((row) => ({
+      id: row.id,
+      displayName: row.display_name,
+      fileUrl: row.file_url,
+      createdAt: row.created_at,
+    }))
+  );
+});
+
+app.post("/api/cases/:id/templates", upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "Template file is required." });
+  }
+
+  const originalName = req.file.originalname || "template";
+  const ext = path.extname(originalName) || ".pdf";
+  const baseName = path
+    .basename(originalName, ext)
+    .replace(/[^a-zA-Z0-9-_ ]/g, "")
+    .trim();
+  const fileName = `${Date.now()}-${(baseName || "template").replace(/\s+/g, "-")}${ext}`;
+  const filePath = path.join(templateUploadsDir, fileName);
+  fs.writeFileSync(filePath, req.file.buffer);
+
+  const displayName = (req.body.displayName || "").trim() || originalName;
+  const fileUrl = `/uploads/templates/${fileName}`;
+  const result = await query(
+    `INSERT INTO case_templates (case_id, display_name, file_url)
+     VALUES ($1, $2, $3)
+     RETURNING id, display_name, file_url, created_at`,
+    [req.params.id, displayName, fileUrl]
+  );
+  const row = result.rows[0];
+  res.status(201).json({
+    id: row.id,
+    displayName: row.display_name,
+    fileUrl: row.file_url,
+    createdAt: row.created_at,
+  });
 });
 
 const mapCase = (row) => ({

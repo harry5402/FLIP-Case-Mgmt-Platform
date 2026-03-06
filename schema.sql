@@ -143,3 +143,11 @@ CREATE TABLE IF NOT EXISTS tasks (
   created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMP DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS case_templates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
+  display_name TEXT NOT NULL,
+  file_url TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);

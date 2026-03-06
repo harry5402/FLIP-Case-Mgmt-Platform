@@ -21,6 +21,11 @@ const closeGroupModal = document.getElementById("close-group-modal");
 const groupForm = document.getElementById("group-form");
 const groupDefendants = document.getElementById("group-defendants");
 const groupError = document.getElementById("group-error");
+const templateUploadButton = document.getElementById("template-upload-button");
+const templateModal = document.getElementById("template-modal");
+const closeTemplateModal = document.getElementById("close-template-modal");
+const templateForm = document.getElementById("template-form");
+const templateError = document.getElementById("template-error");
 
 let notesDirty = false;
 
@@ -242,6 +247,15 @@ const wireViewToggle = () => {
   showDefendants();
 };
 
+const openTemplateModal = () => {
+  templateError.textContent = "";
+  templateModal.classList.remove("hidden");
+};
+
+const closeTemplate = () => {
+  templateModal.classList.add("hidden");
+};
+
 const init = async () => {
   const cases = await loadCases();
   const caseId = getParam("caseId");
@@ -297,6 +311,32 @@ const init = async () => {
   }
   wireViewToggle();
   wireGroupModal(currentCase.id, refresh);
+  templateUploadButton.addEventListener("click", openTemplateModal);
+  closeTemplateModal.addEventListener("click", closeTemplate);
+  templateModal.addEventListener("click", (event) => {
+    if (event.target === templateModal) closeTemplate();
+  });
+  templateForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    templateError.textContent = "";
+    const formData = new FormData(templateForm);
+    const file = formData.get("file");
+    const displayName = formData.get("displayName");
+    if (!file || !file.name) {
+      templateError.textContent = "Please select a file.";
+      return;
+    }
+    const result = await uploadCaseTemplate(currentCase.id, file, displayName);
+    if (result?.error) {
+      templateError.textContent = result.error;
+      return;
+    }
+    templateForm.reset();
+    closeTemplate();
+    toast.textContent = "Template uploaded ✓";
+    toast.classList.remove("hidden");
+    setTimeout(() => toast.classList.add("hidden"), 1200);
+  });
   bulkUploadLink.href = `bulk-upload.html?caseId=${encodeURIComponent(
     currentCase.id
   )}`;
