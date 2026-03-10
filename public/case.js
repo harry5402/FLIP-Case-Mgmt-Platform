@@ -40,6 +40,19 @@ let currentCaseId = null;
 let currentClaims = [];
 let editingClaimId = null;
 
+const formatDateTime = (value) => {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+};
+
 const renderCaseInfo = (currentCase) => {
   const rows = [
     ["Client Name", "clientName", currentCase.clientName || ""],
@@ -61,11 +74,11 @@ const renderCaseInfo = (currentCase) => {
       "select",
       ["Undelivered", "Active", "Fully Finished"],
     ],
-    ["Updated at", "updatedAt", currentCase.updatedAt || "", "date"],
-    ["Updated by", "updatedBy", currentCase.updatedBy || ""],
+    ["Updated at", "updatedAtDisplay", formatDateTime(currentCase.updatedAt), "text", null, true],
+    ["Updated by", "updatedByDisplay", currentCase.updatedBy || "", "text", null, true],
   ];
   caseInfoList.innerHTML = rows
-    .map(([label, name, value, type, options]) => {
+    .map(([label, name, value, type, options, disabled]) => {
       if (type === "select") {
         const optionSet = Array.from(new Set([...(options || []), value])).filter(
           Boolean
@@ -89,7 +102,9 @@ const renderCaseInfo = (currentCase) => {
       return `
         <div class="info-row">
           <span>${label}</span>
-          <span><input name="${name}" type="${inputType}" value="${value}" /></span>
+          <span><input name="${name}" type="${inputType}" value="${value}" ${
+            disabled ? "disabled" : ""
+          } /></span>
         </div>
       `;
     })
@@ -329,7 +344,7 @@ const closeTemplate = () => {
 const init = async () => {
   const cases = await loadCases();
   const caseId = getParam("caseId");
-  const currentCase = cases.find((item) => item.id === caseId) || cases[0];
+  let currentCase = cases.find((item) => item.id === caseId) || cases[0];
 
   if (!currentCase) {
     caseTitle.textContent = "Case not found";
@@ -351,7 +366,11 @@ const init = async () => {
     caseSave.classList.remove("hidden");
   });
   caseSave.addEventListener("click", async () => {
-    await updateCase(currentCase.id, { notes: caseNotes.value });
+    const updatedCase = await updateCase(currentCase.id, { notes: caseNotes.value });
+    if (updatedCase && !updatedCase.error) {
+      currentCase = { ...currentCase, ...updatedCase };
+      renderCaseInfo(currentCase);
+    }
     notesDirty = false;
     caseSave.textContent = "Saved";
     setTimeout(() => {
@@ -477,6 +496,7 @@ const init = async () => {
   caseInfoSave.addEventListener("click", async () => {
     const fields = {};
     caseInfoList.querySelectorAll("input, select").forEach((field) => {
+      if (field.disabled) return;
       if (field.tagName === "SELECT") {
         fields[field.name] = field.value;
         return;
@@ -492,7 +512,11 @@ const init = async () => {
       fields.updatedAt = new Date().toISOString().slice(0, 10);
     }
 
-    await updateCase(currentCase.id, fields);
+    const updatedCase = await updateCase(currentCase.id, fields);
+    if (updatedCase && !updatedCase.error) {
+      currentCase = { ...currentCase, ...updatedCase };
+      renderCaseInfo(currentCase);
+    }
     caseInfoSave.textContent = "Saved";
     toast.textContent = "Saved ✓";
     toast.classList.remove("hidden");

@@ -31,6 +31,37 @@
               <input type="file" name="file" accept=".csv" required />
             </label>
           </form>
+          <div id="mapping-panel" class="table-card hidden">
+            <div class="info-card-header">
+              <h3>Column Mapping</h3>
+            </div>
+            <div class="form-grid">
+              <label class="form-field">
+                <span>Seller (required)</span>
+                <select id="map-seller"></select>
+              </label>
+              <label class="form-field">
+                <span>Platform (required)</span>
+                <select id="map-platform"></select>
+              </label>
+              <label class="form-field">
+                <span>Business Name</span>
+                <select id="map-business-name"></select>
+              </label>
+              <label class="form-field">
+                <span>Located In</span>
+                <select id="map-located-in"></select>
+              </label>
+              <label class="form-field">
+                <span>Seller Location</span>
+                <select id="map-seller-location"></select>
+              </label>
+              <label class="form-field">
+                <span>Seller URL</span>
+                <select id="map-seller-url"></select>
+              </label>
+            </div>
+          </div>
           <div class="form-actions">
             <div class="form-error" id="upload-error"></div>
             <button class="ghost-button" type="submit" form="upload-form">

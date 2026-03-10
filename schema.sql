@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS cases (
   status TEXT,
   recent_status TEXT,
   filed_date DATE,
-  updated_at DATE,
+  updated_at TIMESTAMPTZ,
   updated_by TEXT,
   court TEXT,
   notes TEXT,

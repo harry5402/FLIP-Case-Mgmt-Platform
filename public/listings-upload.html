@@ -31,11 +31,63 @@
               <input type="file" name="file" accept=".csv" required />
             </label>
           </form>
+          <div id="mapping-panel" class="table-card hidden">
+            <div class="info-card-header">
+              <h3>Column Mapping</h3>
+            </div>
+            <div class="form-grid">
+              <label class="form-field">
+                <span>Seller (required)</span>
+                <select id="map-seller"></select>
+              </label>
+              <label class="form-field">
+                <span>Platform (required)</span>
+                <select id="map-platform"></select>
+              </label>
+              <label class="form-field">
+                <span>Product ID</span>
+                <select id="map-product-id"></select>
+              </label>
+              <label class="form-field">
+                <span>Title</span>
+                <select id="map-title"></select>
+              </label>
+              <label class="form-field">
+                <span>INF Type</span>
+                <select id="map-inf-type"></select>
+              </label>
+              <label class="form-field">
+                <span>URL</span>
+                <select id="map-url"></select>
+              </label>
+              <label class="form-field">
+                <span>Merchant ID</span>
+                <select id="map-merchant-id"></select>
+              </label>
+              <label class="form-field">
+                <span>Location / Country</span>
+                <select id="map-location"></select>
+              </label>
+              <label class="form-field">
+                <span>Screenshot Evidence</span>
+                <select id="map-screenshot-evidence"></select>
+              </label>
+              <label class="form-field">
+                <span>Notes / Remark</span>
+                <select id="map-remark"></select>
+              </label>
+            </div>
+          </div>
           <div class="form-actions">
             <div class="form-error" id="upload-error"></div>
-            <button class="ghost-button" type="submit" form="upload-form">
-              Import Listings
-            </button>
+            <div class="tab-switch">
+              <button class="ghost-button" id="patch-defendants-button" type="button">
+                Patch Defendants Only
+              </button>
+              <button class="ghost-button" type="submit" form="upload-form">
+                Import Listings
+              </button>
+            </div>
           </div>
           <div id="upload-result" class="toast hidden"></div>
         </div>

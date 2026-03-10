@@ -242,6 +242,19 @@ const ensureAuditLogTable = async () => {
   );
 };
 
+const ensureCaseUpdatedAtTimestamp = async () => {
+  await query(`
+    ALTER TABLE cases
+    ALTER COLUMN updated_at TYPE TIMESTAMPTZ
+    USING (
+      CASE
+        WHEN updated_at IS NULL THEN NULL
+        ELSE updated_at AT TIME ZONE 'UTC'
+      END
+    )
+  `);
+};
+
 const ensureAdminUser = async () => {
   const passwordHash = hashPassword(ADMIN_PASSWORD);
   await query(
@@ -747,6 +760,16 @@ const mapIpClaim = (row) => ({
   defendantCount: row.defendant_count,
 });
 
+const touchCase = async (caseId, session) => {
+  await query(
+    `UPDATE cases
+     SET updated_at = NOW(),
+         updated_by = $2
+     WHERE id = $1`,
+    [caseId, session?.name || session?.email || "System"]
+  );
+};
+
 app.get("/api/cases", async (req, res) => {
   const result = await query("SELECT * FROM cases ORDER BY created_at DESC");
   res.json(result.rows.map(mapCase));
@@ -780,7 +803,7 @@ app.post("/api/cases", async (req, res) => {
     return res.status(400).json({ error: "caseName and clientName are required" });
   }
 
-  const now = new Date().toISOString().slice(0, 10);
+  const now = new Date().toISOString();
   const result = await query(
     `INSERT INTO cases
       (case_name, client_name, plaintiff, brand_name, ip_claims_summary, plaintiff_profit_per_unit,
@@ -830,9 +853,9 @@ app.put("/api/cases/:id", async (req, res) => {
     judge,
     status,
     updatedBy,
-    updatedAt,
     notes,
   } = req.body;
+  const actor = req.session?.name || req.session?.email || updatedBy || null;
 
   const existing = await query("SELECT * FROM cases WHERE id = $1", [req.params.id]);
   if (!existing.rows.length) {
@@ -852,10 +875,10 @@ app.put("/api/cases/:id", async (req, res) => {
       judge = COALESCE($9, judge),
       status = COALESCE($10, status),
       updated_by = COALESCE($11, updated_by),
-      updated_at = COALESCE($12, updated_at),
+      updated_at = NOW(),
       court = COALESCE($7, court),
-      notes = COALESCE($13, notes)
-     WHERE id = $14
+      notes = COALESCE($12, notes)
+     WHERE id = $13
      RETURNING *`,
     [
       caseName,
@@ -868,8 +891,7 @@ app.put("/api/cases/:id", async (req, res) => {
       caseNumber,
       judge,
       status,
-      updatedBy,
-      updatedAt,
+      actor,
       notes,
       req.params.id,
     ]
@@ -931,6 +953,7 @@ app.post("/api/cases/:id/ip-claims", async (req, res) => {
     ]
   );
   const created = mapIpClaim(result.rows[0]);
+  await touchCase(req.params.id, req.session);
   await writeAuditLog(req, {
     action: "ip_claims.create",
     entityType: "ip_claim",
@@ -989,6 +1012,7 @@ app.put("/api/ip-claims/:id", async (req, res) => {
     ]
   );
   const updated = mapIpClaim(result.rows[0]);
+  await touchCase(existing.rows[0].case_id, req.session);
   await writeAuditLog(req, {
     action: "ip_claims.update",
     entityType: "ip_claim",
@@ -1021,15 +1045,70 @@ app.post(
       return res.status(400).json({ error: "No rows found in CSV" });
     }
 
-    const headerKeys = Object.keys(records[0] || {}).map((key) =>
-      key.trim().toUpperCase()
+    const headers = Object.keys(records[0] || {});
+    const normalizedHeaderMap = new Map(
+      headers.map((header) => [
+        String(header || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, ""),
+        header,
+      ])
     );
-    if (!headerKeys.includes("SELLER") || !headerKeys.includes("PLATFORM")) {
+    const parseMapping = (raw) => {
+      if (!raw) return {};
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return {};
+      }
+    };
+    const mappingInput = parseMapping(req.body?.mapping);
+    const resolveHeader = (...candidates) => {
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        const direct = headers.find((h) => h === candidate);
+        if (direct) return direct;
+        const normalized = String(candidate)
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "");
+        if (normalizedHeaderMap.has(normalized)) {
+          return normalizedHeaderMap.get(normalized);
+        }
+      }
+      return null;
+    };
+
+    const mappedHeaders = {
+      seller: resolveHeader(mappingInput.seller, "SELLER", "Seller"),
+      platform: resolveHeader(mappingInput.platform, "PLATFORM", "Platform"),
+      businessName: resolveHeader(
+        mappingInput.businessName,
+        "BUSINESS NAME",
+        "BusinessName"
+      ),
+      locatedIn: resolveHeader(mappingInput.locatedIn, "LOCATED IN", "LocatedIn"),
+      sellerLocation: resolveHeader(
+        mappingInput.sellerLocation,
+        "SELLER LOCATION",
+        "SellerLocation"
+      ),
+      sellerUrl: resolveHeader(mappingInput.sellerUrl, "SELLER_URL", "SellerURL"),
+    };
+
+    if (!mappedHeaders.seller || !mappedHeaders.platform) {
       return res.status(400).json({
         error:
-          "CSV headers must include SELLER and PLATFORM. Please upload the sellers CSV.",
+          "Seller and Platform mappings are required. Please map both columns.",
       });
     }
+
+    const valueFromRow = (row, key) => {
+      const header = mappedHeaders[key];
+      if (!header) return "";
+      return String(row[header] || "").trim();
+    };
 
     const existing = await query(
       "SELECT doe_number FROM defendants WHERE case_id = $1",
@@ -1046,9 +1125,7 @@ app.post(
     let index = 1;
     let doeCounter = maxDoe;
 
-    const filtered = records.filter(
-      (row) => (row.SELLER || row.Seller || "").trim() !== ""
-    );
+    const filtered = records.filter((row) => valueFromRow(row, "seller") !== "");
 
     filtered.forEach((row) => {
       doeCounter += 1;
@@ -1056,15 +1133,15 @@ app.post(
         req.params.id,
         `Doe ${doeCounter}`,
         "",
-        row.PLATFORM || row.Platform || "",
+        valueFromRow(row, "platform"),
         "",
         "",
-        row.SELLER || row.Seller || "",
+        valueFromRow(row, "seller"),
         "",
-        row["BUSINESS NAME"] || row.BusinessName || "",
-        row["LOCATED IN"] || row.LocatedIn || "",
-        row["SELLER LOCATION"] || row.SellerLocation || "",
-        row["SELLER_URL"] || row.SellerURL || "",
+        valueFromRow(row, "businessName"),
+        valueFromRow(row, "locatedIn"),
+        valueFromRow(row, "sellerLocation"),
+        valueFromRow(row, "sellerUrl"),
         "",
         "",
         ""
@@ -1087,12 +1164,17 @@ app.post(
        VALUES ${placeholders.join(",")}`,
       values
     );
+    await touchCase(req.params.id, req.session);
     await writeAuditLog(req, {
       action: "defendants.bulk_import",
       entityType: "case",
       entityId: req.params.id,
       before: null,
-      after: { imported: filtered.length, startingDoe: maxDoe + 1 },
+      after: {
+        imported: filtered.length,
+        startingDoe: maxDoe + 1,
+        mapping: mappedHeaders,
+      },
     });
 
     res.json({ imported: filtered.length, startingDoe: maxDoe + 1 });
@@ -1486,15 +1568,68 @@ app.post(
       return res.status(400).json({ error: "No rows found in CSV" });
     }
 
-    const headerKeys = Object.keys(records[0] || {}).map((key) =>
-      key.trim().toUpperCase()
+    const headers = Object.keys(records[0] || {});
+    const normalizedHeaderMap = new Map(
+      headers.map((header) => [
+        String(header || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, ""),
+        header,
+      ])
     );
-    if (!headerKeys.includes("SELLER") || !headerKeys.includes("PLATFORM")) {
+    const parseMapping = (raw) => {
+      if (!raw) return {};
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return {};
+      }
+    };
+    const mappingInput = parseMapping(req.body?.mapping);
+    const resolveHeader = (...candidates) => {
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        const direct = headers.find((h) => h === candidate);
+        if (direct) return direct;
+        const normalized = String(candidate)
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "");
+        if (normalizedHeaderMap.has(normalized)) {
+          return normalizedHeaderMap.get(normalized);
+        }
+      }
+      return null;
+    };
+
+    const mappedHeaders = {
+      seller: resolveHeader(mappingInput.seller, "SELLER", "Seller"),
+      platform: resolveHeader(mappingInput.platform, "PLATFORM", "Platform"),
+      productId: resolveHeader(mappingInput.productId, "No.", "No", "PRODUCT ID"),
+      title: resolveHeader(mappingInput.title, "TITLE", "Title"),
+      infType: resolveHeader(mappingInput.infType, "INF_TYPE", "InfType", "INF Type"),
+      url: resolveHeader(mappingInput.url, "URL", "Url"),
+      screenshotEvidence: resolveHeader(
+        mappingInput.screenshotEvidence,
+        "SCREENSHOT EVIDENCE",
+        "ScreenshotEvidence"
+      ),
+      remark: resolveHeader(mappingInput.remark, "REMARK", "Remark"),
+    };
+
+    if (!mappedHeaders.seller || !mappedHeaders.platform) {
       return res.status(400).json({
         error:
-          "CSV headers must include SELLER and PLATFORM. Please upload the listings CSV.",
+          "Seller and Platform mappings are required. Please map both columns.",
       });
     }
+
+    const valueFromRow = (row, key) => {
+      const header = mappedHeaders[key];
+      if (!header) return "";
+      return String(row[header] || "").trim();
+    };
 
     const defendants = await query(
       "SELECT id, platform, name FROM defendants WHERE case_id = $1",
@@ -1515,8 +1650,8 @@ app.post(
     let skipped = 0;
 
     records.forEach((row) => {
-      const platform = (row.PLATFORM || row.Platform || "").trim();
-      const seller = (row.SELLER || row.Seller || "").trim();
+      const platform = valueFromRow(row, "platform");
+      const seller = valueFromRow(row, "seller");
       const key = `${platform.toLowerCase()}|${seller.toLowerCase()}`;
       const defendantId = byKey.get(key);
       if (!defendantId) {
@@ -1527,15 +1662,15 @@ app.post(
       imported += 1;
       values.push(
         defendantId,
-        row["No."] || row.No || "",
+        valueFromRow(row, "productId"),
         "",
-        row.TITLE || row.Title || "",
-        row.INF_TYPE || row.InfType || "",
-        row.URL || row.Url || "",
-        row["SCREENSHOT EVIDENCE"] || row.ScreenshotEvidence || "",
+        valueFromRow(row, "title"),
+        valueFromRow(row, "infType"),
+        valueFromRow(row, "url"),
+        valueFromRow(row, "screenshotEvidence"),
         "",
         "",
-        row.REMARK || row.Remark || "",
+        valueFromRow(row, "remark"),
         ""
       );
       placeholders.push(
@@ -1555,6 +1690,7 @@ app.post(
        VALUES ${placeholders.join(",")}`,
       values
     );
+    await touchCase(req.params.id, req.session);
 
     await query(
       `UPDATE defendants d
@@ -1573,10 +1709,172 @@ app.post(
       entityType: "case",
       entityId: req.params.id,
       before: null,
-      after: { imported, skipped },
+      after: { imported, skipped, mapping: mappedHeaders },
     });
 
     res.json({ imported, skipped });
+  }
+);
+
+app.post(
+  "/api/cases/:id/defendants/patch-from-listings",
+  upload.single("file"),
+  async (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "CSV file is required" });
+    }
+    if (!isFileExtensionAllowed(req.file.originalname, [".csv"])) {
+      return res.status(400).json({ error: "Only .csv files are allowed" });
+    }
+
+    const csvText = req.file.buffer.toString("utf-8");
+    const records = parse(csvText, {
+      columns: true,
+      skip_empty_lines: true,
+      trim: true,
+    });
+    if (!records.length) {
+      return res.status(400).json({ error: "No rows found in CSV" });
+    }
+
+    const headers = Object.keys(records[0] || {});
+    const normalizedHeaderMap = new Map(
+      headers.map((header) => [
+        String(header || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, ""),
+        header,
+      ])
+    );
+    const parseMapping = (raw) => {
+      if (!raw) return {};
+      try {
+        return JSON.parse(raw);
+      } catch {
+        return {};
+      }
+    };
+    const mappingInput = parseMapping(req.body?.mapping);
+    const resolveHeader = (...candidates) => {
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        const direct = headers.find((h) => h === candidate);
+        if (direct) return direct;
+        const normalized = String(candidate)
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, "");
+        if (normalizedHeaderMap.has(normalized)) {
+          return normalizedHeaderMap.get(normalized);
+        }
+      }
+      return null;
+    };
+
+    const mappedHeaders = {
+      seller: resolveHeader(mappingInput.seller, "SELLER", "Seller"),
+      platform: resolveHeader(mappingInput.platform, "PLATFORM", "Platform"),
+      merchantId: resolveHeader(mappingInput.merchantId, "MERCHANT ID", "Merchant ID"),
+      location: resolveHeader(
+        mappingInput.location,
+        "MERCHANT COUNTRY",
+        "Merchant Country",
+        "Location",
+        "Located In"
+      ),
+    };
+
+    if (!mappedHeaders.seller || !mappedHeaders.platform) {
+      return res.status(400).json({
+        error: "Seller and Platform mappings are required.",
+      });
+    }
+    if (!mappedHeaders.merchantId && !mappedHeaders.location) {
+      return res.status(400).json({
+        error: "Map at least Merchant ID or Location to patch defendants.",
+      });
+    }
+
+    const valueFromRow = (row, key) => {
+      const header = mappedHeaders[key];
+      if (!header) return "";
+      return String(row[header] || "").trim();
+    };
+
+    const defendants = await query(
+      "SELECT id, platform, name, merchant_id, located_in FROM defendants WHERE case_id = $1",
+      [req.params.id]
+    );
+    const byKey = new Map();
+    defendants.rows.forEach((row) => {
+      const key = `${(row.platform || "").toLowerCase()}|${(row.name || "")
+        .toLowerCase()
+        .trim()}`;
+      byKey.set(key, row);
+    });
+
+    let matched = 0;
+    let skipped = 0;
+    const patchMap = new Map();
+
+    records.forEach((row) => {
+      const platform = valueFromRow(row, "platform");
+      const seller = valueFromRow(row, "seller");
+      if (!platform || !seller) {
+        skipped += 1;
+        return;
+      }
+      const key = `${platform.toLowerCase()}|${seller.toLowerCase()}`;
+      const defendant = byKey.get(key);
+      if (!defendant) {
+        skipped += 1;
+        return;
+      }
+      matched += 1;
+      const merchantId = valueFromRow(row, "merchantId");
+      const location = valueFromRow(row, "location");
+      if (!merchantId && !location) return;
+      const existing = patchMap.get(defendant.id) || {};
+      patchMap.set(defendant.id, {
+        merchantId: existing.merchantId || merchantId || "",
+        location: existing.location || location || "",
+      });
+    });
+
+    let patched = 0;
+    for (const [defendantId, patch] of patchMap.entries()) {
+      const result = await query(
+        `UPDATE defendants
+         SET merchant_id = COALESCE(NULLIF($2, ''), merchant_id),
+             located_in = COALESCE(NULLIF($3, ''), located_in),
+             updated_at = CURRENT_DATE,
+             updated_by = $4
+         WHERE id = $1
+         RETURNING id`,
+        [
+          defendantId,
+          patch.merchantId || "",
+          patch.location || "",
+          req.session?.name || req.session?.email || "System",
+        ]
+      );
+      if (result.rows.length) patched += 1;
+    }
+
+    if (patched > 0) {
+      await touchCase(req.params.id, req.session);
+    }
+
+    await writeAuditLog(req, {
+      action: "defendants.patch_from_listings",
+      entityType: "case",
+      entityId: req.params.id,
+      before: null,
+      after: { patched, matched, skipped, mapping: mappedHeaders },
+    });
+
+    res.json({ patched, matched, skipped });
   }
 );
 
@@ -1912,6 +2210,7 @@ app.use((err, req, res, next) => {
 
 const start = async () => {
   await ensureAuditLogTable();
+  await ensureCaseUpdatedAtTimestamp();
   await ensureAdminUser();
   app.listen(PORT, () => {
     console.log(`API running on http://localhost:${PORT}`);
