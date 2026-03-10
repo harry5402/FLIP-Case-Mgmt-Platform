@@ -215,6 +215,26 @@ const completeTask = async (taskId) => {
   return null;
 };
 
+const logoutAllSessions = async () => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/auth/logout-all`, {
+      method: "POST",
+    });
+    return response.json();
+  }
+  return null;
+};
+
+const adminLogoutUserSessions = async (userId) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/users/${userId}/logout-all`, {
+      method: "POST",
+    });
+    return response.json();
+  }
+  return null;
+};
+
 const loadCaseTemplates = async (caseId) => {
   if (USE_API) {
     const response = await authFetch(`${API_BASE}/api/cases/${caseId}/templates`);

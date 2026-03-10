@@ -12,6 +12,12 @@
       <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
       <div class="tab-switch">
         <a id="users-link" class="ghost-button hidden" href="users.html">Users</a>
+        <button id="change-password-button" class="ghost-button hidden" type="button">
+          Change Password
+        </button>
+        <button id="logout-all-button" class="ghost-button" type="button">
+          Log Out All Sessions
+        </button>
         <button id="logout-button" class="ghost-button" type="button">Logout</button>
       </div>
     </header>
@@ -42,6 +48,44 @@
         <div id="case-groups" class="group-stack"></div>
       </section>
     </main>
+
+    <div id="password-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="panel-header-row">
+          <div>
+            <h2>Change Password</h2>
+            <div class="muted">Update your account password</div>
+          </div>
+          <button class="ghost-button" id="close-password-modal" type="button">
+            Close
+          </button>
+        </div>
+        <form id="password-form" class="form-grid">
+          <label class="form-field">
+            Current Password
+            <input id="old-password" type="password" autocomplete="current-password" required />
+          </label>
+          <label class="form-field">
+            New Password
+            <input id="new-password" type="password" autocomplete="new-password" minlength="8" required />
+          </label>
+          <label class="form-field">
+            Confirm New Password
+            <input
+              id="confirm-password"
+              type="password"
+              autocomplete="new-password"
+              minlength="8"
+              required
+            />
+          </label>
+        </form>
+        <div class="form-actions">
+          <div id="password-error" class="form-error"></div>
+          <button class="ghost-button" type="submit" form="password-form">Save</button>
+        </div>
+      </div>
+    </div>
 
     <script src="auth.js"></script>
     <script>

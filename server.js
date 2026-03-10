@@ -20,6 +20,11 @@ const parsePositiveInt = (value, fallback) => {
 
 const SESSION_TTL_HOURS = parsePositiveInt(process.env.SESSION_TTL_HOURS, 12);
 const SESSION_TTL_MS = SESSION_TTL_HOURS * 60 * 60 * 1000;
+const IDLE_TIMEOUT_MINUTES = parsePositiveInt(
+  process.env.IDLE_TIMEOUT_MINUTES,
+  60
+);
+const IDLE_TIMEOUT_MS = IDLE_TIMEOUT_MINUTES * 60 * 1000;
 const LOGIN_MAX_ATTEMPTS = parsePositiveInt(process.env.LOGIN_MAX_ATTEMPTS, 8);
 const LOGIN_WINDOW_MS =
   parsePositiveInt(process.env.LOGIN_WINDOW_MINUTES, 15) * 60 * 1000;
@@ -102,7 +107,11 @@ if (isProduction && (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD)) {
 setInterval(() => {
   const now = Date.now();
   for (const [token, session] of sessions.entries()) {
-    if (!session.expiresAt || session.expiresAt <= now) {
+    if (
+      !session.expiresAt ||
+      session.expiresAt <= now ||
+      (session.lastActivityAt && now - session.lastActivityAt > IDLE_TIMEOUT_MS)
+    ) {
       sessions.delete(token);
     }
   }
@@ -154,10 +163,16 @@ const sessionFromRequest = (req) => {
   if (!token) return null;
   const session = sessions.get(token) || null;
   if (!session) return null;
-  if (Date.now() > session.expiresAt) {
+  const now = Date.now();
+  if (now > session.expiresAt) {
     sessions.delete(token);
     return null;
   }
+  if (session.lastActivityAt && now - session.lastActivityAt > IDLE_TIMEOUT_MS) {
+    sessions.delete(token);
+    return null;
+  }
+  session.lastActivityAt = now;
   return session;
 };
 
@@ -175,6 +190,56 @@ const requireAdmin = (req, res, next) => {
     return res.status(403).json({ error: "Admin access required" });
   }
   next();
+};
+
+const safeJson = (value) => {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return JSON.stringify({ error: "unserializable" });
+  }
+};
+
+const writeAuditLog = async (req, entry) => {
+  try {
+    await query(
+      `INSERT INTO audit_logs
+        (user_id, user_email, action, entity_type, entity_id, before_data, after_data, metadata)
+       VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8::jsonb)`,
+      [
+        req.session?.userId || null,
+        req.session?.email || null,
+        entry.action,
+        entry.entityType,
+        entry.entityId || null,
+        safeJson(entry.before),
+        safeJson(entry.after),
+        safeJson(entry.metadata),
+      ]
+    );
+  } catch (error) {
+    console.error("Failed to write audit log:", error.message);
+  }
+};
+
+const ensureAuditLogTable = async () => {
+  await query(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+      user_email TEXT,
+      action TEXT NOT NULL,
+      entity_type TEXT NOT NULL,
+      entity_id TEXT,
+      before_data JSONB,
+      after_data JSONB,
+      metadata JSONB,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await query(
+    "CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs (created_at DESC)"
+  );
 };
 
 const ensureAdminUser = async () => {
@@ -239,6 +304,7 @@ app.post("/api/auth/login", async (req, res) => {
     email: user.email,
     role: user.role,
     createdAt: Date.now(),
+    lastActivityAt: Date.now(),
     expiresAt: Date.now() + SESSION_TTL_MS,
   };
   sessions.set(token, session);
@@ -251,15 +317,89 @@ app.post("/api/auth/login", async (req, res) => {
       email: user.email,
       role: user.role,
     },
+    session: {
+      idleTimeoutMinutes: IDLE_TIMEOUT_MINUTES,
+      sessionTtlHours: SESSION_TTL_HOURS,
+    },
   });
 });
 
 app.get("/api/auth/me", requireSession, async (req, res) => {
-  res.json({ user: req.session });
+  res.json({
+    user: req.session,
+    session: {
+      idleTimeoutMinutes: IDLE_TIMEOUT_MINUTES,
+      sessionTtlHours: SESSION_TTL_HOURS,
+    },
+  });
 });
 
 app.post("/api/auth/logout", requireSession, async (req, res) => {
   sessions.delete(req.session.token);
+  res.json({ ok: true });
+});
+
+app.post("/api/auth/logout-all", requireSession, async (req, res) => {
+  let deleted = 0;
+  for (const [token, session] of sessions.entries()) {
+    if (session.userId === req.session.userId) {
+      sessions.delete(token);
+      deleted += 1;
+    }
+  }
+  await writeAuditLog(req, {
+    action: "auth.logout_all",
+    entityType: "user",
+    entityId: req.session.userId,
+    before: null,
+    after: { sessionsInvalidated: deleted },
+  });
+  res.json({ ok: true, sessionsInvalidated: deleted });
+});
+
+app.post("/api/auth/change-password", requireSession, async (req, res) => {
+  const { oldPassword, newPassword } = req.body || {};
+  if (!oldPassword || !newPassword) {
+    return res
+      .status(400)
+      .json({ error: "Old password and new password are required." });
+  }
+  if (String(newPassword).length < 8) {
+    return res
+      .status(400)
+      .json({ error: "New password must be at least 8 characters." });
+  }
+  if (oldPassword === newPassword) {
+    return res
+      .status(400)
+      .json({ error: "New password must be different from old password." });
+  }
+
+  const userResult = await query(
+    "SELECT id, password_hash FROM users WHERE id = $1 LIMIT 1",
+    [req.session.userId]
+  );
+  if (!userResult.rows.length) {
+    return res.status(404).json({ error: "User not found." });
+  }
+  const user = userResult.rows[0];
+  if (!verifyPassword(oldPassword, user.password_hash)) {
+    return res.status(401).json({ error: "Current password is incorrect." });
+  }
+
+  await query("UPDATE users SET password_hash = $2 WHERE id = $1", [
+    req.session.userId,
+    hashPassword(newPassword),
+  ]);
+  await writeAuditLog(req, {
+    action: "auth.change_password",
+    entityType: "user",
+    entityId: req.session.userId,
+    before: null,
+    after: { changed: true },
+    metadata: { source: "self_service" },
+  });
+
   res.json({ ok: true });
 });
 
@@ -282,7 +422,57 @@ app.post("/api/users", requireSession, requireAdmin, async (req, res) => {
      RETURNING id, name, email, role, created_at`,
     [name || "", email.trim(), passwordHash]
   );
+  await writeAuditLog(req, {
+    action: "users.create",
+    entityType: "user",
+    entityId: result.rows[0].id,
+    before: null,
+    after: result.rows[0],
+  });
   res.status(201).json(result.rows[0]);
+});
+
+app.post("/api/users/:id/logout-all", requireSession, requireAdmin, async (req, res) => {
+  const userResult = await query(
+    "SELECT id, email FROM users WHERE id = $1 LIMIT 1",
+    [req.params.id]
+  );
+  if (!userResult.rows.length) {
+    return res.status(404).json({ error: "User not found." });
+  }
+
+  let deleted = 0;
+  for (const [token, session] of sessions.entries()) {
+    if (session.userId === req.params.id) {
+      sessions.delete(token);
+      deleted += 1;
+    }
+  }
+
+  await writeAuditLog(req, {
+    action: "admin.logout_all_sessions",
+    entityType: "user",
+    entityId: req.params.id,
+    before: null,
+    after: {
+      sessionsInvalidated: deleted,
+      targetEmail: userResult.rows[0].email,
+    },
+  });
+
+  res.json({ ok: true, sessionsInvalidated: deleted });
+});
+
+app.get("/api/audit-logs", requireSession, requireAdmin, async (req, res) => {
+  const limit = Math.min(parsePositiveInt(req.query.limit, 100), 500);
+  const result = await query(
+    `SELECT id, user_id, user_email, action, entity_type, entity_id, before_data, after_data, metadata, created_at
+     FROM audit_logs
+     ORDER BY created_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  res.json(result.rows);
 });
 
 app.use("/api", requireSession);
@@ -346,6 +536,13 @@ app.post("/api/tasks", async (req, res) => {
       req.session.userId,
     ]
   );
+  await writeAuditLog(req, {
+    action: "tasks.create",
+    entityType: "task",
+    entityId: result.rows[0].id,
+    before: null,
+    after: result.rows[0],
+  });
   res.status(201).json(result.rows[0]);
 });
 
@@ -370,6 +567,13 @@ app.post("/api/groups/:id/tasks", async (req, res) => {
      RETURNING *`,
     [caseId, req.params.id, taskType, assignedToUserId, dueDate, req.session.userId]
   );
+  await writeAuditLog(req, {
+    action: "tasks.create_group",
+    entityType: "task",
+    entityId: result.rows[0].id,
+    before: null,
+    after: result.rows[0],
+  });
 
   res.status(201).json(result.rows[0]);
 });
@@ -387,6 +591,13 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
   if (!result.rows.length) {
     return res.status(404).json({ error: "Task not found." });
   }
+  await writeAuditLog(req, {
+    action: "tasks.complete",
+    entityType: "task",
+    entityId: req.params.id,
+    before: { status: "Open" },
+    after: { status: "Complete" },
+  });
 
   res.json({ ok: true });
 });
@@ -453,6 +664,18 @@ app.post(
     );
 
     const row = result.rows[0];
+    await writeAuditLog(req, {
+      action: "templates.upload",
+      entityType: "case_template",
+      entityId: row.id,
+      before: null,
+      after: {
+        caseId: req.params.id,
+        displayName: row.display_name,
+        templateFileUrl: row.template_file_url || row.file_url,
+        dataFileUrl: row.data_file_url || null,
+      },
+    });
     res.status(201).json({
       id: row.id,
       displayName: row.display_name,
@@ -567,6 +790,13 @@ app.post("/api/cases", async (req, res) => {
       notes || "",
     ]
   );
+  await writeAuditLog(req, {
+    action: "cases.create",
+    entityType: "case",
+    entityId: result.rows[0].id,
+    before: null,
+    after: mapCase(result.rows[0]),
+  });
 
   res.status(201).json(mapCase(result.rows[0]));
 });
@@ -587,6 +817,11 @@ app.put("/api/cases/:id", async (req, res) => {
     updatedAt,
     notes,
   } = req.body;
+
+  const existing = await query("SELECT * FROM cases WHERE id = $1", [req.params.id]);
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "Case not found" });
+  }
 
   const result = await query(
     `UPDATE cases SET
@@ -624,9 +859,13 @@ app.put("/api/cases/:id", async (req, res) => {
     ]
   );
 
-  if (result.rows.length === 0) {
-    return res.status(404).json({ error: "Case not found" });
-  }
+  await writeAuditLog(req, {
+    action: "cases.update",
+    entityType: "case",
+    entityId: req.params.id,
+    before: mapCase(existing.rows[0]),
+    after: mapCase(result.rows[0]),
+  });
 
   res.json(mapCase(result.rows[0]));
 });
@@ -719,6 +958,13 @@ app.post(
        VALUES ${placeholders.join(",")}`,
       values
     );
+    await writeAuditLog(req, {
+      action: "defendants.bulk_import",
+      entityType: "case",
+      entityId: req.params.id,
+      before: null,
+      after: { imported: filtered.length, startingDoe: maxDoe + 1 },
+    });
 
     res.json({ imported: filtered.length, startingDoe: maxDoe + 1 });
   }
@@ -933,6 +1179,11 @@ app.put("/api/groups/:id/negotiation", async (req, res) => {
     agreementUploaded,
   } = req.body;
 
+  const beforeResult = await query(
+    "SELECT * FROM group_negotiations WHERE group_id = $1 LIMIT 1",
+    [req.params.id]
+  );
+
   await query(
     `INSERT INTO group_negotiations
       (group_id, legal_status, plaintiff_last_offer, defendant_last_offer, settlement_date, settlement_amount, agreement_uploaded, updated_at)
@@ -1011,6 +1262,21 @@ app.put("/api/groups/:id/negotiation", async (req, res) => {
       ]
     );
   }
+  await writeAuditLog(req, {
+    action: "groups.negotiation_update",
+    entityType: "group",
+    entityId: req.params.id,
+    before: beforeResult.rows[0] || null,
+    after: {
+      legalStatus: legalStatus || null,
+      plaintiffLastOffer: plaintiffLastOffer ?? null,
+      defendantLastOffer: defendantLastOffer ?? null,
+      settlementDate: settlementDate || null,
+      settlementAmount: settlementAmount ?? null,
+      agreementUploaded: agreementUploaded || null,
+      appliedToDefendantCount: defendantIds.length,
+    },
+  });
 
   res.json({ ok: true });
 });
@@ -1047,6 +1313,21 @@ app.post("/api/cases/:id/groups", async (req, res) => {
      WHERE id = ANY($3::uuid[])`,
     [group.id, group.group_name, defendantIds]
   );
+  await writeAuditLog(req, {
+    action: "groups.create",
+    entityType: "group",
+    entityId: group.id,
+    before: null,
+    after: {
+      id: group.id,
+      caseId: req.params.id,
+      groupName: group.group_name,
+      plaintiffRepName: group.plaintiff_rep_name,
+      defendantRepEmail: group.defendant_rep_email,
+      status: group.status,
+      defendantIds,
+    },
+  });
 
   res.status(201).json({
     id: group.id,
@@ -1158,6 +1439,13 @@ app.post(
        WHERE d.id = l.defendant_id`,
       [req.params.id]
     );
+    await writeAuditLog(req, {
+      action: "listings.bulk_import",
+      entityType: "case",
+      entityId: req.params.id,
+      before: null,
+      after: { imported, skipped },
+    });
 
     res.json({ imported, skipped });
   }
@@ -1179,6 +1467,13 @@ app.put("/api/defendants/:id", async (req, res) => {
     updatedBy,
     notes,
   } = req.body;
+
+  const existing = await query("SELECT * FROM defendants WHERE id = $1", [
+    req.params.id,
+  ]);
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "Defendant not found" });
+  }
 
   const result = await query(
     `UPDATE defendants SET
@@ -1215,9 +1510,13 @@ app.put("/api/defendants/:id", async (req, res) => {
     ]
   );
 
-  if (result.rows.length === 0) {
-    return res.status(404).json({ error: "Defendant not found" });
-  }
+  await writeAuditLog(req, {
+    action: "defendants.update",
+    entityType: "defendant",
+    entityId: req.params.id,
+    before: existing.rows[0],
+    after: result.rows[0],
+  });
 
   res.json(result.rows[0]);
 });
@@ -1273,6 +1572,10 @@ app.put("/api/defendants/:id/negotiation", async (req, res) => {
     agreementUploaded,
   } = req.body;
 
+  const beforeResult = await query(
+    "SELECT * FROM negotiations WHERE defendant_id = $1 ORDER BY id LIMIT 1",
+    [req.params.id]
+  );
   const updated = await query(
     `UPDATE negotiations
      SET legal_status = $2,
@@ -1318,6 +1621,17 @@ app.put("/api/defendants/:id/negotiation", async (req, res) => {
      WHERE id = $1`,
     [req.params.id, legalStatus || null]
   );
+  const afterResult = await query(
+    "SELECT * FROM negotiations WHERE defendant_id = $1 ORDER BY id LIMIT 1",
+    [req.params.id]
+  );
+  await writeAuditLog(req, {
+    action: "defendants.negotiation_update",
+    entityType: "defendant",
+    entityId: req.params.id,
+    before: beforeResult.rows[0] || null,
+    after: afterResult.rows[0] || null,
+  });
 
   res.json({ ok: true });
 });
@@ -1349,6 +1663,10 @@ app.put("/api/defendants/:id/collection", async (req, res) => {
     totalCollectedAmount,
   } = req.body;
 
+  const beforeResult = await query(
+    "SELECT * FROM collections WHERE defendant_id = $1 ORDER BY id LIMIT 1",
+    [req.params.id]
+  );
   const updated = await query(
     `UPDATE collections
      SET settlement_collected_date = $2,
@@ -1383,6 +1701,17 @@ app.put("/api/defendants/:id/collection", async (req, res) => {
       ]
     );
   }
+  const afterResult = await query(
+    "SELECT * FROM collections WHERE defendant_id = $1 ORDER BY id LIMIT 1",
+    [req.params.id]
+  );
+  await writeAuditLog(req, {
+    action: "defendants.collection_update",
+    entityType: "defendant",
+    entityId: req.params.id,
+    before: beforeResult.rows[0] || null,
+    after: afterResult.rows[0] || null,
+  });
 
   res.json({ ok: true });
 });
@@ -1405,6 +1734,10 @@ app.get("/api/defendants/:id/bookkeeping", async (req, res) => {
 app.put("/api/defendants/:id/bookkeeping", async (req, res) => {
   const { status, agreementProcessed } = req.body;
 
+  const beforeResult = await query(
+    "SELECT * FROM bookkeeping WHERE defendant_id = $1 ORDER BY id LIMIT 1",
+    [req.params.id]
+  );
   const updated = await query(
     `UPDATE bookkeeping
      SET status = $2,
@@ -1421,6 +1754,17 @@ app.put("/api/defendants/:id/bookkeeping", async (req, res) => {
       [req.params.id, status || null, agreementProcessed || null]
     );
   }
+  const afterResult = await query(
+    "SELECT * FROM bookkeeping WHERE defendant_id = $1 ORDER BY id LIMIT 1",
+    [req.params.id]
+  );
+  await writeAuditLog(req, {
+    action: "defendants.bookkeeping_update",
+    entityType: "defendant",
+    entityId: req.params.id,
+    before: beforeResult.rows[0] || null,
+    after: afterResult.rows[0] || null,
+  });
 
   res.json({ ok: true });
 });
@@ -1438,6 +1782,7 @@ app.use((err, req, res, next) => {
 });
 
 const start = async () => {
+  await ensureAuditLogTable();
   await ensureAdminUser();
   app.listen(PORT, () => {
     console.log(`API running on http://localhost:${PORT}`);

@@ -15,14 +15,39 @@ const formatDate = (value) => {
 
 const renderUsers = (users) => {
   usersTableBody.innerHTML = "";
+  const currentUser = getUser();
   users.forEach((user) => {
     const row = document.createElement("tr");
+    const disableSelf = currentUser?.id === user.id;
     row.innerHTML = `
       <td>${user.name || "—"}</td>
       <td>${user.email}</td>
       <td>${user.role}</td>
       <td>${formatDate(user.created_at)}</td>
+      <td>
+        <button class="ghost-button logout-all-user" type="button" data-user-id="${user.id}" ${
+          disableSelf ? "disabled" : ""
+        }>
+          Log Out Sessions
+        </button>
+      </td>
     `;
+    const logoutButton = row.querySelector(".logout-all-user");
+    logoutButton.addEventListener("click", async () => {
+      const confirmed = window.confirm(
+        `Log out all sessions for ${user.email}?`
+      );
+      if (!confirmed) return;
+      const response = await authFetch(`/api/users/${user.id}/logout-all`, {
+        method: "POST",
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        usersError.textContent = payload?.error || "Unable to revoke sessions.";
+        return;
+      }
+      usersError.textContent = `Logged out ${payload.sessionsInvalidated || 0} session(s) for ${user.email}.`;
+    });
     usersTableBody.appendChild(row);
   });
 };
