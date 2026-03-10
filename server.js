@@ -10,20 +10,108 @@ const { query } = require("./db");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const NODE_ENV = process.env.NODE_ENV || "development";
+const isProduction = NODE_ENV === "production";
 
-app.use(cors());
-app.use(express.json());
-app.use(express.static(path.join(__dirname)));
+const parsePositiveInt = (value, fallback) => {
+  const parsed = Number.parseInt(String(value || ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const SESSION_TTL_HOURS = parsePositiveInt(process.env.SESSION_TTL_HOURS, 12);
+const SESSION_TTL_MS = SESSION_TTL_HOURS * 60 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = parsePositiveInt(process.env.LOGIN_MAX_ATTEMPTS, 8);
+const LOGIN_WINDOW_MS =
+  parsePositiveInt(process.env.LOGIN_WINDOW_MINUTES, 15) * 60 * 1000;
+const BODY_LIMIT = process.env.BODY_LIMIT || "1mb";
+const UPLOAD_MAX_FILE_MB = parsePositiveInt(process.env.UPLOAD_MAX_FILE_MB, 10);
+
+const allowedOriginSet = new Set(
+  String(process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+);
+if (!isProduction) {
+  allowedOriginSet.add("http://localhost:3000");
+  allowedOriginSet.add("http://127.0.0.1:3000");
+}
+
+app.disable("x-powered-by");
+app.set("trust proxy", 1);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Allow same-origin and server-to-server requests with no Origin header.
+      if (!origin) return callback(null, true);
+      if (allowedOriginSet.size === 0) return callback(null, true);
+      if (allowedOriginSet.has(origin)) return callback(null, true);
+      return callback(new Error("Blocked by CORS policy"));
+    },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+app.use(express.json({ limit: BODY_LIMIT }));
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+  res.setHeader("Cross-Origin-Resource-Policy", "same-origin");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';"
+  );
+  next();
+});
+if (isProduction) {
+  app.use((req, res, next) => {
+    const proto = req.headers["x-forwarded-proto"];
+    if (req.secure || proto === "https") return next();
+    return res.redirect(301, `https://${req.headers.host}${req.originalUrl}`);
+  });
+}
+
+const publicDir = path.join(__dirname, "public");
+app.use(express.static(publicDir, { dotfiles: "ignore" }));
 const uploadsDir = path.join(__dirname, "uploads");
 const templateUploadsDir = path.join(uploadsDir, "templates");
 fs.mkdirSync(templateUploadsDir, { recursive: true });
 app.use("/uploads", express.static(uploadsDir));
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: UPLOAD_MAX_FILE_MB * 1024 * 1024,
+    files: 2,
+  },
+});
 const sessions = new Map();
+const loginAttempts = new Map();
 
-const ADMIN_EMAIL = "hlesak@fleneriplaw.com";
-const ADMIN_PASSWORD = "Flener224!!";
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "hlesak@fleneriplaw.com";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Flener224!!";
+if (isProduction && (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD)) {
+  throw new Error(
+    "Set ADMIN_EMAIL and ADMIN_PASSWORD in production environment variables."
+  );
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, session] of sessions.entries()) {
+    if (!session.expiresAt || session.expiresAt <= now) {
+      sessions.delete(token);
+    }
+  }
+  for (const [key, attempt] of loginAttempts.entries()) {
+    if (now > attempt.windowStart + LOGIN_WINDOW_MS * 2) {
+      loginAttempts.delete(key);
+    }
+  }
+}, 60 * 1000).unref();
 
 const hashPassword = (password) => {
   const salt = crypto.randomBytes(16).toString("hex");
@@ -38,11 +126,39 @@ const verifyPassword = (password, stored) => {
   return crypto.timingSafeEqual(Buffer.from(actual), Buffer.from(expected));
 };
 
+const loginAttemptKey = (req, email) => {
+  const ip = req.ip || req.headers["x-forwarded-for"] || "unknown";
+  return `${String(ip)}|${String(email || "").trim().toLowerCase()}`;
+};
+
+const getLoginAttemptState = (key) => {
+  const now = Date.now();
+  const current = loginAttempts.get(key);
+  if (!current) return { count: 0, windowStart: now, blockedUntil: 0 };
+  if (now > current.windowStart + LOGIN_WINDOW_MS) {
+    const reset = { count: 0, windowStart: now, blockedUntil: 0 };
+    loginAttempts.set(key, reset);
+    return reset;
+  }
+  return current;
+};
+
+const isFileExtensionAllowed = (fileName, allowedExtensions) => {
+  const ext = path.extname(fileName || "").toLowerCase();
+  return allowedExtensions.includes(ext);
+};
+
 const sessionFromRequest = (req) => {
   const auth = req.headers.authorization || "";
   const token = auth.startsWith("Bearer ") ? auth.slice(7) : null;
   if (!token) return null;
-  return sessions.get(token) || null;
+  const session = sessions.get(token) || null;
+  if (!session) return null;
+  if (Date.now() > session.expiresAt) {
+    sessions.delete(token);
+    return null;
+  }
+  return session;
 };
 
 const requireSession = (req, res, next) => {
@@ -79,18 +195,41 @@ app.post("/api/auth/login", async (req, res) => {
   if (!email || !password) {
     return res.status(400).json({ error: "Email and password are required." });
   }
+  const emailTrimmed = email.trim();
+  const attemptKey = loginAttemptKey(req, emailTrimmed);
+  const attemptState = getLoginAttemptState(attemptKey);
+  if (attemptState.blockedUntil && Date.now() < attemptState.blockedUntil) {
+    return res.status(429).json({
+      error: "Too many failed login attempts. Try again in a few minutes.",
+    });
+  }
 
   const result = await query("SELECT * FROM users WHERE lower(email) = lower($1)", [
-    email.trim(),
+    emailTrimmed,
   ]);
   if (!result.rows.length) {
+    const nextCount = attemptState.count + 1;
+    loginAttempts.set(attemptKey, {
+      count: nextCount,
+      windowStart: attemptState.windowStart,
+      blockedUntil:
+        nextCount >= LOGIN_MAX_ATTEMPTS ? Date.now() + LOGIN_WINDOW_MS : 0,
+    });
     return res.status(401).json({ error: "Invalid credentials." });
   }
 
   const user = result.rows[0];
   if (!verifyPassword(password, user.password_hash)) {
+    const nextCount = attemptState.count + 1;
+    loginAttempts.set(attemptKey, {
+      count: nextCount,
+      windowStart: attemptState.windowStart,
+      blockedUntil:
+        nextCount >= LOGIN_MAX_ATTEMPTS ? Date.now() + LOGIN_WINDOW_MS : 0,
+    });
     return res.status(401).json({ error: "Invalid credentials." });
   }
+  loginAttempts.delete(attemptKey);
 
   const token = crypto.randomUUID();
   const session = {
@@ -99,6 +238,8 @@ app.post("/api/auth/login", async (req, res) => {
     name: user.name || "",
     email: user.email,
     role: user.role,
+    createdAt: Date.now(),
+    expiresAt: Date.now() + SESSION_TTL_MS,
   };
   sessions.set(token, session);
 
@@ -263,6 +404,18 @@ app.post(
       return res
         .status(400)
         .json({ error: "Both template files are required." });
+    }
+    const templateAllowed = [".doc", ".docx"];
+    const dataAllowed = [".csv", ".xlsx", ".xls"];
+    if (!isFileExtensionAllowed(templateFile.originalname, templateAllowed)) {
+      return res.status(400).json({
+        error: "Template file must be .doc or .docx",
+      });
+    }
+    if (!isFileExtensionAllowed(dataFile.originalname, dataAllowed)) {
+      return res.status(400).json({
+        error: "Merge data file must be .csv, .xlsx, or .xls",
+      });
     }
 
     const saveUpload = (file) => {
@@ -484,6 +637,9 @@ app.post(
   async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "CSV file is required" });
+    }
+    if (!isFileExtensionAllowed(req.file.originalname, [".csv"])) {
+      return res.status(400).json({ error: "Only .csv files are allowed" });
     }
 
     const csvText = req.file.buffer.toString("utf-8");
@@ -905,6 +1061,9 @@ app.post(
     if (!req.file) {
       return res.status(400).json({ error: "CSV file is required" });
     }
+    if (!isFileExtensionAllowed(req.file.originalname, [".csv"])) {
+      return res.status(400).json({ error: "Only .csv files are allowed" });
+    }
 
     const csvText = req.file.buffer.toString("utf-8");
     const records = parse(csvText, {
@@ -1264,6 +1423,18 @@ app.put("/api/defendants/:id/bookkeeping", async (req, res) => {
   }
 
   res.json({ ok: true });
+});
+
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
+
+app.use((err, req, res, next) => {
+  if (err && err.message === "Blocked by CORS policy") {
+    return res.status(403).json({ error: "Origin not allowed." });
+  }
+  console.error(err);
+  return res.status(500).json({ error: "Internal server error" });
 });
 
 const start = async () => {

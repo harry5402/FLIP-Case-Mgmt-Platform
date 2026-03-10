@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FLIP Case Management</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="header-spacer"></div>
+      <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
+      <div class="tab-switch">
+        <a id="users-link" class="ghost-button hidden" href="users.html">Users</a>
+        <button id="logout-button" class="ghost-button" type="button">Logout</button>
+      </div>
+    </header>
+
+    <main class="layout single">
+      <section class="panel" id="tasks">
+        <div class="panel-header">
+          <div class="panel-header-row">
+            <div>
+              <h2>My Tasks</h2>
+              <div class="muted">Assigned to you</div>
+            </div>
+          </div>
+        </div>
+        <div id="tasks-list" class="list"></div>
+      </section>
+
+      <section class="panel" id="dashboard">
+        <div class="panel-header">
+          <div class="panel-header-row">
+            <div>
+              <h2>Cases</h2>
+              <div class="muted">Grouped by status</div>
+            </div>
+            <a class="ghost-button" href="new-case.html">New Case</a>
+          </div>
+        </div>
+        <div id="case-groups" class="group-stack"></div>
+      </section>
+    </main>
+
+    <script src="auth.js"></script>
+    <script>
+      requireAuth();
+    </script>
+    <script src="data.js"></script>
+    <script src="dashboard.js"></script>
+  </body>
+</html>
