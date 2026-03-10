@@ -6,6 +6,23 @@ let idleWarningShown = false;
 let idleMonitorStarted = false;
 let idleMonitorInterval = null;
 
+const ensureHeaderLogo = () => {
+  document.querySelectorAll(".app-header").forEach((header) => {
+    if (header.querySelector(".header-logo")) return;
+    const logo = document.createElement("img");
+    logo.src = "logo.png";
+    logo.alt = "FLIP";
+    logo.className = "header-logo";
+    header.prepend(logo);
+  });
+};
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", ensureHeaderLogo);
+} else {
+  ensureHeaderLogo();
+}
+
 const getAuth = () => {
   const raw = localStorage.getItem(AUTH_KEY);
   return raw ? JSON.parse(raw) : null;

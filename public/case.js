@@ -9,6 +9,7 @@ const docketList = document.getElementById("docket-list");
 const caseNotes = document.getElementById("case-notes");
 const caseSave = document.getElementById("case-save");
 const claimsTableBody = document.querySelector("#claims-table tbody");
+const addClaimButton = document.getElementById("add-claim");
 const defendantsTableBody = document.querySelector("#defendants-table tbody");
 const groupsTableBody = document.querySelector("#groups-table tbody");
 const defendantsTable = document.getElementById("defendants-table");
@@ -28,8 +29,16 @@ const templateForm = document.getElementById("template-form");
 const templateError = document.getElementById("template-error");
 const evidenceButton = document.getElementById("evidence-button");
 const dataDownloadButton = document.getElementById("data-download-button");
+const claimModal = document.getElementById("claim-modal");
+const closeClaimModal = document.getElementById("close-claim-modal");
+const claimForm = document.getElementById("claim-form");
+const claimError = document.getElementById("claim-error");
+const claimModalTitle = document.getElementById("claim-modal-title");
 
 let notesDirty = false;
+let currentCaseId = null;
+let currentClaims = [];
+let editingClaimId = null;
 
 const renderCaseInfo = (currentCase) => {
   const rows = [
@@ -45,11 +54,37 @@ const renderCaseInfo = (currentCase) => {
     ["Jurisdiction", "jurisdiction", currentCase.jurisdiction || currentCase.court || ""],
     ["Case #", "caseNumber", currentCase.caseNumber || ""],
     ["Judge", "judge", currentCase.judge || ""],
+    [
+      "Case Group",
+      "status",
+      currentCase.status || "Undelivered",
+      "select",
+      ["Undelivered", "Active", "Fully Finished"],
+    ],
     ["Updated at", "updatedAt", currentCase.updatedAt || "", "date"],
     ["Updated by", "updatedBy", currentCase.updatedBy || ""],
   ];
   caseInfoList.innerHTML = rows
-    .map(([label, name, value, type]) => {
+    .map(([label, name, value, type, options]) => {
+      if (type === "select") {
+        const optionSet = Array.from(new Set([...(options || []), value])).filter(
+          Boolean
+        );
+        const optionHtml = optionSet
+          .map(
+            (optionValue) =>
+              `<option value="${optionValue}" ${
+                optionValue === value ? "selected" : ""
+              }>${optionValue}</option>`
+          )
+          .join("");
+        return `
+          <div class="info-row">
+            <span>${label}</span>
+            <span><select name="${name}">${optionHtml}</select></span>
+          </div>
+        `;
+      }
       const inputType = type || "text";
       return `
         <div class="info-row">
@@ -78,9 +113,9 @@ const renderDocket = (currentCase) => {
   });
 };
 
-const renderClaimsTable = (currentCase) => {
+const renderClaimsTable = (claims) => {
   claimsTableBody.innerHTML = "";
-  (currentCase.ipClaims || []).forEach((claim) => {
+  (claims || []).forEach((claim) => {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${claim.id ?? "—"}</td>
@@ -94,9 +129,19 @@ const renderClaimsTable = (currentCase) => {
       <td>${claim.specimenFolder || "—"}</td>
       <td>${claim.listingsCount ?? "—"}</td>
       <td>${claim.defendantCount ?? "—"}</td>
+      <td><button class="ghost-button claim-edit" type="button" data-claim-id="${claim.id}">Edit</button></td>
     `;
+    const editButton = row.querySelector(".claim-edit");
+    editButton.addEventListener("click", () => {
+      openClaimModal(claim);
+    });
     claimsTableBody.appendChild(row);
   });
+  if (!claims || claims.length === 0) {
+    const row = document.createElement("tr");
+    row.innerHTML = `<td colspan="12" class="muted">No IP claims yet.</td>`;
+    claimsTableBody.appendChild(row);
+  }
 };
 
 const renderDefendantsTable = (currentCase) => {
@@ -254,6 +299,29 @@ const openTemplateModal = () => {
   templateModal.classList.remove("hidden");
 };
 
+const openClaimModal = (claim) => {
+  claimError.textContent = "";
+  claimForm.reset();
+  editingClaimId = claim?.id || null;
+  claimModalTitle.textContent = editingClaimId ? "Edit IP Claim" : "Add IP Claim";
+  claimForm.elements.idDisplay.value = editingClaimId || "Auto";
+  claimForm.elements.brandName.value = claim?.brandName || "";
+  claimForm.elements.type.value = claim?.type || "";
+  claimForm.elements.subType.value = claim?.subType || "";
+  claimForm.elements.applicationDate.value = claim?.applicationDate || "";
+  claimForm.elements.registrationDate.value = claim?.registrationDate || "";
+  claimForm.elements.serialNumber.value = claim?.serialNumber || "";
+  claimForm.elements.registrationNumber.value = claim?.registrationNumber || "";
+  claimForm.elements.specimenFolder.value = claim?.specimenFolder || "";
+  claimForm.elements.listingsCount.value = claim?.listingsCount ?? "";
+  claimForm.elements.defendantCount.value = claim?.defendantCount ?? "";
+  claimModal.classList.remove("hidden");
+};
+
+const closeClaim = () => {
+  claimModal.classList.add("hidden");
+};
+
 const closeTemplate = () => {
   templateModal.classList.add("hidden");
 };
@@ -270,6 +338,7 @@ const init = async () => {
   }
 
   caseTitle.textContent = currentCase.caseName || currentCase.title;
+  currentCaseId = currentCase.id;
   const defendants = await loadDefendants(currentCase.id);
   caseMeta.textContent = `${currentCase.id} • Filed ${formatDate(
     currentCase.filedDate
@@ -292,7 +361,8 @@ const init = async () => {
       }
     }, 900);
   });
-  renderClaimsTable(currentCase);
+  currentClaims = await loadIpClaims(currentCase.id);
+  renderClaimsTable(currentClaims);
   const refresh = async () => {
     const nextDefendants = await loadDefendants(currentCase.id);
     renderDefendantsTable({ ...currentCase, defendants: nextDefendants });
@@ -355,6 +425,48 @@ const init = async () => {
     toast.classList.remove("hidden");
     setTimeout(() => toast.classList.add("hidden"), 1200);
   });
+  addClaimButton.addEventListener("click", () => openClaimModal(null));
+  closeClaimModal.addEventListener("click", closeClaim);
+  claimModal.addEventListener("click", (event) => {
+    if (event.target === claimModal) closeClaim();
+  });
+  claimForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    claimError.textContent = "";
+    const formData = new FormData(claimForm);
+    const payload = {
+      brandName: (formData.get("brandName") || "").trim() || null,
+      type: (formData.get("type") || "").trim() || null,
+      subType: (formData.get("subType") || "").trim() || null,
+      applicationDate: formData.get("applicationDate") || null,
+      registrationDate: formData.get("registrationDate") || null,
+      serialNumber: (formData.get("serialNumber") || "").trim() || null,
+      registrationNumber: (formData.get("registrationNumber") || "").trim() || null,
+      specimenFolder: (formData.get("specimenFolder") || "").trim() || null,
+      listingsCount:
+        formData.get("listingsCount") === "" ? null : Number(formData.get("listingsCount")),
+      defendantCount:
+        formData.get("defendantCount") === ""
+          ? null
+          : Number(formData.get("defendantCount")),
+    };
+
+    const result = editingClaimId
+      ? await updateIpClaim(editingClaimId, payload)
+      : await createIpClaim(currentCaseId, payload);
+
+    if (result?.error) {
+      claimError.textContent = result.error;
+      return;
+    }
+
+    currentClaims = await loadIpClaims(currentCaseId);
+    renderClaimsTable(currentClaims);
+    closeClaim();
+    toast.textContent = editingClaimId ? "Claim updated ✓" : "Claim added ✓";
+    toast.classList.remove("hidden");
+    setTimeout(() => toast.classList.add("hidden"), 1200);
+  });
   bulkUploadLink.href = `bulk-upload.html?caseId=${encodeURIComponent(
     currentCase.id
   )}`;
@@ -364,12 +476,16 @@ const init = async () => {
 
   caseInfoSave.addEventListener("click", async () => {
     const fields = {};
-    caseInfoList.querySelectorAll("input").forEach((input) => {
-      if (input.type === "number") {
-        fields[input.name] = input.value === "" ? null : Number(input.value);
+    caseInfoList.querySelectorAll("input, select").forEach((field) => {
+      if (field.tagName === "SELECT") {
+        fields[field.name] = field.value;
         return;
       }
-      fields[input.name] = input.value.trim();
+      if (field.type === "number") {
+        fields[field.name] = field.value === "" ? null : Number(field.value);
+        return;
+      }
+      fields[field.name] = field.value.trim();
     });
 
     if (!fields.updatedAt) {

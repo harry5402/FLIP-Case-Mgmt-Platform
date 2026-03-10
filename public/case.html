@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Case Info</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -60,7 +61,7 @@
         <div class="table-card">
           <div class="info-card-header">
             <h3>IP Claims</h3>
-            <button class="ghost-button" type="button">Add</button>
+            <button class="ghost-button" id="add-claim" type="button">Add</button>
           </div>
           <div class="table-wrap">
             <table id="claims-table">
@@ -77,6 +78,7 @@
                   <th>Specimen Folder</th>
                   <th>Listings Count</th>
                   <th>Defendant Count</th>
+                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody></tbody>
@@ -195,6 +197,67 @@
           <button class="ghost-button" type="submit" form="template-form">
             Upload
           </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="claim-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="info-card-header">
+          <h3 id="claim-modal-title">Add IP Claim</h3>
+          <button class="ghost-button" id="close-claim-modal" type="button">
+            Close
+          </button>
+        </div>
+        <form id="claim-form" class="form-grid">
+          <label class="form-field">
+            <span>#</span>
+            <input name="idDisplay" disabled placeholder="Auto" />
+          </label>
+          <label class="form-field">
+            <span>Brand Name</span>
+            <input name="brandName" />
+          </label>
+          <label class="form-field">
+            <span>Type</span>
+            <input name="type" />
+          </label>
+          <label class="form-field">
+            <span>Sub Type</span>
+            <input name="subType" />
+          </label>
+          <label class="form-field">
+            <span>Application Date</span>
+            <input name="applicationDate" type="date" />
+          </label>
+          <label class="form-field">
+            <span>Reg. Date</span>
+            <input name="registrationDate" type="date" />
+          </label>
+          <label class="form-field">
+            <span>Serial Number</span>
+            <input name="serialNumber" />
+          </label>
+          <label class="form-field">
+            <span>Reg. Number</span>
+            <input name="registrationNumber" />
+          </label>
+          <label class="form-field">
+            <span>Specimen Folder</span>
+            <input name="specimenFolder" />
+          </label>
+          <label class="form-field">
+            <span>Listings Count</span>
+            <input name="listingsCount" type="number" min="0" />
+          </label>
+          <label class="form-field">
+            <span>Defendant Count</span>
+            <input name="defendantCount" type="number" min="0" />
+          </label>
+        </form>
+        <div class="form-actions">
+          <div id="claim-error" class="form-error"></div>
+          <button class="ghost-button" type="submit" form="claim-form">Save Claim</button>
         </div>
       </div>
     </div>

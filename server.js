@@ -731,6 +731,22 @@ const mapCase = (row) => ({
   ipClaims: [],
 });
 
+const mapIpClaim = (row) => ({
+  id: row.id,
+  caseId: row.case_id,
+  defendantId: row.defendant_id,
+  brandName: row.brand_name,
+  type: row.type,
+  subType: row.sub_type,
+  applicationDate: row.application_date,
+  registrationDate: row.registration_date,
+  serialNumber: row.serial_number,
+  registrationNumber: row.registration_number,
+  specimenFolder: row.specimen_folder,
+  listingsCount: row.listings_count,
+  defendantCount: row.defendant_count,
+});
+
 app.get("/api/cases", async (req, res) => {
   const result = await query("SELECT * FROM cases ORDER BY created_at DESC");
   res.json(result.rows.map(mapCase));
@@ -868,6 +884,119 @@ app.put("/api/cases/:id", async (req, res) => {
   });
 
   res.json(mapCase(result.rows[0]));
+});
+
+app.get("/api/cases/:id/ip-claims", async (req, res) => {
+  const result = await query(
+    `SELECT *
+     FROM ip_claims
+     WHERE case_id = $1
+     ORDER BY application_date DESC NULLS LAST, id DESC`,
+    [req.params.id]
+  );
+  res.json(result.rows.map(mapIpClaim));
+});
+
+app.post("/api/cases/:id/ip-claims", async (req, res) => {
+  const {
+    brandName,
+    type,
+    subType,
+    applicationDate,
+    registrationDate,
+    serialNumber,
+    registrationNumber,
+    specimenFolder,
+    listingsCount,
+    defendantCount,
+  } = req.body || {};
+
+  const result = await query(
+    `INSERT INTO ip_claims
+      (case_id, brand_name, type, sub_type, application_date, registration_date, serial_number, registration_number, specimen_folder, listings_count, defendant_count)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+     RETURNING *`,
+    [
+      req.params.id,
+      brandName || null,
+      type || null,
+      subType || null,
+      applicationDate || null,
+      registrationDate || null,
+      serialNumber || null,
+      registrationNumber || null,
+      specimenFolder || null,
+      listingsCount ?? null,
+      defendantCount ?? null,
+    ]
+  );
+  const created = mapIpClaim(result.rows[0]);
+  await writeAuditLog(req, {
+    action: "ip_claims.create",
+    entityType: "ip_claim",
+    entityId: created.id,
+    before: null,
+    after: created,
+  });
+  res.status(201).json(created);
+});
+
+app.put("/api/ip-claims/:id", async (req, res) => {
+  const {
+    brandName,
+    type,
+    subType,
+    applicationDate,
+    registrationDate,
+    serialNumber,
+    registrationNumber,
+    specimenFolder,
+    listingsCount,
+    defendantCount,
+  } = req.body || {};
+
+  const existing = await query("SELECT * FROM ip_claims WHERE id = $1", [req.params.id]);
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "IP claim not found" });
+  }
+
+  const result = await query(
+    `UPDATE ip_claims SET
+      brand_name = COALESCE($1, brand_name),
+      type = COALESCE($2, type),
+      sub_type = COALESCE($3, sub_type),
+      application_date = COALESCE($4, application_date),
+      registration_date = COALESCE($5, registration_date),
+      serial_number = COALESCE($6, serial_number),
+      registration_number = COALESCE($7, registration_number),
+      specimen_folder = COALESCE($8, specimen_folder),
+      listings_count = COALESCE($9, listings_count),
+      defendant_count = COALESCE($10, defendant_count)
+     WHERE id = $11
+     RETURNING *`,
+    [
+      brandName,
+      type,
+      subType,
+      applicationDate,
+      registrationDate,
+      serialNumber,
+      registrationNumber,
+      specimenFolder,
+      listingsCount,
+      defendantCount,
+      req.params.id,
+    ]
+  );
+  const updated = mapIpClaim(result.rows[0]);
+  await writeAuditLog(req, {
+    action: "ip_claims.update",
+    entityType: "ip_claim",
+    entityId: updated.id,
+    before: mapIpClaim(existing.rows[0]),
+    after: updated,
+  });
+  res.json(updated);
 });
 
 app.post(

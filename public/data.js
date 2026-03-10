@@ -95,6 +95,38 @@ const loadGroups = async (caseId) => {
   return [];
 };
 
+const loadIpClaims = async (caseId) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/cases/${caseId}/ip-claims`);
+    return response.json();
+  }
+  return [];
+};
+
+const createIpClaim = async (caseId, payload) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/cases/${caseId}/ip-claims`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return response.json();
+  }
+  return null;
+};
+
+const updateIpClaim = async (claimId, payload) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/ip-claims/${claimId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return response.json();
+  }
+  return null;
+};
+
 const createGroup = async (caseId, payload) => {
   if (USE_API) {
     const response = await authFetch(`${API_BASE}/api/cases/${caseId}/groups`, {
