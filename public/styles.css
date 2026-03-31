@@ -98,7 +98,7 @@ h1 {
   background: #fff8f0;
 }
 
-#back-to-case {
+.app-header:not(.centered) > .pill {
   margin-left: 108px;
 }
 
@@ -498,6 +498,46 @@ tbody td {
   justify-items: end;
 }
 
+.docket-tabs {
+  flex-wrap: wrap;
+}
+
+.litigation-case {
+  margin: 0;
+}
+
+.litigation-case-header {
+  text-align: center;
+  padding-bottom: 10px;
+  display: grid;
+  gap: 6px;
+}
+
+.litigation-case-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.litigation-case-meta {
+  font-family: "Inter", "Segoe UI", sans-serif;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.lit-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-family: "Inter", "Segoe UI", sans-serif;
+  font-size: 12px;
+  background: #fffaf4;
+}
+
+tr.due-soon td {
+  background: #ffe8e6;
+}
+
 .task-link {
   color: inherit;
 }
@@ -569,7 +609,7 @@ tbody td {
     padding: 20px 24px 40px;
   }
 
-  #back-to-case {
+  .app-header:not(.centered) > .pill {
     margin-left: 86px;
   }
 

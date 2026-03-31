@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS cases (
   updated_by TEXT,
   court TEXT,
   notes TEXT,
+  is_docket_only BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -181,3 +182,38 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 
 CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx ON audit_logs (created_at DESC);
+
+CREATE TABLE IF NOT EXISTS litigation_case_state (
+  case_id UUID PRIMARY KEY REFERENCES cases(id) ON DELETE CASCADE,
+  archived BOOLEAN NOT NULL DEFAULT FALSE,
+  archived_at TIMESTAMPTZ,
+  archived_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS litigation_actions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
+  action TEXT,
+  internal_due_date DATE,
+  final_due_date DATE,
+  notes TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by TEXT
+);
+
+CREATE TABLE IF NOT EXISTS litigation_collections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
+  platform TEXT,
+  sent_to_platform TEXT,
+  acknowledged TEXT,
+  breakdown TEXT,
+  all_def_accounted_for TEXT,
+  money_received TEXT,
+  sent_to_plaintiff TEXT,
+  notes TEXT,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by TEXT
+);

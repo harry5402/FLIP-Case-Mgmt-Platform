@@ -30,6 +30,15 @@ const LOGIN_WINDOW_MS =
   parsePositiveInt(process.env.LOGIN_WINDOW_MINUTES, 15) * 60 * 1000;
 const BODY_LIMIT = process.env.BODY_LIMIT || "1mb";
 const UPLOAD_MAX_FILE_MB = parsePositiveInt(process.env.UPLOAD_MAX_FILE_MB, 10);
+const LITIGATION_TABS = [
+  "NDIL",
+  "GAND",
+  "NDIN",
+  "WDPA",
+  "EDWI",
+  "FAIKERZ",
+  "ARCHIVED",
+];
 
 const allowedOriginSet = new Set(
   String(process.env.ALLOWED_ORIGINS || "")
@@ -253,6 +262,63 @@ const ensureCaseUpdatedAtTimestamp = async () => {
       END
     )
   `);
+};
+
+const ensureCaseDocketOnlyColumn = async () => {
+  await query(`
+    ALTER TABLE cases
+    ADD COLUMN IF NOT EXISTS is_docket_only BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+};
+
+const ensureLitigationTables = async () => {
+  await query(`
+    CREATE TABLE IF NOT EXISTS litigation_case_state (
+      case_id UUID PRIMARY KEY REFERENCES cases(id) ON DELETE CASCADE,
+      archived BOOLEAN NOT NULL DEFAULT FALSE,
+      archived_at TIMESTAMPTZ,
+      archived_by TEXT
+    )
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS litigation_actions (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
+      action TEXT,
+      internal_due_date DATE,
+      final_due_date DATE,
+      notes TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_by TEXT
+    )
+  `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS litigation_collections (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
+      platform TEXT,
+      sent_to_platform TEXT,
+      acknowledged TEXT,
+      breakdown TEXT,
+      all_def_accounted_for TEXT,
+      money_received TEXT,
+      sent_to_plaintiff TEXT,
+      notes TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_by TEXT
+    )
+  `);
+};
+
+const normalizeLitigationTab = (jurisdiction) => {
+  const normalized = String(jurisdiction || "")
+    .trim()
+    .toUpperCase();
+  return LITIGATION_TABS.includes(normalized) && normalized !== "ARCHIVED"
+    ? normalized
+    : null;
 };
 
 const ensureAdminUser = async () => {
@@ -495,6 +561,214 @@ app.get("/api/users/options", async (req, res) => {
     "SELECT id, name, email FROM users ORDER BY lower(email)"
   );
   res.json(result.rows);
+});
+
+app.get("/api/litigation/cases", async (req, res) => {
+  const requestedTab = String(req.query.tab || "NDIL").toUpperCase();
+  if (!LITIGATION_TABS.includes(requestedTab)) {
+    return res.status(400).json({ error: "Invalid tab." });
+  }
+
+  const result = await query(
+    `SELECT
+        c.id,
+        c.case_name,
+        c.case_number,
+        c.jurisdiction,
+        COALESCE(c.is_docket_only, FALSE) AS is_docket_only,
+        c.status,
+        COALESCE(defs.count, 0) AS defendant_count,
+        COALESCE(state.archived, FALSE) AS archived,
+        COALESCE(a.created_at, c.updated_at, c.created_at) AS most_recent_edit_at,
+        COALESCE(a.user_email, c.updated_by, '') AS most_recent_edit_by
+     FROM cases c
+     LEFT JOIN litigation_case_state state ON state.case_id = c.id
+     LEFT JOIN (
+       SELECT case_id, COUNT(*)::int AS count
+       FROM defendants
+       GROUP BY case_id
+     ) defs ON defs.case_id = c.id
+     LEFT JOIN LATERAL (
+       SELECT created_at, user_email
+       FROM audit_logs
+       WHERE entity_type = 'case'
+         AND entity_id = c.id::text
+       ORDER BY created_at DESC
+       LIMIT 1
+     ) a ON TRUE
+     WHERE (
+       ($1 = 'ARCHIVED' AND COALESCE(state.archived, FALSE) = TRUE)
+       OR
+       ($1 <> 'ARCHIVED'
+         AND COALESCE(state.archived, FALSE) = FALSE
+         AND UPPER(COALESCE(c.jurisdiction, '')) = $1
+         AND (
+           COALESCE(c.is_docket_only, FALSE) = TRUE
+           OR UPPER(COALESCE(c.status, '')) = 'ACTIVE'
+         )
+       )
+     )
+     ORDER BY COALESCE(a.created_at, c.updated_at, c.created_at) DESC NULLS LAST`,
+    [requestedTab]
+  );
+
+  res.json(
+    result.rows.map((row) => ({
+      id: row.id,
+      caseName: row.case_name,
+      caseNumber: row.case_number,
+      jurisdiction: row.jurisdiction,
+      isDocketOnly: row.is_docket_only,
+      defendantCount: row.defendant_count,
+      archived: row.archived,
+      mostRecentEditAt: row.most_recent_edit_at,
+      mostRecentEditBy: row.most_recent_edit_by,
+    }))
+  );
+});
+
+app.get("/api/litigation/cases/:id/entries", async (req, res) => {
+  const result = await query(
+    `SELECT id, action, internal_due_date, final_due_date, notes, sort_order
+     FROM litigation_actions
+     WHERE case_id = $1
+     ORDER BY sort_order, updated_at, id`,
+    [req.params.id]
+  );
+  res.json(
+    result.rows.map((row) => ({
+      id: row.id,
+      action: row.action || "",
+      internalDueDate: row.internal_due_date,
+      finalDueDate: row.final_due_date,
+      notes: row.notes || "",
+      sortOrder: row.sort_order,
+    }))
+  );
+});
+
+app.put("/api/litigation/cases/:id/entries", async (req, res) => {
+  const entries = Array.isArray(req.body?.entries) ? req.body.entries : null;
+  if (!entries) {
+    return res.status(400).json({ error: "entries array is required." });
+  }
+
+  await query("DELETE FROM litigation_actions WHERE case_id = $1", [req.params.id]);
+  for (let i = 0; i < entries.length; i += 1) {
+    const entry = entries[i] || {};
+    await query(
+      `INSERT INTO litigation_actions
+        (case_id, action, internal_due_date, final_due_date, notes, sort_order, updated_at, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7)`,
+      [
+        req.params.id,
+        entry.action || null,
+        entry.internalDueDate || null,
+        entry.finalDueDate || null,
+        entry.notes || null,
+        i,
+        req.session?.name || req.session?.email || null,
+      ]
+    );
+  }
+
+  await writeAuditLog(req, {
+    action: "litigation.entries.save",
+    entityType: "case",
+    entityId: req.params.id,
+    before: null,
+    after: { count: entries.length },
+  });
+
+  res.json({ ok: true });
+});
+
+app.get("/api/litigation/cases/:id/collections", async (req, res) => {
+  const result = await query(
+    `SELECT id, platform, sent_to_platform, acknowledged, breakdown, all_def_accounted_for, money_received, sent_to_plaintiff, notes, sort_order
+     FROM litigation_collections
+     WHERE case_id = $1
+     ORDER BY sort_order, updated_at, id`,
+    [req.params.id]
+  );
+  res.json(
+    result.rows.map((row) => ({
+      id: row.id,
+      platform: row.platform || "",
+      sentToPlatform: row.sent_to_platform || "",
+      acknowledged: row.acknowledged || "",
+      breakdown: row.breakdown || "",
+      allDefAccountedFor: row.all_def_accounted_for || "",
+      moneyReceived: row.money_received || "",
+      sentToPlaintiff: row.sent_to_plaintiff || "",
+      notes: row.notes || "",
+      sortOrder: row.sort_order,
+    }))
+  );
+});
+
+app.put("/api/litigation/cases/:id/collections", async (req, res) => {
+  const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
+  if (!rows) {
+    return res.status(400).json({ error: "rows array is required." });
+  }
+
+  await query("DELETE FROM litigation_collections WHERE case_id = $1", [req.params.id]);
+  for (let i = 0; i < rows.length; i += 1) {
+    const row = rows[i] || {};
+    await query(
+      `INSERT INTO litigation_collections
+        (case_id, platform, sent_to_platform, acknowledged, breakdown, all_def_accounted_for, money_received, sent_to_plaintiff, notes, sort_order, updated_at, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),$11)`,
+      [
+        req.params.id,
+        row.platform || null,
+        row.sentToPlatform || null,
+        row.acknowledged || null,
+        row.breakdown || null,
+        row.allDefAccountedFor || null,
+        row.moneyReceived || null,
+        row.sentToPlaintiff || null,
+        row.notes || null,
+        i,
+        req.session?.name || req.session?.email || null,
+      ]
+    );
+  }
+
+  await writeAuditLog(req, {
+    action: "litigation.collections.save",
+    entityType: "case",
+    entityId: req.params.id,
+    before: null,
+    after: { count: rows.length },
+  });
+
+  res.json({ ok: true });
+});
+
+app.put("/api/litigation/cases/:id/archive", async (req, res) => {
+  const archived = Boolean(req.body?.archived);
+  await query(
+    `INSERT INTO litigation_case_state (case_id, archived, archived_at, archived_by)
+     VALUES ($1,$2,CASE WHEN $2 THEN NOW() ELSE NULL END,CASE WHEN $2 THEN $3 ELSE NULL END)
+     ON CONFLICT (case_id)
+     DO UPDATE SET
+       archived = EXCLUDED.archived,
+       archived_at = EXCLUDED.archived_at,
+       archived_by = EXCLUDED.archived_by`,
+    [req.params.id, archived, req.session?.name || req.session?.email || null]
+  );
+
+  await writeAuditLog(req, {
+    action: archived ? "litigation.archive" : "litigation.reopen",
+    entityType: "case",
+    entityId: req.params.id,
+    before: null,
+    after: { archived },
+  });
+
+  res.json({ ok: true, archived });
 });
 
 app.get("/api/tasks/my", async (req, res) => {
@@ -742,6 +1016,7 @@ const mapCase = (row) => ({
   docketEntries: [],
   notes: row.notes || "",
   ipClaims: [],
+  isDocketOnly: row.is_docket_only || false,
 });
 
 const mapIpClaim = (row) => ({
@@ -771,7 +1046,9 @@ const touchCase = async (caseId, session) => {
 };
 
 app.get("/api/cases", async (req, res) => {
-  const result = await query("SELECT * FROM cases ORDER BY created_at DESC");
+  const result = await query(
+    "SELECT * FROM cases WHERE COALESCE(is_docket_only, FALSE) = FALSE ORDER BY created_at DESC"
+  );
   res.json(result.rows.map(mapCase));
 });
 
@@ -797,6 +1074,7 @@ app.post("/api/cases", async (req, res) => {
     status,
     updatedBy,
     notes,
+    isDocketOnly,
   } = req.body;
 
   if (!caseName || !clientName) {
@@ -807,8 +1085,8 @@ app.post("/api/cases", async (req, res) => {
   const result = await query(
     `INSERT INTO cases
       (case_name, client_name, plaintiff, brand_name, ip_claims_summary, plaintiff_profit_per_unit,
-       jurisdiction, case_number, judge, status, recent_status, filed_date, updated_at, updated_by, court, notes)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       jurisdiction, case_number, judge, status, recent_status, filed_date, updated_at, updated_by, court, notes, is_docket_only)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
      RETURNING *`,
     [
       caseName,
@@ -827,6 +1105,7 @@ app.post("/api/cases", async (req, res) => {
       updatedBy || null,
       jurisdiction || null,
       notes || "",
+      Boolean(isDocketOnly),
     ]
   );
   await writeAuditLog(req, {
@@ -2211,6 +2490,8 @@ app.use((err, req, res, next) => {
 const start = async () => {
   await ensureAuditLogTable();
   await ensureCaseUpdatedAtTimestamp();
+  await ensureCaseDocketOnlyColumn();
+  await ensureLitigationTables();
   await ensureAdminUser();
   app.listen(PORT, () => {
     console.log(`API running on http://localhost:${PORT}`);

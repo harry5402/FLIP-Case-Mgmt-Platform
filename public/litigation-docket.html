@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Litigation Docket</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="pill" href="index.html">Back to Dashboard</a>
+      <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
+      <div class="header-spacer"></div>
+    </header>
+
+    <main class="layout single">
+      <section class="panel">
+        <div class="panel-header">
+          <div class="panel-header-row">
+            <h2>LITIGATION DOCKET</h2>
+            <button id="new-litigation-case" class="ghost-button" type="button">
+              New Case
+            </button>
+          </div>
+          <div class="tab-switch docket-tabs">
+            <button class="ghost-button active" data-tab="NDIL" type="button">NDIL</button>
+            <button class="ghost-button" data-tab="GAND" type="button">GAND</button>
+            <button class="ghost-button" data-tab="NDIN" type="button">NDIN</button>
+            <button class="ghost-button" data-tab="WDPA" type="button">WDPA</button>
+            <button class="ghost-button" data-tab="EDWI" type="button">EDWI</button>
+            <button class="ghost-button" data-tab="FAIKERZ" type="button">FAIKERZ</button>
+            <button class="ghost-button" data-tab="ARCHIVED" type="button">ARCHIVED</button>
+          </div>
+        </div>
+        <div id="litigation-cases" class="list"></div>
+      </section>
+    </main>
+
+    <div id="new-case-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="info-card-header">
+          <h3>Create New Docket Case</h3>
+          <button id="close-new-case-modal" class="ghost-button" type="button">Close</button>
+        </div>
+        <form id="new-case-form" class="form-grid">
+          <label class="form-field">
+            <span>Case Name</span>
+            <input name="caseName" required />
+          </label>
+          <label class="form-field">
+            <span>Client Name</span>
+            <input name="clientName" required />
+          </label>
+          <label class="form-field">
+            <span>Case Number</span>
+            <input name="caseNumber" />
+          </label>
+          <label class="form-field">
+            <span>Jurisdiction Tab</span>
+            <select name="jurisdiction" required>
+              <option value="NDIL">NDIL</option>
+              <option value="GAND">GAND</option>
+              <option value="NDIN">NDIN</option>
+              <option value="WDPA">WDPA</option>
+              <option value="EDWI">EDWI</option>
+              <option value="FAIKERZ">FAIKERZ</option>
+            </select>
+          </label>
+        </form>
+        <div class="form-actions">
+          <div id="new-case-error" class="form-error"></div>
+          <button id="save-new-case" class="ghost-button" type="submit" form="new-case-form">
+            Create Case
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="collections-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="info-card-header">
+          <h3>Collections</h3>
+          <button id="close-collections-modal" class="ghost-button" type="button">Close</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Platform</th>
+                <th>Sent to platform?</th>
+                <th>Acknowledged?</th>
+                <th>Breakdown?</th>
+                <th>All Def. Accounted for?</th>
+                <th>Money Received?</th>
+                <th>Sent to Plaintiff?</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody id="collections-body"></tbody>
+          </table>
+        </div>
+        <div class="form-actions">
+          <button id="add-collection-row" class="ghost-button" type="button">Add Row</button>
+          <div class="tab-switch">
+            <div id="collections-error" class="form-error"></div>
+            <button id="save-collections" class="ghost-button" type="button">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="archive-confirm-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="info-card-header">
+          <h3 id="archive-confirm-title">Archive Case</h3>
+          <button id="close-archive-confirm-modal" class="ghost-button" type="button">
+            Close
+          </button>
+        </div>
+        <div class="details">
+          <div id="archive-confirm-text">Are you sure?</div>
+        </div>
+        <div class="form-actions">
+          <div></div>
+          <button id="confirm-archive-action" class="ghost-button" type="button">Confirm</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script>
+      requireAuth();
+    </script>
+    <script src="data.js"></script>
+    <script src="litigation-docket.js"></script>
+  </body>
+</html>
