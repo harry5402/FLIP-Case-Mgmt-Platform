@@ -288,10 +288,15 @@ const ensureLitigationTables = async () => {
       internal_due_date DATE,
       final_due_date DATE,
       notes TEXT,
+      assigned_to_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
       sort_order INTEGER NOT NULL DEFAULT 0,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_by TEXT
     )
+  `);
+  await query(`
+    ALTER TABLE litigation_actions
+    ADD COLUMN IF NOT EXISTS assigned_to_user_id UUID REFERENCES users(id) ON DELETE SET NULL
   `);
   await query(`
     CREATE TABLE IF NOT EXISTS litigation_collections (
@@ -319,6 +324,37 @@ const normalizeLitigationTab = (jurisdiction) => {
   return LITIGATION_TABS.includes(normalized) && normalized !== "ARCHIVED"
     ? normalized
     : null;
+};
+
+const syncLitigationTasks = async (caseId, entries, session) => {
+  await query(
+    `DELETE FROM tasks
+     WHERE case_id = $1
+       AND defendant_id IS NULL
+       AND group_id IS NULL
+       AND task_type LIKE 'Docket:%'`,
+    [caseId]
+  );
+
+  for (const entry of entries) {
+    const action = String(entry.action || "").trim();
+    const assignedToUserId = entry.assignedToUserId || null;
+    const dueDate = entry.internalDueDate || null;
+    if (!action || !assignedToUserId) continue;
+
+    await query(
+      `INSERT INTO tasks
+        (case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status, created_by_user_id)
+       VALUES ($1, NULL, NULL, $2, $3, $4, 'Open', $5)`,
+      [
+        caseId,
+        `Docket: ${action}`,
+        assignedToUserId,
+        dueDate,
+        session?.userId || null,
+      ]
+    );
+  }
 };
 
 const ensureAdminUser = async () => {
@@ -629,7 +665,7 @@ app.get("/api/litigation/cases", async (req, res) => {
 
 app.get("/api/litigation/cases/:id/entries", async (req, res) => {
   const result = await query(
-    `SELECT id, action, internal_due_date, final_due_date, notes, sort_order
+    `SELECT id, action, internal_due_date, final_due_date, notes, sort_order, assigned_to_user_id
      FROM litigation_actions
      WHERE case_id = $1
      ORDER BY sort_order, updated_at, id`,
@@ -642,6 +678,7 @@ app.get("/api/litigation/cases/:id/entries", async (req, res) => {
       internalDueDate: row.internal_due_date,
       finalDueDate: row.final_due_date,
       notes: row.notes || "",
+      assignedToUserId: row.assigned_to_user_id,
       sortOrder: row.sort_order,
     }))
   );
@@ -658,19 +695,22 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
     const entry = entries[i] || {};
     await query(
       `INSERT INTO litigation_actions
-        (case_id, action, internal_due_date, final_due_date, notes, sort_order, updated_at, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,NOW(),$7)`,
+        (case_id, action, internal_due_date, final_due_date, notes, assigned_to_user_id, sort_order, updated_at, updated_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8)`,
       [
         req.params.id,
         entry.action || null,
         entry.internalDueDate || null,
         entry.finalDueDate || null,
         entry.notes || null,
+        entry.assignedToUserId || null,
         i,
         req.session?.name || req.session?.email || null,
       ]
     );
   }
+
+  await syncLitigationTasks(req.params.id, entries, req.session);
 
   await writeAuditLog(req, {
     action: "litigation.entries.save",
@@ -775,6 +815,7 @@ app.get("/api/tasks/my", async (req, res) => {
   const result = await query(
     `SELECT t.*,
             c.case_name,
+            c.jurisdiction,
             d.name AS defendant_name,
             g.group_name
      FROM tasks t
@@ -792,11 +833,18 @@ app.get("/api/tasks/my", async (req, res) => {
       caseId: row.case_id,
       defendantId: row.defendant_id,
       groupId: row.group_id,
-      targetType: row.group_id ? "group" : "defendant",
+      targetType: row.group_id
+        ? "group"
+        : row.defendant_id
+          ? "defendant"
+          : String(row.task_type || "").startsWith("Docket:")
+            ? "docket"
+            : "case",
       taskType: row.task_type,
       dueDate: row.due_date,
       status: row.status,
       caseName: row.case_name,
+      jurisdiction: row.jurisdiction,
       defendantName: row.defendant_name,
       groupName: row.group_name,
     }))

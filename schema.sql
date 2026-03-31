@@ -197,6 +197,7 @@ CREATE TABLE IF NOT EXISTS litigation_actions (
   internal_due_date DATE,
   final_due_date DATE,
   notes TEXT,
+  assigned_to_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   sort_order INTEGER NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by TEXT

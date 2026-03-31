@@ -538,6 +538,15 @@ tr.due-soon td {
   background: #ffe8e6;
 }
 
+.focused-docket-case {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(183, 75, 53, 0.15), var(--shadow);
+}
+
+.focused-docket-row td {
+  background: #fff0d9;
+}
+
 .task-link {
   color: inherit;
 }

@@ -90,6 +90,14 @@ const renderTasks = (tasks) => {
     const targetUrl =
       task.targetType === "group"
         ? `group.html?groupId=${encodeURIComponent(task.groupId)}`
+        : task.targetType === "docket"
+          ? `litigation-docket.html?tab=${encodeURIComponent(
+              task.jurisdiction || "NDIL"
+            )}&caseId=${encodeURIComponent(task.caseId)}&action=${encodeURIComponent(
+              String(task.taskType || "").replace(/^Docket:\s*/, "")
+            )}`
+        : task.targetType === "case"
+          ? `case.html?caseId=${encodeURIComponent(task.caseId)}`
         : `defendant.html?caseId=${encodeURIComponent(
             task.caseId
           )}&defendantId=${encodeURIComponent(task.defendantId)}`;
@@ -101,7 +109,11 @@ const renderTasks = (tasks) => {
           <span>${
             task.targetType === "group"
               ? task.groupName || "Group"
-              : task.defendantName || "Defendant"
+              : task.targetType === "docket"
+                ? "Docket Entry"
+              : task.targetType === "case"
+                ? "Case Reminder"
+                : task.defendantName || "Defendant"
           }</span>
         </div>
       </div>

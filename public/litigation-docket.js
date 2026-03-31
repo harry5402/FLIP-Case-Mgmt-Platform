@@ -20,6 +20,9 @@ const confirmArchiveAction = document.getElementById("confirm-archive-action");
 let activeTab = "NDIL";
 let openCollectionsCaseId = null;
 let pendingArchiveAction = null;
+let userOptions = [];
+const focusCaseId = getParam("caseId");
+const focusAction = getParam("action");
 
 const yesNoOptions = `
   <option value=""></option>
@@ -92,10 +95,34 @@ const createLitigationCase = (payload) =>
     body: JSON.stringify(payload),
   });
 
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const buildUserOptions = (selectedValue) => {
+  const options = [`<option value=""></option>`];
+  userOptions.forEach((user) => {
+    const label = user.name ? `${user.name} (${user.email})` : user.email;
+    options.push(
+      `<option value="${escapeHtml(user.id)}" ${
+        user.id === selectedValue ? "selected" : ""
+      }>${escapeHtml(label)}</option>`
+    );
+  });
+  return options.join("");
+};
+
 const renderEntryRow = (entry = {}) => {
   const row = document.createElement("tr");
   row.innerHTML = `
     <td><input class="lit-input" data-field="action" value="${entry.action || ""}" /></td>
+    <td><select class="lit-input" data-field="assignedToUserId">${buildUserOptions(
+      entry.assignedToUserId || ""
+    )}</select></td>
     <td><input class="lit-input" data-field="internalDueDate" type="date" value="${toDateInputValue(
       entry.internalDueDate
     )}" /></td>
@@ -113,12 +140,17 @@ const renderEntryRow = (entry = {}) => {
     input.addEventListener("change", refreshDueHighlight);
   });
   refreshDueHighlight();
+  const actionValue = String(entry.action || "").trim().toLowerCase();
+  if (focusAction && actionValue === String(focusAction).trim().toLowerCase()) {
+    row.classList.add("focused-docket-row");
+  }
   return row;
 };
 
 const readEntryRows = (tbody) =>
   Array.from(tbody.querySelectorAll("tr")).map((row) => ({
     action: row.querySelector('[data-field="action"]').value.trim(),
+    assignedToUserId: row.querySelector('[data-field="assignedToUserId"]').value || null,
     internalDueDate:
       toDateInputValue(row.querySelector('[data-field="internalDueDate"]').value) || null,
     finalDueDate:
@@ -192,6 +224,9 @@ const renderCases = async (tab) => {
     const entries = await loadEntries(item.id);
     const card = document.createElement("div");
     card.className = "table-card litigation-case";
+    if (focusCaseId && item.id === focusCaseId) {
+      card.classList.add("focused-docket-case");
+    }
     card.innerHTML = `
       <div class="litigation-case-header">
         <div class="litigation-case-title">${item.caseName || "Case"}</div>
@@ -207,6 +242,7 @@ const renderCases = async (tab) => {
           <thead>
             <tr>
               <th>Action</th>
+              <th>Assigned To</th>
               <th>Internal Due Date</th>
               <th>Final Due Date</th>
               <th>Notes</th>
@@ -266,6 +302,12 @@ const renderCases = async (tab) => {
     });
 
     casesContainer.appendChild(card);
+
+    if (focusCaseId && item.id === focusCaseId) {
+      setTimeout(() => {
+        card.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 50);
+    }
   }
 };
 
@@ -278,6 +320,11 @@ const setTab = async (tab) => {
 };
 
 const init = async () => {
+  userOptions = await loadUserOptions();
+  const requestedTab = getParam("tab");
+  if (requestedTab) {
+    activeTab = String(requestedTab).toUpperCase();
+  }
   tabs.forEach((button) => {
     button.addEventListener("click", () => setTab(button.dataset.tab));
   });
