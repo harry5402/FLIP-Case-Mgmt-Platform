@@ -277,8 +277,13 @@ const ensureLitigationTables = async () => {
       case_id UUID PRIMARY KEY REFERENCES cases(id) ON DELETE CASCADE,
       archived BOOLEAN NOT NULL DEFAULT FALSE,
       archived_at TIMESTAMPTZ,
-      archived_by TEXT
+      archived_by TEXT,
+      docket_defendant_count INTEGER
     )
+  `);
+  await query(`
+    ALTER TABLE litigation_case_state
+    ADD COLUMN IF NOT EXISTS docket_defendant_count INTEGER
   `);
   await query(`
     CREATE TABLE IF NOT EXISTS litigation_actions (
@@ -613,7 +618,7 @@ app.get("/api/litigation/cases", async (req, res) => {
         c.jurisdiction,
         COALESCE(c.is_docket_only, FALSE) AS is_docket_only,
         c.status,
-        COALESCE(defs.count, 0) AS defendant_count,
+        COALESCE(state.docket_defendant_count, defs.count, 0) AS defendant_count,
         COALESCE(state.archived, FALSE) AS archived,
         COALESCE(a.created_at, c.updated_at, c.created_at) AS most_recent_edit_at,
         COALESCE(a.user_email, c.updated_by, '') AS most_recent_edit_by
@@ -1123,6 +1128,7 @@ app.post("/api/cases", async (req, res) => {
     updatedBy,
     notes,
     isDocketOnly,
+    docketDefendantCount,
   } = req.body;
 
   if (!caseName || !clientName) {
@@ -1156,6 +1162,15 @@ app.post("/api/cases", async (req, res) => {
       Boolean(isDocketOnly),
     ]
   );
+  if (Boolean(isDocketOnly) && Number.isFinite(Number(docketDefendantCount))) {
+    await query(
+      `INSERT INTO litigation_case_state (case_id, archived, docket_defendant_count)
+       VALUES ($1, FALSE, $2)
+       ON CONFLICT (case_id)
+       DO UPDATE SET docket_defendant_count = EXCLUDED.docket_defendant_count`,
+      [result.rows[0].id, Number(docketDefendantCount)]
+    );
+  }
   await writeAuditLog(req, {
     action: "cases.create",
     entityType: "case",

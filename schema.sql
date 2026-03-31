@@ -187,7 +187,8 @@ CREATE TABLE IF NOT EXISTS litigation_case_state (
   case_id UUID PRIMARY KEY REFERENCES cases(id) ON DELETE CASCADE,
   archived BOOLEAN NOT NULL DEFAULT FALSE,
   archived_at TIMESTAMPTZ,
-  archived_by TEXT
+  archived_by TEXT,
+  docket_defendant_count INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS litigation_actions (

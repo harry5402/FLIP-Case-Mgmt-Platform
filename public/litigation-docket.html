@@ -49,12 +49,16 @@
             <input name="caseName" required />
           </label>
           <label class="form-field">
-            <span>Client Name</span>
-            <input name="clientName" required />
+            <span>Judge Name</span>
+            <input name="judge" />
           </label>
           <label class="form-field">
             <span>Case Number</span>
             <input name="caseNumber" />
+          </label>
+          <label class="form-field">
+            <span># of Defendants</span>
+            <input name="defendantCount" type="number" min="0" />
           </label>
           <label class="form-field">
             <span>Jurisdiction Tab</span>
@@ -88,7 +92,7 @@
             <thead>
               <tr>
                 <th>Platform</th>
-                <th>Sent to platform?</th>
+                <th>Sent to platform</th>
                 <th>Acknowledged?</th>
                 <th>Breakdown?</th>
                 <th>All Def. Accounted for?</th>

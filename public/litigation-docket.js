@@ -162,7 +162,9 @@ const renderCollectionRow = (entry = {}) => {
   const row = document.createElement("tr");
   row.innerHTML = `
     <td><input class="lit-input" data-field="platform" value="${entry.platform || ""}" /></td>
-    <td><select class="lit-input" data-field="sentToPlatform">${yesNoOptions}</select></td>
+    <td><input class="lit-input" data-field="sentToPlatform" type="date" value="${toDateInputValue(
+      entry.sentToPlatform
+    )}" /></td>
     <td><select class="lit-input" data-field="acknowledged">${yesNoOptions}</select></td>
     <td><select class="lit-input" data-field="breakdown">${yesNoOptions}</select></td>
     <td><select class="lit-input" data-field="allDefAccountedFor">${yesNoOptions}</select></td>
@@ -170,7 +172,6 @@ const renderCollectionRow = (entry = {}) => {
     <td><select class="lit-input" data-field="sentToPlaintiff">${yesNoOptions}</select></td>
     <td><input class="lit-input" data-field="notes" value="${entry.notes || ""}" /></td>
   `;
-  row.querySelector('[data-field="sentToPlatform"]').value = entry.sentToPlatform || "";
   row.querySelector('[data-field="acknowledged"]').value = entry.acknowledged || "";
   row.querySelector('[data-field="breakdown"]').value = entry.breakdown || "";
   row.querySelector('[data-field="allDefAccountedFor"]').value =
@@ -183,7 +184,8 @@ const renderCollectionRow = (entry = {}) => {
 const readCollectionRows = () =>
   Array.from(collectionsBody.querySelectorAll("tr")).map((row) => ({
     platform: row.querySelector('[data-field="platform"]').value.trim(),
-    sentToPlatform: row.querySelector('[data-field="sentToPlatform"]').value,
+    sentToPlatform:
+      toDateInputValue(row.querySelector('[data-field="sentToPlatform"]').value) || null,
     acknowledged: row.querySelector('[data-field="acknowledged"]').value,
     breakdown: row.querySelector('[data-field="breakdown"]').value,
     allDefAccountedFor: row.querySelector('[data-field="allDefAccountedFor"]').value,
@@ -387,17 +389,30 @@ const init = async () => {
     const formData = new FormData(newCaseForm);
     const payload = {
       caseName: String(formData.get("caseName") || "").trim(),
-      clientName: String(formData.get("clientName") || "").trim(),
+      clientName: String(formData.get("judge") || "").trim() || "Docket Case",
       caseNumber: String(formData.get("caseNumber") || "").trim() || null,
       jurisdiction: String(formData.get("jurisdiction") || "").trim(),
+      judge: String(formData.get("judge") || "").trim() || null,
+      plaintiff: null,
       status: "Active",
       updatedBy: getUser()?.name || getUser()?.email || null,
       isDocketOnly: true,
+      docketDefendantCount: 0,
     };
-    if (!payload.caseName || !payload.clientName || !payload.jurisdiction) {
-      newCaseError.textContent = "Case name, client name, and jurisdiction are required.";
+    const requestedDefendantCountRaw = String(formData.get("defendantCount") || "").trim();
+    const requestedDefendantCount =
+      requestedDefendantCountRaw === "" ? 0 : Number(requestedDefendantCountRaw);
+    if (
+      !payload.caseName ||
+      !payload.jurisdiction ||
+      !Number.isFinite(requestedDefendantCount) ||
+      requestedDefendantCount < 0
+    ) {
+      newCaseError.textContent =
+        "Case name, jurisdiction, and a valid defendant count are required.";
       return;
     }
+    payload.docketDefendantCount = requestedDefendantCount;
     try {
       await createLitigationCase(payload);
       newCaseModal.classList.add("hidden");
