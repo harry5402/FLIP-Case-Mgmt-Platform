@@ -166,10 +166,25 @@ const buildStatusOptions = (selectedValue) =>
     )
     .join("");
 
-const rerenderCasesPreservingScroll = async () => {
+const rerenderCasesPreservingScroll = async (caseId) => {
   const scrollX = window.scrollX;
   const scrollY = window.scrollY;
+  const currentCaseCard = caseId
+    ? document.querySelector(`.litigation-case[data-case-id="${caseId}"]`)
+    : null;
+  const cardTopOffset = currentCaseCard ? currentCaseCard.getBoundingClientRect().top : null;
   await renderCases(activeTab);
+  await new Promise((resolve) => window.requestAnimationFrame(resolve));
+
+  if (caseId) {
+    const nextCaseCard = document.querySelector(`.litigation-case[data-case-id="${caseId}"]`);
+    if (nextCaseCard && cardTopOffset !== null) {
+      const nextTopOffset = nextCaseCard.getBoundingClientRect().top;
+      window.scrollBy({ left: 0, top: nextTopOffset - cardTopOffset, behavior: "auto" });
+      return;
+    }
+  }
+
   window.scrollTo(scrollX, scrollY);
 };
 
@@ -398,6 +413,7 @@ const renderCases = async (tab) => {
     }
     const card = document.createElement("div");
     card.className = "table-card litigation-case";
+    card.dataset.caseId = item.id;
     if (focusCaseId && item.id === focusCaseId) {
       card.classList.add("focused-docket-case");
     }
@@ -494,7 +510,7 @@ const renderCases = async (tab) => {
           isCompleted: true,
           isHidden: button.classList.contains("complete-hide-action"),
         });
-        await rerenderCasesPreservingScroll();
+        await rerenderCasesPreservingScroll(item.id);
       } catch (error) {
         rowError.textContent = button.classList.contains("complete-hide-action")
           ? error.message || "Unable to hide action."
@@ -506,7 +522,7 @@ const renderCases = async (tab) => {
       const payload = readEntryRows(tbody);
       try {
         await saveEntries(item.id, payload);
-        await rerenderCasesPreservingScroll();
+        await rerenderCasesPreservingScroll(item.id);
       } catch (error) {
         rowError.textContent = error.message || "Unable to save entries.";
       }
@@ -524,7 +540,7 @@ const renderCases = async (tab) => {
       try {
         await updateDocketStatus(item.id, caseStatusSelect.value || "");
         caseStatusFeedback.textContent = "Saved";
-        await rerenderCasesPreservingScroll();
+        await rerenderCasesPreservingScroll(item.id);
       } catch (error) {
         caseStatusFeedback.textContent = error.message || "Unable to save status.";
       } finally {
@@ -607,12 +623,13 @@ const init = async () => {
       if (!openCollectionsCaseId) return;
       collectionsError.textContent = "";
       try {
-        await saveCollections(openCollectionsCaseId, readCollectionRows());
-        closeCollections();
-        await rerenderCasesPreservingScroll();
-      } catch (error) {
-        collectionsError.textContent = error.message || "Unable to save collections.";
-      }
+      await saveCollections(openCollectionsCaseId, readCollectionRows());
+      const currentCaseId = openCollectionsCaseId;
+      closeCollections();
+      await rerenderCasesPreservingScroll(currentCaseId);
+    } catch (error) {
+      collectionsError.textContent = error.message || "Unable to save collections.";
+    }
     });
 
     closeArchiveConfirmModal?.addEventListener("click", () => {
@@ -626,12 +643,13 @@ const init = async () => {
       }
     });
     confirmArchiveAction?.addEventListener("click", async () => {
-      if (!pendingArchiveAction) return;
-      await setArchived(pendingArchiveAction.caseId, pendingArchiveAction.archived);
-      archiveConfirmModal.classList.add("hidden");
-      pendingArchiveAction = null;
-      await rerenderCasesPreservingScroll();
-    });
+    if (!pendingArchiveAction) return;
+    const currentCaseId = pendingArchiveAction.caseId;
+    await setArchived(pendingArchiveAction.caseId, pendingArchiveAction.archived);
+    archiveConfirmModal.classList.add("hidden");
+    pendingArchiveAction = null;
+    await rerenderCasesPreservingScroll(currentCaseId);
+  });
 
     newCaseButton?.addEventListener("click", () => {
       newCaseError.textContent = "";
@@ -712,8 +730,9 @@ const init = async () => {
           docketDefendantCount: editingCase.isDocketOnly ? defendantCount : undefined,
           updatedBy: getUser()?.name || getUser()?.email || null,
         });
+        const currentCaseId = editingCase.id;
         closeEditTitle();
-        await rerenderCasesPreservingScroll();
+        await rerenderCasesPreservingScroll(currentCaseId);
       } catch (error) {
         editTitleError.textContent = error.message || "Unable to save docket title.";
       }
