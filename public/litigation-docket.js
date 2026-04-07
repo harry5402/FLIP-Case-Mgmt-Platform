@@ -102,7 +102,7 @@ const updateDocketStatus = (caseId, docketStatus) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ docketStatus }),
   });
-const updateCase = (caseId, payload) =>
+const updateDocketCase = (caseId, payload) =>
   fetchJson(`/api/cases/${caseId}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -705,7 +705,7 @@ const init = async () => {
       }
 
       try {
-        await updateCase(editingCase.id, {
+        await updateDocketCase(editingCase.id, {
           caseName,
           caseNumber: String(formData.get("caseNumber") || "").trim() || null,
           judge: String(formData.get("judge") || "").trim() || null,
