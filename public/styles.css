@@ -601,6 +601,42 @@ tr.is-completed td {
   flex-wrap: wrap;
 }
 
+.drag-cell {
+  width: 56px;
+  text-align: center;
+}
+
+.drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  border: 1px dashed var(--border);
+  font-family: "Inter", "Segoe UI", sans-serif;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: grab;
+  user-select: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+tr.dragging-row {
+  opacity: 0.45;
+}
+
+tr.drag-over-above td {
+  border-top: 2px solid var(--accent);
+}
+
+tr.drag-over-below td {
+  border-bottom: 2px solid var(--accent);
+}
+
 .row-action-buttons .ghost-button[disabled] {
   opacity: 0.55;
   cursor: not-allowed;

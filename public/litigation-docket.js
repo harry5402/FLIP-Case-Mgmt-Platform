@@ -31,6 +31,7 @@ let pendingArchiveAction = null;
 let openHiddenActionsCaseId = null;
 let editingCase = null;
 let userOptions = [];
+let draggingEntryRow = null;
 const focusCaseId = getParam("caseId");
 const focusAction = getParam("action");
 
@@ -188,12 +189,39 @@ const rerenderCasesPreservingScroll = async (caseId) => {
   window.scrollTo(scrollX, scrollY);
 };
 
+const clearEntryDragClasses = (tbody) => {
+  tbody?.querySelectorAll("tr").forEach((row) => {
+    row.classList.remove("drag-over-above", "drag-over-below");
+  });
+};
+
+const attachEntryDragBehavior = (row) => {
+  const handle = row.querySelector(".drag-handle");
+  if (!handle) return;
+
+  handle.addEventListener("dragstart", (event) => {
+    draggingEntryRow = row;
+    row.classList.add("dragging-row");
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", row.dataset.actionId || "new-row");
+  });
+
+  handle.addEventListener("dragend", () => {
+    row.classList.remove("dragging-row");
+    clearEntryDragClasses(row.closest("tbody"));
+    draggingEntryRow = null;
+  });
+};
+
 const renderEntryRow = (entry = {}) => {
   const row = document.createElement("tr");
   if (entry.id) {
     row.dataset.actionId = entry.id;
   }
   row.innerHTML = `
+    <td class="drag-cell">
+      <span class="drag-handle" draggable="true" title="Drag to reorder">::</span>
+    </td>
     <td><textarea class="lit-input lit-textarea action-textarea" data-field="action" rows="2">${escapeHtml(
       entry.action || ""
     )}</textarea></td>
@@ -238,6 +266,7 @@ const renderEntryRow = (entry = {}) => {
   if (focusAction && actionValue === String(focusAction).trim().toLowerCase()) {
     row.classList.add("focused-docket-row");
   }
+  attachEntryDragBehavior(row);
   return row;
 };
 
@@ -267,6 +296,45 @@ const populateEntriesTable = (tbody, entries) => {
       '<td colspan="6" class="empty-state">Unable to render one or more actions for this case.</td>';
     tbody.appendChild(fallbackRow);
   }
+};
+
+const attachEntriesTbodyDragBehavior = (tbody) => {
+  if (tbody.dataset.dragBound === "true") return;
+  tbody.dataset.dragBound = "true";
+
+  tbody.addEventListener("dragover", (event) => {
+    if (!draggingEntryRow) return;
+    event.preventDefault();
+    const targetRow = event.target.closest("tr");
+    if (!targetRow || targetRow === draggingEntryRow || !tbody.contains(targetRow)) return;
+
+    clearEntryDragClasses(tbody);
+    const rect = targetRow.getBoundingClientRect();
+    const placeAbove = event.clientY < rect.top + rect.height / 2;
+    targetRow.classList.add(placeAbove ? "drag-over-above" : "drag-over-below");
+  });
+
+  tbody.addEventListener("drop", (event) => {
+    if (!draggingEntryRow) return;
+    event.preventDefault();
+    const targetRow = event.target.closest("tr");
+    clearEntryDragClasses(tbody);
+    if (!targetRow || targetRow === draggingEntryRow || !tbody.contains(targetRow)) return;
+
+    const rect = targetRow.getBoundingClientRect();
+    const placeAbove = event.clientY < rect.top + rect.height / 2;
+    if (placeAbove) {
+      tbody.insertBefore(draggingEntryRow, targetRow);
+    } else {
+      tbody.insertBefore(draggingEntryRow, targetRow.nextSibling);
+    }
+  });
+
+  tbody.addEventListener("dragleave", (event) => {
+    if (!tbody.contains(event.relatedTarget)) {
+      clearEntryDragClasses(tbody);
+    }
+  });
 };
 
 const renderCollectionRow = (entry = {}) => {
@@ -459,6 +527,7 @@ const renderCases = async (tab) => {
         <table>
           <thead>
             <tr>
+              <th>Move</th>
               <th>Action</th>
               <th>Assigned To</th>
               <th>Internal Due Date</th>
@@ -484,6 +553,7 @@ const renderCases = async (tab) => {
       </div>
     `;
     const tbody = card.querySelector("tbody");
+    attachEntriesTbodyDragBehavior(tbody);
     populateEntriesTable(tbody, entries);
 
     card.querySelector(".add-entry").addEventListener("click", () => {
