@@ -35,6 +35,7 @@ const LITIGATION_TABS = [
   "GAND",
   "NDIN",
   "MDFL",
+  "MBFD",
   "WDPA",
   "EDWI",
   "FAIKERZ",
