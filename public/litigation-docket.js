@@ -179,9 +179,9 @@ const renderEntryRow = (entry = {}) => {
     row.dataset.actionId = entry.id;
   }
   row.innerHTML = `
-    <td><textarea class="lit-input lit-textarea action-textarea" data-field="action" rows="2">${
+    <td><textarea class="lit-input lit-textarea action-textarea" data-field="action" rows="2">${escapeHtml(
       entry.action || ""
-    }</textarea></td>
+    )}</textarea></td>
     <td><select class="lit-input" data-field="assignedToUserId">${buildUserOptions(
       entry.assignedToUserId || ""
     )}</select></td>
@@ -191,9 +191,9 @@ const renderEntryRow = (entry = {}) => {
     <td><input class="lit-input" data-field="finalDueDate" type="date" value="${toDateInputValue(
       entry.finalDueDate
     )}" /></td>
-    <td><textarea class="lit-input lit-textarea notes-textarea" data-field="notes" rows="3">${
+    <td><textarea class="lit-input lit-textarea notes-textarea" data-field="notes" rows="3">${escapeHtml(
       entry.notes || ""
-    }</textarea></td>
+    )}</textarea></td>
     <td>
       <div class="row-action-buttons">
         <button class="ghost-button complete-action" type="button" ${
@@ -241,7 +241,9 @@ const readEntryRows = (tbody) =>
 const renderCollectionRow = (entry = {}) => {
   const row = document.createElement("tr");
   row.innerHTML = `
-    <td><input class="lit-input" data-field="platform" value="${entry.platform || ""}" /></td>
+    <td><input class="lit-input" data-field="platform" value="${escapeHtml(
+      entry.platform || ""
+    )}" /></td>
     <td><input class="lit-input" data-field="sentToPlatform" type="date" value="${toDateInputValue(
       entry.sentToPlatform
     )}" /></td>
@@ -250,9 +252,9 @@ const renderCollectionRow = (entry = {}) => {
     <td><select class="lit-input" data-field="allDefAccountedFor">${yesNoOptions}</select></td>
     <td><select class="lit-input" data-field="moneyReceived">${yesNoOptions}</select></td>
     <td><select class="lit-input" data-field="sentToPlaintiff">${yesNoOptions}</select></td>
-    <td><textarea class="lit-input lit-textarea notes-textarea" data-field="notes" rows="3">${
+    <td><textarea class="lit-input lit-textarea notes-textarea" data-field="notes" rows="3">${escapeHtml(
       entry.notes || ""
-    }</textarea></td>
+    )}</textarea></td>
   `;
   row.querySelector('[data-field="acknowledged"]').value = entry.acknowledged || "";
   row.querySelector('[data-field="breakdown"]').value = entry.breakdown || "";
@@ -370,7 +372,15 @@ const closeEditTitle = () => {
 
 const renderCases = async (tab) => {
   casesContainer.innerHTML = `<div class="empty-state">Loading...</div>`;
-  const cases = await fetchJson(`/api/litigation/cases?tab=${encodeURIComponent(tab)}`);
+  let cases = [];
+  try {
+    cases = await fetchJson(`/api/litigation/cases?tab=${encodeURIComponent(tab)}`);
+  } catch (error) {
+    casesContainer.innerHTML = `<div class="empty-state">Unable to load docket cases: ${escapeHtml(
+      error.message || "Request failed"
+    )}</div>`;
+    return;
+  }
   casesContainer.innerHTML = "";
 
   if (!cases.length) {
@@ -379,7 +389,13 @@ const renderCases = async (tab) => {
   }
 
   for (const item of cases) {
-    const entries = await loadEntries(item.id);
+    let entries = [];
+    let entryLoadError = "";
+    try {
+      entries = await loadEntries(item.id);
+    } catch (error) {
+      entryLoadError = error.message || "Unable to load actions.";
+    }
     const card = document.createElement("div");
     card.className = "table-card litigation-case";
     if (focusCaseId && item.id === focusCaseId) {
@@ -387,14 +403,14 @@ const renderCases = async (tab) => {
     }
     card.innerHTML = `
       <div class="litigation-case-header">
-        <div class="litigation-case-title">${item.caseName || "Case"}</div>
-        <div class="litigation-case-meta">${item.caseNumber || "—"} · ${
+        <div class="litigation-case-title">${escapeHtml(item.caseName || "Case")}</div>
+        <div class="litigation-case-meta">${escapeHtml(item.caseNumber || "—")} · ${escapeHtml(
           item.jurisdiction || "—"
-        } · Defendants: ${item.defendantCount || 0}</div>
-        <div class="litigation-case-meta">Judge: ${item.judge || "—"}</div>
+        )} · Defendants: ${escapeHtml(item.defendantCount || 0)}</div>
+        <div class="litigation-case-meta">Judge: ${escapeHtml(item.judge || "—")}</div>
         <div class="litigation-case-meta">Most recent edit: ${formatDateTime(
           item.mostRecentEditAt
-        )} by ${item.mostRecentEditBy || "—"}</div>
+        )} by ${escapeHtml(item.mostRecentEditBy || "—")}</div>
         <div class="litigation-case-status-row">
           <label class="inline-select-field">
             <span>Status</span>
@@ -405,6 +421,7 @@ const renderCases = async (tab) => {
           <span class="case-status-feedback"></span>
           <button class="ghost-button edit-title-button" type="button">Edit Title</button>
         </div>
+        ${entryLoadError ? `<div class="form-error">${escapeHtml(entryLoadError)}</div>` : ""}
       </div>
       <div class="table-wrap">
         <table>
@@ -438,7 +455,14 @@ const renderCases = async (tab) => {
     if (!entries.length) {
       tbody.appendChild(renderEntryRow({}));
     } else {
-      entries.forEach((entry) => tbody.appendChild(renderEntryRow(entry)));
+      try {
+        entries.forEach((entry) => tbody.appendChild(renderEntryRow(entry)));
+      } catch (error) {
+        const fallbackRow = document.createElement("tr");
+        fallbackRow.innerHTML = `<td colspan="6" class="empty-state">Unable to render one or more actions for this case.</td>`;
+        tbody.innerHTML = "";
+        tbody.appendChild(fallbackRow);
+      }
     }
 
     card.querySelector(".add-entry").addEventListener("click", () => {
