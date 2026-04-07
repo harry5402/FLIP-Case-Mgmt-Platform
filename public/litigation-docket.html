@@ -83,6 +83,39 @@
       </div>
     </div>
 
+    <div id="edit-title-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="info-card-header">
+          <h3>Edit Docket Title</h3>
+          <button id="close-edit-title-modal" class="ghost-button" type="button">Close</button>
+        </div>
+        <form id="edit-title-form" class="form-grid">
+          <label class="form-field">
+            <span>Case Name</span>
+            <input name="caseName" required />
+          </label>
+          <label class="form-field">
+            <span>Case Number</span>
+            <input name="caseNumber" />
+          </label>
+          <label class="form-field">
+            <span>Judge Name</span>
+            <input name="judge" />
+          </label>
+          <label class="form-field">
+            <span># of Defendants</span>
+            <input name="defendantCount" type="number" min="0" />
+          </label>
+        </form>
+        <div class="form-actions">
+          <div id="edit-title-error" class="form-error"></div>
+          <button id="save-edit-title" class="ghost-button" type="submit" form="edit-title-form">
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="collections-modal" class="modal hidden">
       <div class="modal-card">
         <div class="info-card-header">

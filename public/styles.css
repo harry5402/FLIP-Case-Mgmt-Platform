@@ -524,6 +524,33 @@ tbody td {
   color: var(--muted);
 }
 
+.litigation-case-status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+.inline-select-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Inter", "Segoe UI", sans-serif;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.inline-select-field .lit-input {
+  min-width: 220px;
+}
+
+.case-status-feedback {
+  font-family: "Inter", "Segoe UI", sans-serif;
+  font-size: 12px;
+  color: var(--accent);
+}
+
 .lit-input {
   width: 100%;
   border: 1px solid var(--border);
@@ -532,6 +559,22 @@ tbody td {
   font-family: "Inter", "Segoe UI", sans-serif;
   font-size: 12px;
   background: #fffaf4;
+}
+
+.lit-textarea {
+  resize: vertical;
+  min-height: 72px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.action-textarea {
+  min-height: 58px;
+}
+
+.notes-textarea {
+  min-height: 84px;
 }
 
 tr.due-soon td {

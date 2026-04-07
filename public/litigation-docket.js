@@ -5,6 +5,10 @@ const newCaseModal = document.getElementById("new-case-modal");
 const closeNewCaseModal = document.getElementById("close-new-case-modal");
 const newCaseForm = document.getElementById("new-case-form");
 const newCaseError = document.getElementById("new-case-error");
+const editTitleModal = document.getElementById("edit-title-modal");
+const closeEditTitleModal = document.getElementById("close-edit-title-modal");
+const editTitleForm = document.getElementById("edit-title-form");
+const editTitleError = document.getElementById("edit-title-error");
 const collectionsModal = document.getElementById("collections-modal");
 const closeCollectionsModal = document.getElementById("close-collections-modal");
 const collectionsBody = document.getElementById("collections-body");
@@ -25,6 +29,7 @@ let activeTab = "NDIL";
 let openCollectionsCaseId = null;
 let pendingArchiveAction = null;
 let openHiddenActionsCaseId = null;
+let editingCase = null;
 let userOptions = [];
 const focusCaseId = getParam("caseId");
 const focusAction = getParam("action");
@@ -34,6 +39,17 @@ const yesNoOptions = `
   <option value="Yes">Yes</option>
   <option value="No">No</option>
 `;
+
+const docketStatusOptions = [
+  "",
+  "Case Filed",
+  "Default Requested",
+  "Default Granted",
+  "TRO Requested",
+  "Negotiating",
+  "TRO Signed",
+  "Case Closed",
+];
 
 const formatDateTime = (value) => {
   if (!value) return "—";
@@ -79,6 +95,12 @@ const saveEntries = (caseId, entries) =>
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ entries }),
+  });
+const updateCase = (caseId, payload) =>
+  fetchJson(`/api/cases/${caseId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 const updateActionState = (actionId, payload) =>
   fetchJson(`/api/litigation/actions/${actionId}/state`, {
@@ -128,13 +150,32 @@ const buildUserOptions = (selectedValue) => {
   return options.join("");
 };
 
+const buildStatusOptions = (selectedValue) =>
+  docketStatusOptions
+    .map(
+      (status) =>
+        `<option value="${escapeHtml(status)}" ${
+          status === (selectedValue || "") ? "selected" : ""
+        }>${escapeHtml(status || "—")}</option>`
+    )
+    .join("");
+
+const rerenderCasesPreservingScroll = async () => {
+  const scrollX = window.scrollX;
+  const scrollY = window.scrollY;
+  await renderCases(activeTab);
+  window.scrollTo(scrollX, scrollY);
+};
+
 const renderEntryRow = (entry = {}) => {
   const row = document.createElement("tr");
   if (entry.id) {
     row.dataset.actionId = entry.id;
   }
   row.innerHTML = `
-    <td><input class="lit-input" data-field="action" value="${entry.action || ""}" /></td>
+    <td><textarea class="lit-input lit-textarea action-textarea" data-field="action" rows="2">${
+      entry.action || ""
+    }</textarea></td>
     <td><select class="lit-input" data-field="assignedToUserId">${buildUserOptions(
       entry.assignedToUserId || ""
     )}</select></td>
@@ -144,7 +185,9 @@ const renderEntryRow = (entry = {}) => {
     <td><input class="lit-input" data-field="finalDueDate" type="date" value="${toDateInputValue(
       entry.finalDueDate
     )}" /></td>
-    <td><input class="lit-input" data-field="notes" value="${entry.notes || ""}" /></td>
+    <td><textarea class="lit-input lit-textarea notes-textarea" data-field="notes" rows="3">${
+      entry.notes || ""
+    }</textarea></td>
     <td>
       <div class="row-action-buttons">
         <button class="ghost-button complete-action" type="button" ${
@@ -201,7 +244,9 @@ const renderCollectionRow = (entry = {}) => {
     <td><select class="lit-input" data-field="allDefAccountedFor">${yesNoOptions}</select></td>
     <td><select class="lit-input" data-field="moneyReceived">${yesNoOptions}</select></td>
     <td><select class="lit-input" data-field="sentToPlaintiff">${yesNoOptions}</select></td>
-    <td><input class="lit-input" data-field="notes" value="${entry.notes || ""}" /></td>
+    <td><textarea class="lit-input lit-textarea notes-textarea" data-field="notes" rows="3">${
+      entry.notes || ""
+    }</textarea></td>
   `;
   row.querySelector('[data-field="acknowledged"]').value = entry.acknowledged || "";
   row.querySelector('[data-field="breakdown"]').value = entry.breakdown || "";
@@ -301,6 +346,22 @@ const closeHiddenActions = () => {
   openHiddenActionsCaseId = null;
 };
 
+const openEditTitle = (item) => {
+  editingCase = item;
+  editTitleError.textContent = "";
+  editTitleForm.elements.caseName.value = item.caseName || "";
+  editTitleForm.elements.caseNumber.value = item.caseNumber || "";
+  editTitleForm.elements.judge.value = item.judge || "";
+  editTitleForm.elements.defendantCount.value = item.defendantCount ?? 0;
+  editTitleForm.elements.defendantCount.disabled = !item.isDocketOnly;
+  editTitleModal.classList.remove("hidden");
+};
+
+const closeEditTitle = () => {
+  editTitleModal.classList.add("hidden");
+  editingCase = null;
+};
+
 const renderCases = async (tab) => {
   casesContainer.innerHTML = `<div class="empty-state">Loading...</div>`;
   const cases = await fetchJson(`/api/litigation/cases?tab=${encodeURIComponent(tab)}`);
@@ -324,9 +385,20 @@ const renderCases = async (tab) => {
         <div class="litigation-case-meta">${item.caseNumber || "—"} · ${
           item.jurisdiction || "—"
         } · Defendants: ${item.defendantCount || 0}</div>
+        <div class="litigation-case-meta">Judge: ${item.judge || "—"}</div>
         <div class="litigation-case-meta">Most recent edit: ${formatDateTime(
           item.mostRecentEditAt
         )} by ${item.mostRecentEditBy || "—"}</div>
+        <div class="litigation-case-status-row">
+          <label class="inline-select-field">
+            <span>Status</span>
+            <select class="lit-input case-status-select" data-case-id="${item.id}">
+              ${buildStatusOptions(item.status || "")}
+            </select>
+          </label>
+          <span class="case-status-feedback"></span>
+          <button class="ghost-button edit-title-button" type="button">Edit Title</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table>
@@ -392,7 +464,7 @@ const renderCases = async (tab) => {
           isCompleted: true,
           isHidden: button.classList.contains("complete-hide-action"),
         });
-        await renderCases(activeTab);
+        await rerenderCasesPreservingScroll();
       } catch (error) {
         rowError.textContent = button.classList.contains("complete-hide-action")
           ? error.message || "Unable to hide action."
@@ -404,7 +476,7 @@ const renderCases = async (tab) => {
       const payload = readEntryRows(tbody);
       try {
         await saveEntries(item.id, payload);
-        await renderCases(activeTab);
+        await rerenderCasesPreservingScroll();
       } catch (error) {
         rowError.textContent = error.message || "Unable to save entries.";
       }
@@ -413,6 +485,27 @@ const renderCases = async (tab) => {
       openHiddenActions(item.id).catch((error) => {
         rowError.textContent = error.message || "Unable to load hidden actions.";
       });
+    });
+    const caseStatusSelect = card.querySelector(".case-status-select");
+    const caseStatusFeedback = card.querySelector(".case-status-feedback");
+    caseStatusSelect.addEventListener("change", async () => {
+      caseStatusFeedback.textContent = "";
+      caseStatusSelect.disabled = true;
+      try {
+        await updateCase(item.id, {
+          status: caseStatusSelect.value || null,
+          updatedBy: getUser()?.name || getUser()?.email || null,
+        });
+        caseStatusFeedback.textContent = "Saved";
+        await rerenderCasesPreservingScroll();
+      } catch (error) {
+        caseStatusFeedback.textContent = error.message || "Unable to save status.";
+      } finally {
+        caseStatusSelect.disabled = false;
+      }
+    });
+    card.querySelector(".edit-title-button").addEventListener("click", () => {
+      openEditTitle(item);
     });
     card.querySelector(".open-collections").addEventListener("click", () => {
       openCollections(item.id);
@@ -467,6 +560,10 @@ const init = async () => {
   hiddenActionsModal.addEventListener("click", (event) => {
     if (event.target === hiddenActionsModal) closeHiddenActions();
   });
+  closeEditTitleModal.addEventListener("click", closeEditTitle);
+  editTitleModal.addEventListener("click", (event) => {
+    if (event.target === editTitleModal) closeEditTitle();
+  });
   addCollectionRowButton.addEventListener("click", () => {
     collectionsBody.appendChild(renderCollectionRow({}));
   });
@@ -476,7 +573,7 @@ const init = async () => {
     try {
       await saveCollections(openCollectionsCaseId, readCollectionRows());
       closeCollections();
-      await renderCases(activeTab);
+      await rerenderCasesPreservingScroll();
     } catch (error) {
       collectionsError.textContent = error.message || "Unable to save collections.";
     }
@@ -497,7 +594,7 @@ const init = async () => {
     await setArchived(pendingArchiveAction.caseId, pendingArchiveAction.archived);
     archiveConfirmModal.classList.add("hidden");
     pendingArchiveAction = null;
-    await renderCases(activeTab);
+    await rerenderCasesPreservingScroll();
   });
 
   newCaseButton.addEventListener("click", () => {
@@ -555,6 +652,35 @@ const init = async () => {
       }
     } catch (error) {
       newCaseError.textContent = error.message || "Unable to create case.";
+    }
+  });
+
+  editTitleForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (!editingCase) return;
+    editTitleError.textContent = "";
+    const formData = new FormData(editTitleForm);
+    const caseName = String(formData.get("caseName") || "").trim();
+    const defendantCountRaw = String(formData.get("defendantCount") || "").trim();
+    const defendantCount =
+      defendantCountRaw === "" ? 0 : Number(defendantCountRaw);
+    if (!caseName || !Number.isFinite(defendantCount) || defendantCount < 0) {
+      editTitleError.textContent = "Case name and a valid defendant count are required.";
+      return;
+    }
+
+    try {
+      await updateCase(editingCase.id, {
+        caseName,
+        caseNumber: String(formData.get("caseNumber") || "").trim() || null,
+        judge: String(formData.get("judge") || "").trim() || null,
+        docketDefendantCount: editingCase.isDocketOnly ? defendantCount : undefined,
+        updatedBy: getUser()?.name || getUser()?.email || null,
+      });
+      closeEditTitle();
+      await rerenderCasesPreservingScroll();
+    } catch (error) {
+      editTitleError.textContent = error.message || "Unable to save docket title.";
     }
   });
 

@@ -638,6 +638,7 @@ app.get("/api/litigation/cases", async (req, res) => {
         c.case_number,
         c.jurisdiction,
         COALESCE(c.is_docket_only, FALSE) AS is_docket_only,
+        c.judge,
         c.status,
         COALESCE(state.docket_defendant_count, defs.count, 0) AS defendant_count,
         COALESCE(state.archived, FALSE) AS archived,
@@ -670,7 +671,13 @@ app.get("/api/litigation/cases", async (req, res) => {
          )
        )
      )
-     ORDER BY COALESCE(a.created_at, c.updated_at, c.created_at) DESC NULLS LAST`,
+     ORDER BY
+       COALESCE(
+         NULLIF(substring(lower(COALESCE(c.case_number, '')) from 'cv-(\d{5})'), '')::int,
+         2147483647
+       ) ASC,
+       lower(COALESCE(c.case_number, '')) ASC,
+       lower(COALESCE(c.case_name, '')) ASC`,
     [requestedTab]
   );
 
@@ -681,6 +688,8 @@ app.get("/api/litigation/cases", async (req, res) => {
       caseNumber: row.case_number,
       jurisdiction: row.jurisdiction,
       isDocketOnly: row.is_docket_only,
+      judge: row.judge,
+      status: row.status || "",
       defendantCount: row.defendant_count,
       archived: row.archived,
       mostRecentEditAt: row.most_recent_edit_at,
@@ -1381,6 +1390,7 @@ app.put("/api/cases/:id", async (req, res) => {
     status,
     updatedBy,
     notes,
+    docketDefendantCount,
   } = req.body;
   const actor = req.session?.name || req.session?.email || updatedBy || null;
 
@@ -1423,6 +1433,19 @@ app.put("/api/cases/:id", async (req, res) => {
       req.params.id,
     ]
   );
+
+  if (docketDefendantCount !== undefined && docketDefendantCount !== null) {
+    const numericDocketDefendantCount = Number(docketDefendantCount);
+    if (Number.isFinite(numericDocketDefendantCount) && numericDocketDefendantCount >= 0) {
+      await query(
+        `INSERT INTO litigation_case_state (case_id, archived, docket_defendant_count)
+         VALUES ($1, FALSE, $2)
+         ON CONFLICT (case_id)
+         DO UPDATE SET docket_defendant_count = EXCLUDED.docket_defendant_count`,
+        [req.params.id, numericDocketDefendantCount]
+      );
+    }
+  }
 
   await writeAuditLog(req, {
     action: "cases.update",
