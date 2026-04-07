@@ -96,6 +96,12 @@ const saveEntries = (caseId, entries) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ entries }),
   });
+const updateDocketStatus = (caseId, docketStatus) =>
+  fetchJson(`/api/litigation/cases/${caseId}/docket-status`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ docketStatus }),
+  });
 const updateCase = (caseId, payload) =>
   fetchJson(`/api/cases/${caseId}`, {
     method: "PUT",
@@ -393,7 +399,7 @@ const renderCases = async (tab) => {
           <label class="inline-select-field">
             <span>Status</span>
             <select class="lit-input case-status-select" data-case-id="${item.id}">
-              ${buildStatusOptions(item.status || "")}
+              ${buildStatusOptions(item.docketStatus || "")}
             </select>
           </label>
           <span class="case-status-feedback"></span>
@@ -492,10 +498,7 @@ const renderCases = async (tab) => {
       caseStatusFeedback.textContent = "";
       caseStatusSelect.disabled = true;
       try {
-        await updateCase(item.id, {
-          status: caseStatusSelect.value || null,
-          updatedBy: getUser()?.name || getUser()?.email || null,
-        });
+        await updateDocketStatus(item.id, caseStatusSelect.value || "");
         caseStatusFeedback.textContent = "Saved";
         await rerenderCasesPreservingScroll();
       } catch (error) {

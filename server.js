@@ -41,6 +41,16 @@ const LITIGATION_TABS = [
   "ARCHIVED",
 ];
 
+const DOCKET_STATUS_OPTIONS = [
+  "Case Filed",
+  "Default Requested",
+  "Default Granted",
+  "TRO Requested",
+  "Negotiating",
+  "TRO Signed",
+  "Case Closed",
+];
+
 const allowedOriginSet = new Set(
   String(process.env.ALLOWED_ORIGINS || "")
     .split(",")
@@ -279,12 +289,17 @@ const ensureLitigationTables = async () => {
       archived BOOLEAN NOT NULL DEFAULT FALSE,
       archived_at TIMESTAMPTZ,
       archived_by TEXT,
-      docket_defendant_count INTEGER
+      docket_defendant_count INTEGER,
+      docket_status TEXT
     )
   `);
   await query(`
     ALTER TABLE litigation_case_state
     ADD COLUMN IF NOT EXISTS docket_defendant_count INTEGER
+  `);
+  await query(`
+    ALTER TABLE litigation_case_state
+    ADD COLUMN IF NOT EXISTS docket_status TEXT
   `);
   await query(`
     CREATE TABLE IF NOT EXISTS litigation_actions (
@@ -640,6 +655,13 @@ app.get("/api/litigation/cases", async (req, res) => {
         COALESCE(c.is_docket_only, FALSE) AS is_docket_only,
         c.judge,
         c.status,
+        COALESCE(
+          state.docket_status,
+          CASE
+            WHEN c.status = ANY($2::text[]) THEN c.status
+            ELSE ''
+          END
+        ) AS docket_status,
         COALESCE(state.docket_defendant_count, defs.count, 0) AS defendant_count,
         COALESCE(state.archived, FALSE) AS archived,
         COALESCE(a.created_at, c.updated_at, c.created_at) AS most_recent_edit_at,
@@ -668,6 +690,8 @@ app.get("/api/litigation/cases", async (req, res) => {
          AND (
            COALESCE(c.is_docket_only, FALSE) = TRUE
            OR UPPER(COALESCE(c.status, '')) = 'ACTIVE'
+           OR COALESCE(state.docket_status, '') <> ''
+           OR c.status = ANY($2::text[])
          )
        )
      )
@@ -678,7 +702,7 @@ app.get("/api/litigation/cases", async (req, res) => {
        ) ASC,
        lower(COALESCE(c.case_number, '')) ASC,
        lower(COALESCE(c.case_name, '')) ASC`,
-    [requestedTab]
+    [requestedTab, DOCKET_STATUS_OPTIONS]
   );
 
   res.json(
@@ -690,6 +714,7 @@ app.get("/api/litigation/cases", async (req, res) => {
       isDocketOnly: row.is_docket_only,
       judge: row.judge,
       status: row.status || "",
+      docketStatus: row.docket_status || "",
       defendantCount: row.defendant_count,
       archived: row.archived,
       mostRecentEditAt: row.most_recent_edit_at,
@@ -920,6 +945,49 @@ app.put("/api/litigation/actions/:id/state", async (req, res) => {
       isHidden: result.rows[0].is_hidden,
     },
   });
+});
+
+app.put("/api/litigation/cases/:id/docket-status", async (req, res) => {
+  const docketStatus = String(req.body?.docketStatus || "").trim();
+  if (docketStatus && !DOCKET_STATUS_OPTIONS.includes(docketStatus)) {
+    return res.status(400).json({ error: "Invalid docket status." });
+  }
+
+  const existing = await query(
+    `SELECT c.id, c.status, state.docket_status
+     FROM cases c
+     LEFT JOIN litigation_case_state state ON state.case_id = c.id
+     WHERE c.id = $1`,
+    [req.params.id]
+  );
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "Case not found." });
+  }
+
+  await query(
+    `INSERT INTO litigation_case_state
+      (case_id, archived, docket_status)
+     VALUES ($1, FALSE, $2)
+     ON CONFLICT (case_id)
+     DO UPDATE SET docket_status = EXCLUDED.docket_status`,
+    [req.params.id, docketStatus || null]
+  );
+
+  await writeAuditLog(req, {
+    action: "litigation.case.docket_status",
+    entityType: "case",
+    entityId: req.params.id,
+    before: {
+      docketStatus: existing.rows[0].docket_status || "",
+      caseStatus: existing.rows[0].status || "",
+    },
+    after: {
+      docketStatus: docketStatus || "",
+      caseStatus: existing.rows[0].status || "",
+    },
+  });
+
+  res.json({ ok: true, docketStatus: docketStatus || "" });
 });
 
 app.get("/api/litigation/cases/:id/collections", async (req, res) => {
