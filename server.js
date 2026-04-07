@@ -295,6 +295,10 @@ const ensureLitigationTables = async () => {
       final_due_date DATE,
       notes TEXT,
       assigned_to_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+      is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+      is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
+      completed_at TIMESTAMPTZ,
+      completed_by TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_by TEXT
@@ -303,6 +307,22 @@ const ensureLitigationTables = async () => {
   await query(`
     ALTER TABLE litigation_actions
     ADD COLUMN IF NOT EXISTS assigned_to_user_id UUID REFERENCES users(id) ON DELETE SET NULL
+  `);
+  await query(`
+    ALTER TABLE litigation_actions
+    ADD COLUMN IF NOT EXISTS is_completed BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+  await query(`
+    ALTER TABLE litigation_actions
+    ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+  await query(`
+    ALTER TABLE litigation_actions
+    ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ
+  `);
+  await query(`
+    ALTER TABLE litigation_actions
+    ADD COLUMN IF NOT EXISTS completed_by TEXT
   `);
   await query(`
     CREATE TABLE IF NOT EXISTS litigation_collections (
@@ -346,7 +366,7 @@ const syncLitigationTasks = async (caseId, entries, session) => {
     const action = String(entry.action || "").trim();
     const assignedToUserId = entry.assignedToUserId || null;
     const dueDate = entry.internalDueDate || null;
-    if (!action || !assignedToUserId) continue;
+    if (!action || !assignedToUserId || entry.isCompleted || entry.isHidden) continue;
 
     await query(
       `INSERT INTO tasks
@@ -671,9 +691,11 @@ app.get("/api/litigation/cases", async (req, res) => {
 
 app.get("/api/litigation/cases/:id/entries", async (req, res) => {
   const result = await query(
-    `SELECT id, action, internal_due_date, final_due_date, notes, sort_order, assigned_to_user_id
+    `SELECT id, action, internal_due_date, final_due_date, notes, sort_order, assigned_to_user_id,
+            is_completed, is_hidden, completed_at, completed_by
      FROM litigation_actions
      WHERE case_id = $1
+       AND COALESCE(is_hidden, FALSE) = FALSE
      ORDER BY sort_order, updated_at, id`,
     [req.params.id]
   );
@@ -685,6 +707,37 @@ app.get("/api/litigation/cases/:id/entries", async (req, res) => {
       finalDueDate: row.final_due_date,
       notes: row.notes || "",
       assignedToUserId: row.assigned_to_user_id,
+      isCompleted: row.is_completed,
+      isHidden: row.is_hidden,
+      completedAt: row.completed_at,
+      completedBy: row.completed_by,
+      sortOrder: row.sort_order,
+    }))
+  );
+});
+
+app.get("/api/litigation/cases/:id/hidden-entries", async (req, res) => {
+  const result = await query(
+    `SELECT id, action, internal_due_date, final_due_date, notes, sort_order, assigned_to_user_id,
+            is_completed, is_hidden, completed_at, completed_by
+     FROM litigation_actions
+     WHERE case_id = $1
+       AND COALESCE(is_hidden, FALSE) = TRUE
+     ORDER BY updated_at DESC, sort_order, id`,
+    [req.params.id]
+  );
+  res.json(
+    result.rows.map((row) => ({
+      id: row.id,
+      action: row.action || "",
+      internalDueDate: row.internal_due_date,
+      finalDueDate: row.final_due_date,
+      notes: row.notes || "",
+      assignedToUserId: row.assigned_to_user_id,
+      isCompleted: row.is_completed,
+      isHidden: row.is_hidden,
+      completedAt: row.completed_at,
+      completedBy: row.completed_by,
       sortOrder: row.sort_order,
     }))
   );
@@ -696,27 +749,71 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
     return res.status(400).json({ error: "entries array is required." });
   }
 
-  await query("DELETE FROM litigation_actions WHERE case_id = $1", [req.params.id]);
   for (let i = 0; i < entries.length; i += 1) {
     const entry = entries[i] || {};
-    await query(
-      `INSERT INTO litigation_actions
-        (case_id, action, internal_due_date, final_due_date, notes, assigned_to_user_id, sort_order, updated_at, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8)`,
-      [
-        req.params.id,
-        entry.action || null,
-        entry.internalDueDate || null,
-        entry.finalDueDate || null,
-        entry.notes || null,
-        entry.assignedToUserId || null,
-        i,
-        req.session?.name || req.session?.email || null,
-      ]
-    );
+    if (entry.id) {
+      await query(
+        `UPDATE litigation_actions
+         SET action = $2,
+             internal_due_date = $3,
+             final_due_date = $4,
+             notes = $5,
+             assigned_to_user_id = $6,
+             sort_order = $7,
+             updated_at = NOW(),
+             updated_by = $8
+         WHERE id = $1`,
+        [
+          entry.id,
+          entry.action || null,
+          entry.internalDueDate || null,
+          entry.finalDueDate || null,
+          entry.notes || null,
+          entry.assignedToUserId || null,
+          i,
+          req.session?.name || req.session?.email || null,
+        ]
+      );
+    } else {
+      await query(
+        `INSERT INTO litigation_actions
+          (case_id, action, internal_due_date, final_due_date, notes, assigned_to_user_id, sort_order, updated_at, updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8)`,
+        [
+          req.params.id,
+          entry.action || null,
+          entry.internalDueDate || null,
+          entry.finalDueDate || null,
+          entry.notes || null,
+          entry.assignedToUserId || null,
+          i,
+          req.session?.name || req.session?.email || null,
+        ]
+      );
+    }
   }
 
-  await syncLitigationTasks(req.params.id, entries, req.session);
+  const refreshed = await query(
+    `SELECT id, action, internal_due_date, final_due_date, notes, assigned_to_user_id,
+            is_completed, is_hidden
+     FROM litigation_actions
+     WHERE case_id = $1`,
+    [req.params.id]
+  );
+  await syncLitigationTasks(
+    req.params.id,
+    refreshed.rows.map((row) => ({
+      id: row.id,
+      action: row.action || "",
+      internalDueDate: row.internal_due_date,
+      finalDueDate: row.final_due_date,
+      notes: row.notes || "",
+      assignedToUserId: row.assigned_to_user_id,
+      isCompleted: row.is_completed,
+      isHidden: row.is_hidden,
+    })),
+    req.session
+  );
 
   await writeAuditLog(req, {
     action: "litigation.entries.save",
@@ -727,6 +824,93 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
   });
 
   res.json({ ok: true });
+});
+
+app.put("/api/litigation/actions/:id/state", async (req, res) => {
+  const { isCompleted, isHidden } = req.body || {};
+  const existing = await query(
+    `SELECT id, case_id, action, internal_due_date, final_due_date, notes, assigned_to_user_id,
+            is_completed, is_hidden
+     FROM litigation_actions
+     WHERE id = $1`,
+    [req.params.id]
+  );
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "Litigation action not found." });
+  }
+
+  const current = existing.rows[0];
+  const nextCompleted = Boolean(isCompleted);
+  const nextHidden = Boolean(isHidden);
+
+  const result = await query(
+    `UPDATE litigation_actions
+     SET is_completed = $2,
+         is_hidden = $3,
+         completed_at = CASE WHEN $2 THEN NOW() ELSE NULL END,
+         completed_by = CASE WHEN $2 THEN $4 ELSE NULL END,
+         updated_at = NOW(),
+         updated_by = $4
+     WHERE id = $1
+     RETURNING id, case_id, action, internal_due_date, final_due_date, notes, assigned_to_user_id, is_completed, is_hidden`,
+    [
+      req.params.id,
+      nextCompleted,
+      nextHidden,
+      req.session?.name || req.session?.email || null,
+    ]
+  );
+
+  const caseRows = await query(
+    `SELECT id, action, internal_due_date, final_due_date, notes, assigned_to_user_id,
+            is_completed, is_hidden
+     FROM litigation_actions
+     WHERE case_id = $1`,
+    [current.case_id]
+  );
+  await syncLitigationTasks(
+    current.case_id,
+    caseRows.rows.map((row) => ({
+      id: row.id,
+      action: row.action || "",
+      internalDueDate: row.internal_due_date,
+      finalDueDate: row.final_due_date,
+      notes: row.notes || "",
+      assignedToUserId: row.assigned_to_user_id,
+      isCompleted: row.is_completed,
+      isHidden: row.is_hidden,
+    })),
+    req.session
+  );
+
+  await writeAuditLog(req, {
+    action: "litigation.action.state",
+    entityType: "litigation_action",
+    entityId: req.params.id,
+    before: {
+      isCompleted: current.is_completed,
+      isHidden: current.is_hidden,
+    },
+    after: {
+      isCompleted: result.rows[0].is_completed,
+      isHidden: result.rows[0].is_hidden,
+    },
+  });
+
+  res.json({
+    ok: true,
+    action: {
+      id: result.rows[0].id,
+      caseId: result.rows[0].case_id,
+      action: result.rows[0].action || "",
+      internalDueDate: result.rows[0].internal_due_date,
+      finalDueDate: result.rows[0].final_due_date,
+      notes: result.rows[0].notes || "",
+      assignedToUserId: result.rows[0].assigned_to_user_id,
+      isCompleted: result.rows[0].is_completed,
+      isHidden: result.rows[0].is_hidden,
+    },
+  });
 });
 
 app.get("/api/litigation/cases/:id/collections", async (req, res) => {

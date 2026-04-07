@@ -16,10 +16,15 @@ const archiveConfirmTitle = document.getElementById("archive-confirm-title");
 const archiveConfirmText = document.getElementById("archive-confirm-text");
 const closeArchiveConfirmModal = document.getElementById("close-archive-confirm-modal");
 const confirmArchiveAction = document.getElementById("confirm-archive-action");
+const hiddenActionsModal = document.getElementById("hidden-actions-modal");
+const hiddenActionsBody = document.getElementById("hidden-actions-body");
+const hiddenActionsError = document.getElementById("hidden-actions-error");
+const closeHiddenActionsModal = document.getElementById("close-hidden-actions-modal");
 
 let activeTab = "NDIL";
 let openCollectionsCaseId = null;
 let pendingArchiveAction = null;
+let openHiddenActionsCaseId = null;
 let userOptions = [];
 const focusCaseId = getParam("caseId");
 const focusAction = getParam("action");
@@ -68,11 +73,18 @@ const fetchJson = async (url, options) => {
 };
 
 const loadEntries = (caseId) => fetchJson(`/api/litigation/cases/${caseId}/entries`);
+const loadHiddenEntries = (caseId) => fetchJson(`/api/litigation/cases/${caseId}/hidden-entries`);
 const saveEntries = (caseId, entries) =>
   fetchJson(`/api/litigation/cases/${caseId}/entries`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ entries }),
+  });
+const updateActionState = (actionId, payload) =>
+  fetchJson(`/api/litigation/actions/${actionId}/state`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 const loadCollections = (caseId) => fetchJson(`/api/litigation/cases/${caseId}/collections`);
 const saveCollections = (caseId, rows) =>
@@ -118,6 +130,9 @@ const buildUserOptions = (selectedValue) => {
 
 const renderEntryRow = (entry = {}) => {
   const row = document.createElement("tr");
+  if (entry.id) {
+    row.dataset.actionId = entry.id;
+  }
   row.innerHTML = `
     <td><input class="lit-input" data-field="action" value="${entry.action || ""}" /></td>
     <td><select class="lit-input" data-field="assignedToUserId">${buildUserOptions(
@@ -130,15 +145,30 @@ const renderEntryRow = (entry = {}) => {
       entry.finalDueDate
     )}" /></td>
     <td><input class="lit-input" data-field="notes" value="${entry.notes || ""}" /></td>
+    <td>
+      <div class="row-action-buttons">
+        <button class="ghost-button complete-action" type="button" ${
+          entry.id ? "" : "disabled"
+        }>Complete</button>
+        <button class="ghost-button complete-hide-action" type="button" ${
+          entry.id ? "" : "disabled"
+        }>Complete / Hide</button>
+      </div>
+    </td>
   `;
   const refreshDueHighlight = () => {
     const internalDue = row.querySelector('[data-field="internalDueDate"]').value;
     const finalDue = row.querySelector('[data-field="finalDueDate"]').value;
-    row.classList.toggle("due-soon", isDueSoon(internalDue) || isDueSoon(finalDue));
+    row.classList.toggle(
+      "due-soon",
+      !row.classList.contains("is-completed") &&
+        (isDueSoon(internalDue) || isDueSoon(finalDue))
+    );
   };
   row.querySelectorAll('input[type="date"]').forEach((input) => {
     input.addEventListener("change", refreshDueHighlight);
   });
+  row.classList.toggle("is-completed", Boolean(entry.isCompleted));
   refreshDueHighlight();
   const actionValue = String(entry.action || "").trim().toLowerCase();
   if (focusAction && actionValue === String(focusAction).trim().toLowerCase()) {
@@ -149,6 +179,7 @@ const renderEntryRow = (entry = {}) => {
 
 const readEntryRows = (tbody) =>
   Array.from(tbody.querySelectorAll("tr")).map((row) => ({
+    id: row.dataset.actionId || null,
     action: row.querySelector('[data-field="action"]').value.trim(),
     assignedToUserId: row.querySelector('[data-field="assignedToUserId"]').value || null,
     internalDueDate:
@@ -212,6 +243,64 @@ const closeCollections = () => {
   openCollectionsCaseId = null;
 };
 
+const renderHiddenActionRow = (entry = {}) => {
+  const row = document.createElement("tr");
+  const assignedUser = userOptions.find((user) => user.id === entry.assignedToUserId);
+  const assignedLabel = assignedUser
+    ? assignedUser.name
+      ? `${assignedUser.name} (${assignedUser.email})`
+      : assignedUser.email
+    : "—";
+  const completedLabel = entry.isCompleted
+    ? `${formatDateTime(entry.completedAt)}${entry.completedBy ? ` by ${entry.completedBy}` : ""}`
+    : "No";
+  row.innerHTML = `
+    <td>${escapeHtml(entry.action || "—")}</td>
+    <td>${escapeHtml(assignedLabel)}</td>
+    <td>${escapeHtml(toDateInputValue(entry.internalDueDate) || "—")}</td>
+    <td>${escapeHtml(toDateInputValue(entry.finalDueDate) || "—")}</td>
+    <td>${escapeHtml(entry.notes || "—")}</td>
+    <td>${escapeHtml(completedLabel)}</td>
+    <td><button class="ghost-button restore-hidden-action" type="button">Restore</button></td>
+  `;
+  row.querySelector(".restore-hidden-action").addEventListener("click", async () => {
+    hiddenActionsError.textContent = "";
+    try {
+      await updateActionState(entry.id, {
+        isCompleted: Boolean(entry.isCompleted),
+        isHidden: false,
+      });
+      if (openHiddenActionsCaseId) {
+        await openHiddenActions(openHiddenActionsCaseId);
+      }
+      await renderCases(activeTab);
+    } catch (error) {
+      hiddenActionsError.textContent = error.message || "Unable to restore hidden action.";
+    }
+  });
+  return row;
+};
+
+const openHiddenActions = async (caseId) => {
+  openHiddenActionsCaseId = caseId;
+  hiddenActionsError.textContent = "";
+  hiddenActionsBody.innerHTML = "";
+  const rows = await loadHiddenEntries(caseId);
+  if (!rows.length) {
+    const emptyRow = document.createElement("tr");
+    emptyRow.innerHTML = `<td colspan="7" class="empty-state">No hidden actions for this case.</td>`;
+    hiddenActionsBody.appendChild(emptyRow);
+  } else {
+    rows.forEach((row) => hiddenActionsBody.appendChild(renderHiddenActionRow(row)));
+  }
+  hiddenActionsModal.classList.remove("hidden");
+};
+
+const closeHiddenActions = () => {
+  hiddenActionsModal.classList.add("hidden");
+  openHiddenActionsCaseId = null;
+};
+
 const renderCases = async (tab) => {
   casesContainer.innerHTML = `<div class="empty-state">Loading...</div>`;
   const cases = await fetchJson(`/api/litigation/cases?tab=${encodeURIComponent(tab)}`);
@@ -248,6 +337,7 @@ const renderCases = async (tab) => {
               <th>Internal Due Date</th>
               <th>Final Due Date</th>
               <th>Notes</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody></tbody>
@@ -257,6 +347,7 @@ const renderCases = async (tab) => {
         <button class="ghost-button add-entry" type="button">Add Action</button>
         <div class="tab-switch">
           <div class="form-error row-error"></div>
+          <button class="ghost-button view-hidden-actions" type="button">View Hidden</button>
           <button class="ghost-button open-collections" type="button">COLLECTIONS</button>
           <button class="ghost-button save-entries" type="button">Save</button>
           <button class="ghost-button archive-case" type="button">${
@@ -276,6 +367,38 @@ const renderCases = async (tab) => {
       tbody.appendChild(renderEntryRow({}));
     });
     const rowError = card.querySelector(".row-error");
+    tbody.addEventListener("click", async (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      if (
+        !button.classList.contains("complete-action") &&
+        !button.classList.contains("complete-hide-action")
+      ) {
+        return;
+      }
+
+      const row = button.closest("tr");
+      const actionId = row?.dataset.actionId;
+      rowError.textContent = "";
+      if (!actionId) {
+        rowError.textContent = button.classList.contains("complete-hide-action")
+          ? "Save this row before hiding it."
+          : "Save this row before marking it complete.";
+        return;
+      }
+
+      try {
+        await updateActionState(actionId, {
+          isCompleted: true,
+          isHidden: button.classList.contains("complete-hide-action"),
+        });
+        await renderCases(activeTab);
+      } catch (error) {
+        rowError.textContent = button.classList.contains("complete-hide-action")
+          ? error.message || "Unable to hide action."
+          : error.message || "Unable to complete action.";
+      }
+    });
     card.querySelector(".save-entries").addEventListener("click", async () => {
       rowError.textContent = "";
       const payload = readEntryRows(tbody);
@@ -285,6 +408,11 @@ const renderCases = async (tab) => {
       } catch (error) {
         rowError.textContent = error.message || "Unable to save entries.";
       }
+    });
+    card.querySelector(".view-hidden-actions").addEventListener("click", () => {
+      openHiddenActions(item.id).catch((error) => {
+        rowError.textContent = error.message || "Unable to load hidden actions.";
+      });
     });
     card.querySelector(".open-collections").addEventListener("click", () => {
       openCollections(item.id);
@@ -334,6 +462,10 @@ const init = async () => {
   closeCollectionsModal.addEventListener("click", closeCollections);
   collectionsModal.addEventListener("click", (event) => {
     if (event.target === collectionsModal) closeCollections();
+  });
+  closeHiddenActionsModal.addEventListener("click", closeHiddenActions);
+  hiddenActionsModal.addEventListener("click", (event) => {
+    if (event.target === hiddenActionsModal) closeHiddenActions();
   });
   addCollectionRowButton.addEventListener("click", () => {
     collectionsBody.appendChild(renderCollectionRow({}));

@@ -538,6 +538,11 @@ tr.due-soon td {
   background: #ffe8e6;
 }
 
+tr.is-completed td {
+  background: #eef6ef;
+  color: #4f6751;
+}
+
 .focused-docket-case {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px rgba(183, 75, 53, 0.15), var(--shadow);
@@ -545,6 +550,17 @@ tr.due-soon td {
 
 .focused-docket-row td {
   background: #fff0d9;
+}
+
+.row-action-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.row-action-buttons .ghost-button[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .task-link {

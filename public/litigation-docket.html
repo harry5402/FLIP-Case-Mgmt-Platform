@@ -116,6 +116,37 @@
       </div>
     </div>
 
+    <div id="hidden-actions-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="info-card-header">
+          <h3>Hidden Actions</h3>
+          <button id="close-hidden-actions-modal" class="ghost-button" type="button">
+            Close
+          </button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Action</th>
+                <th>Assigned To</th>
+                <th>Internal Due Date</th>
+                <th>Final Due Date</th>
+                <th>Notes</th>
+                <th>Completed</th>
+                <th>Restore</th>
+              </tr>
+            </thead>
+            <tbody id="hidden-actions-body"></tbody>
+          </table>
+        </div>
+        <div class="form-actions">
+          <div id="hidden-actions-error" class="form-error"></div>
+          <div></div>
+        </div>
+      </div>
+    </div>
+
     <div id="archive-confirm-modal" class="modal hidden">
       <div class="modal-card">
         <div class="info-card-header">
