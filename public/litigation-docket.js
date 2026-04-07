@@ -570,148 +570,161 @@ const setTab = async (tab) => {
 };
 
 const init = async () => {
-  userOptions = await loadUserOptions();
-  const requestedTab = getParam("tab");
-  if (requestedTab) {
-    activeTab = String(requestedTab).toUpperCase();
-  }
-  tabs.forEach((button) => {
-    button.addEventListener("click", () => setTab(button.dataset.tab));
-  });
-
-  closeCollectionsModal.addEventListener("click", closeCollections);
-  collectionsModal.addEventListener("click", (event) => {
-    if (event.target === collectionsModal) closeCollections();
-  });
-  closeHiddenActionsModal.addEventListener("click", closeHiddenActions);
-  hiddenActionsModal.addEventListener("click", (event) => {
-    if (event.target === hiddenActionsModal) closeHiddenActions();
-  });
-  closeEditTitleModal.addEventListener("click", closeEditTitle);
-  editTitleModal.addEventListener("click", (event) => {
-    if (event.target === editTitleModal) closeEditTitle();
-  });
-  addCollectionRowButton.addEventListener("click", () => {
-    collectionsBody.appendChild(renderCollectionRow({}));
-  });
-  saveCollectionsButton.addEventListener("click", async () => {
-    if (!openCollectionsCaseId) return;
-    collectionsError.textContent = "";
+  try {
     try {
-      await saveCollections(openCollectionsCaseId, readCollectionRows());
-      closeCollections();
-      await rerenderCasesPreservingScroll();
-    } catch (error) {
-      collectionsError.textContent = error.message || "Unable to save collections.";
-    }
-  });
-
-  closeArchiveConfirmModal.addEventListener("click", () => {
-    archiveConfirmModal.classList.add("hidden");
-    pendingArchiveAction = null;
-  });
-  archiveConfirmModal.addEventListener("click", (event) => {
-    if (event.target === archiveConfirmModal) {
-      archiveConfirmModal.classList.add("hidden");
-      pendingArchiveAction = null;
-    }
-  });
-  confirmArchiveAction.addEventListener("click", async () => {
-    if (!pendingArchiveAction) return;
-    await setArchived(pendingArchiveAction.caseId, pendingArchiveAction.archived);
-    archiveConfirmModal.classList.add("hidden");
-    pendingArchiveAction = null;
-    await rerenderCasesPreservingScroll();
-  });
-
-  newCaseButton.addEventListener("click", () => {
-    newCaseError.textContent = "";
-    newCaseForm.reset();
-    const jurisdictionField = newCaseForm.elements.jurisdiction;
-    if (activeTab !== "ARCHIVED") {
-      jurisdictionField.value = activeTab;
-    }
-    newCaseModal.classList.remove("hidden");
-  });
-  closeNewCaseModal.addEventListener("click", () => {
-    newCaseModal.classList.add("hidden");
-  });
-  newCaseModal.addEventListener("click", (event) => {
-    if (event.target === newCaseModal) newCaseModal.classList.add("hidden");
-  });
-  newCaseForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    newCaseError.textContent = "";
-    const formData = new FormData(newCaseForm);
-    const payload = {
-      caseName: String(formData.get("caseName") || "").trim(),
-      clientName: String(formData.get("judge") || "").trim() || "Docket Case",
-      caseNumber: String(formData.get("caseNumber") || "").trim() || null,
-      jurisdiction: String(formData.get("jurisdiction") || "").trim(),
-      judge: String(formData.get("judge") || "").trim() || null,
-      plaintiff: null,
-      status: "Active",
-      updatedBy: getUser()?.name || getUser()?.email || null,
-      isDocketOnly: true,
-      docketDefendantCount: 0,
-    };
-    const requestedDefendantCountRaw = String(formData.get("defendantCount") || "").trim();
-    const requestedDefendantCount =
-      requestedDefendantCountRaw === "" ? 0 : Number(requestedDefendantCountRaw);
-    if (
-      !payload.caseName ||
-      !payload.jurisdiction ||
-      !Number.isFinite(requestedDefendantCount) ||
-      requestedDefendantCount < 0
-    ) {
-      newCaseError.textContent =
-        "Case name, jurisdiction, and a valid defendant count are required.";
-      return;
-    }
-    payload.docketDefendantCount = requestedDefendantCount;
-    try {
-      await createLitigationCase(payload);
-      newCaseModal.classList.add("hidden");
-      if (activeTab !== payload.jurisdiction) {
-        await setTab(payload.jurisdiction);
-      } else {
-        await renderCases(activeTab);
+      userOptions = await loadUserOptions();
+      if (!Array.isArray(userOptions)) {
+        userOptions = [];
       }
     } catch (error) {
-      newCaseError.textContent = error.message || "Unable to create case.";
-    }
-  });
-
-  editTitleForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (!editingCase) return;
-    editTitleError.textContent = "";
-    const formData = new FormData(editTitleForm);
-    const caseName = String(formData.get("caseName") || "").trim();
-    const defendantCountRaw = String(formData.get("defendantCount") || "").trim();
-    const defendantCount =
-      defendantCountRaw === "" ? 0 : Number(defendantCountRaw);
-    if (!caseName || !Number.isFinite(defendantCount) || defendantCount < 0) {
-      editTitleError.textContent = "Case name and a valid defendant count are required.";
-      return;
+      userOptions = [];
     }
 
-    try {
-      await updateCase(editingCase.id, {
-        caseName,
-        caseNumber: String(formData.get("caseNumber") || "").trim() || null,
-        judge: String(formData.get("judge") || "").trim() || null,
-        docketDefendantCount: editingCase.isDocketOnly ? defendantCount : undefined,
-        updatedBy: getUser()?.name || getUser()?.email || null,
-      });
-      closeEditTitle();
+    const requestedTab = getParam("tab");
+    if (requestedTab) {
+      activeTab = String(requestedTab).toUpperCase();
+    }
+    tabs.forEach((button) => {
+      button.addEventListener("click", () => setTab(button.dataset.tab));
+    });
+
+    closeCollectionsModal?.addEventListener("click", closeCollections);
+    collectionsModal?.addEventListener("click", (event) => {
+      if (event.target === collectionsModal) closeCollections();
+    });
+    closeHiddenActionsModal?.addEventListener("click", closeHiddenActions);
+    hiddenActionsModal?.addEventListener("click", (event) => {
+      if (event.target === hiddenActionsModal) closeHiddenActions();
+    });
+    closeEditTitleModal?.addEventListener("click", closeEditTitle);
+    editTitleModal?.addEventListener("click", (event) => {
+      if (event.target === editTitleModal) closeEditTitle();
+    });
+    addCollectionRowButton?.addEventListener("click", () => {
+      collectionsBody.appendChild(renderCollectionRow({}));
+    });
+    saveCollectionsButton?.addEventListener("click", async () => {
+      if (!openCollectionsCaseId) return;
+      collectionsError.textContent = "";
+      try {
+        await saveCollections(openCollectionsCaseId, readCollectionRows());
+        closeCollections();
+        await rerenderCasesPreservingScroll();
+      } catch (error) {
+        collectionsError.textContent = error.message || "Unable to save collections.";
+      }
+    });
+
+    closeArchiveConfirmModal?.addEventListener("click", () => {
+      archiveConfirmModal.classList.add("hidden");
+      pendingArchiveAction = null;
+    });
+    archiveConfirmModal?.addEventListener("click", (event) => {
+      if (event.target === archiveConfirmModal) {
+        archiveConfirmModal.classList.add("hidden");
+        pendingArchiveAction = null;
+      }
+    });
+    confirmArchiveAction?.addEventListener("click", async () => {
+      if (!pendingArchiveAction) return;
+      await setArchived(pendingArchiveAction.caseId, pendingArchiveAction.archived);
+      archiveConfirmModal.classList.add("hidden");
+      pendingArchiveAction = null;
       await rerenderCasesPreservingScroll();
-    } catch (error) {
-      editTitleError.textContent = error.message || "Unable to save docket title.";
-    }
-  });
+    });
 
-  await setTab(activeTab);
+    newCaseButton?.addEventListener("click", () => {
+      newCaseError.textContent = "";
+      newCaseForm.reset();
+      const jurisdictionField = newCaseForm.elements.jurisdiction;
+      if (activeTab !== "ARCHIVED") {
+        jurisdictionField.value = activeTab;
+      }
+      newCaseModal.classList.remove("hidden");
+    });
+    closeNewCaseModal?.addEventListener("click", () => {
+      newCaseModal.classList.add("hidden");
+    });
+    newCaseModal?.addEventListener("click", (event) => {
+      if (event.target === newCaseModal) newCaseModal.classList.add("hidden");
+    });
+    newCaseForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      newCaseError.textContent = "";
+      const formData = new FormData(newCaseForm);
+      const payload = {
+        caseName: String(formData.get("caseName") || "").trim(),
+        clientName: String(formData.get("judge") || "").trim() || "Docket Case",
+        caseNumber: String(formData.get("caseNumber") || "").trim() || null,
+        jurisdiction: String(formData.get("jurisdiction") || "").trim(),
+        judge: String(formData.get("judge") || "").trim() || null,
+        plaintiff: null,
+        status: "Active",
+        updatedBy: getUser()?.name || getUser()?.email || null,
+        isDocketOnly: true,
+        docketDefendantCount: 0,
+      };
+      const requestedDefendantCountRaw = String(formData.get("defendantCount") || "").trim();
+      const requestedDefendantCount =
+        requestedDefendantCountRaw === "" ? 0 : Number(requestedDefendantCountRaw);
+      if (
+        !payload.caseName ||
+        !payload.jurisdiction ||
+        !Number.isFinite(requestedDefendantCount) ||
+        requestedDefendantCount < 0
+      ) {
+        newCaseError.textContent =
+          "Case name, jurisdiction, and a valid defendant count are required.";
+        return;
+      }
+      payload.docketDefendantCount = requestedDefendantCount;
+      try {
+        await createLitigationCase(payload);
+        newCaseModal.classList.add("hidden");
+        if (activeTab !== payload.jurisdiction) {
+          await setTab(payload.jurisdiction);
+        } else {
+          await renderCases(activeTab);
+        }
+      } catch (error) {
+        newCaseError.textContent = error.message || "Unable to create case.";
+      }
+    });
+
+    editTitleForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!editingCase) return;
+      editTitleError.textContent = "";
+      const formData = new FormData(editTitleForm);
+      const caseName = String(formData.get("caseName") || "").trim();
+      const defendantCountRaw = String(formData.get("defendantCount") || "").trim();
+      const defendantCount = defendantCountRaw === "" ? 0 : Number(defendantCountRaw);
+      if (!caseName || !Number.isFinite(defendantCount) || defendantCount < 0) {
+        editTitleError.textContent = "Case name and a valid defendant count are required.";
+        return;
+      }
+
+      try {
+        await updateCase(editingCase.id, {
+          caseName,
+          caseNumber: String(formData.get("caseNumber") || "").trim() || null,
+          judge: String(formData.get("judge") || "").trim() || null,
+          docketDefendantCount: editingCase.isDocketOnly ? defendantCount : undefined,
+          updatedBy: getUser()?.name || getUser()?.email || null,
+        });
+        closeEditTitle();
+        await rerenderCasesPreservingScroll();
+      } catch (error) {
+        editTitleError.textContent = error.message || "Unable to save docket title.";
+      }
+    });
+
+    await setTab(activeTab);
+  } catch (error) {
+    casesContainer.innerHTML = `<div class="empty-state">Docket failed to initialize: ${escapeHtml(
+      error.message || "Unknown error"
+    )}</div>`;
+  }
 };
 
 init();
