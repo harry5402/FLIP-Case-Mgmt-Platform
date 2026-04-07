@@ -253,6 +253,22 @@ const readEntryRows = (tbody) =>
     notes: row.querySelector('[data-field="notes"]').value.trim(),
   }));
 
+const populateEntriesTable = (tbody, entries) => {
+  tbody.innerHTML = "";
+  if (!entries.length) {
+    tbody.appendChild(renderEntryRow({}));
+    return;
+  }
+  try {
+    entries.forEach((entry) => tbody.appendChild(renderEntryRow(entry)));
+  } catch (error) {
+    const fallbackRow = document.createElement("tr");
+    fallbackRow.innerHTML =
+      '<td colspan="6" class="empty-state">Unable to render one or more actions for this case.</td>';
+    tbody.appendChild(fallbackRow);
+  }
+};
+
 const renderCollectionRow = (entry = {}) => {
   const row = document.createElement("tr");
   row.innerHTML = `
@@ -468,18 +484,7 @@ const renderCases = async (tab) => {
       </div>
     `;
     const tbody = card.querySelector("tbody");
-    if (!entries.length) {
-      tbody.appendChild(renderEntryRow({}));
-    } else {
-      try {
-        entries.forEach((entry) => tbody.appendChild(renderEntryRow(entry)));
-      } catch (error) {
-        const fallbackRow = document.createElement("tr");
-        fallbackRow.innerHTML = `<td colspan="6" class="empty-state">Unable to render one or more actions for this case.</td>`;
-        tbody.innerHTML = "";
-        tbody.appendChild(fallbackRow);
-      }
-    }
+    populateEntriesTable(tbody, entries);
 
     card.querySelector(".add-entry").addEventListener("click", () => {
       tbody.appendChild(renderEntryRow({}));
@@ -506,11 +511,19 @@ const renderCases = async (tab) => {
       }
 
       try {
-        await updateActionState(actionId, {
+        const result = await updateActionState(actionId, {
           isCompleted: true,
           isHidden: button.classList.contains("complete-hide-action"),
         });
-        await rerenderCasesPreservingScroll(item.id);
+        if (result?.action?.isHidden) {
+          row.remove();
+          if (!tbody.querySelector("tr")) {
+            tbody.appendChild(renderEntryRow({}));
+          }
+        } else {
+          row.classList.add("is-completed");
+          row.classList.remove("due-soon");
+        }
       } catch (error) {
         rowError.textContent = button.classList.contains("complete-hide-action")
           ? error.message || "Unable to hide action."
@@ -522,7 +535,8 @@ const renderCases = async (tab) => {
       const payload = readEntryRows(tbody);
       try {
         await saveEntries(item.id, payload);
-        await rerenderCasesPreservingScroll(item.id);
+        const refreshedEntries = await loadEntries(item.id);
+        populateEntriesTable(tbody, refreshedEntries);
       } catch (error) {
         rowError.textContent = error.message || "Unable to save entries.";
       }
