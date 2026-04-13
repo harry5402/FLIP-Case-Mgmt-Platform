@@ -620,6 +620,10 @@ tr.is-completed td {
   border-color: #9cb59e;
 }
 
+.mbfd-form-grid {
+  text-align: left;
+}
+
 .row-action-buttons {
   display: flex;
   gap: 8px;

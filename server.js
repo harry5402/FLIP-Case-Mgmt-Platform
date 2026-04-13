@@ -781,6 +781,80 @@ app.post("/api/litigation/mbfd-items", async (req, res) => {
   });
 });
 
+app.put("/api/litigation/mbfd-items/:id", async (req, res) => {
+  const caseName = String(req.body?.caseName || "").trim();
+  const doeNumber = String(req.body?.doeNumber || "").trim();
+  const attorneyEmail = String(req.body?.attorneyEmail || "").trim();
+  const amountRaw = String(req.body?.amount ?? "").trim();
+  const amount = amountRaw === "" ? null : Number(amountRaw);
+
+  if (!caseName || !doeNumber) {
+    return res.status(400).json({ error: "caseName and doeNumber are required." });
+  }
+  if (amountRaw !== "" && !Number.isFinite(amount)) {
+    return res.status(400).json({ error: "Amount must be a valid number." });
+  }
+
+  const existing = await query(
+    `SELECT id, case_name, doe_number, amount, attorney_email
+     FROM mbfd_items
+     WHERE id = $1`,
+    [req.params.id]
+  );
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "MBFD item not found." });
+  }
+
+  const actor = req.session?.name || req.session?.email || null;
+  const result = await query(
+    `UPDATE mbfd_items
+     SET case_name = $2,
+         doe_number = $3,
+         amount = $4,
+         attorney_email = $5,
+         updated_at = NOW(),
+         updated_by = $6
+     WHERE id = $1
+     RETURNING id, case_name, doe_number, amount, attorney_email,
+               is_completed, is_hidden, completed_at, completed_by,
+               created_at, updated_at, updated_by`,
+    [req.params.id, caseName, doeNumber, amount, attorneyEmail || null, actor]
+  );
+
+  await writeAuditLog(req, {
+    action: "mbfd.update",
+    entityType: "mbfd_item",
+    entityId: req.params.id,
+    before: {
+      caseName: existing.rows[0].case_name,
+      doeNumber: existing.rows[0].doe_number,
+      amount: existing.rows[0].amount,
+      attorneyEmail: existing.rows[0].attorney_email || "",
+    },
+    after: {
+      caseName: result.rows[0].case_name,
+      doeNumber: result.rows[0].doe_number,
+      amount: result.rows[0].amount,
+      attorneyEmail: result.rows[0].attorney_email || "",
+    },
+  });
+
+  res.json({
+    id: result.rows[0].id,
+    caseName: result.rows[0].case_name,
+    doeNumber: result.rows[0].doe_number,
+    amount: result.rows[0].amount,
+    attorneyEmail: result.rows[0].attorney_email || "",
+    isCompleted: result.rows[0].is_completed,
+    isHidden: result.rows[0].is_hidden,
+    completedAt: result.rows[0].completed_at,
+    completedBy: result.rows[0].completed_by,
+    createdAt: result.rows[0].created_at,
+    updatedAt: result.rows[0].updated_at,
+    updatedBy: result.rows[0].updated_by || "",
+  });
+});
+
 app.put("/api/litigation/mbfd-items/:id/state", async (req, res) => {
   const { isCompleted, isHidden } = req.body || {};
   const existing = await query(

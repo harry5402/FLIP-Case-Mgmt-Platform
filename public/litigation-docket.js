@@ -137,6 +137,12 @@ const createMbfdItem = (payload) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+const updateMbfdItem = (itemId, payload) =>
+  fetchJson(`/api/litigation/mbfd-items/${itemId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 const updateActionState = (actionId, payload) =>
   fetchJson(`/api/litigation/actions/${actionId}/state`, {
     method: "PUT",
@@ -598,16 +604,37 @@ const renderMbfdItems = async (renderId = latestTabRenderId) => {
     card.dataset.mbfdId = item.id;
     card.innerHTML = `
       <div class="litigation-case-header">
-        <div class="litigation-case-title">${escapeHtml(item.caseName || "—")}</div>
-        <div class="litigation-case-meta">Doe #: ${escapeHtml(item.doeNumber || "—")}</div>
-        <div class="litigation-case-meta">Amount: ${escapeHtml(formatCurrency(item.amount))}</div>
-        <div class="litigation-case-meta">Attorney Email: ${escapeHtml(
-          item.attorneyEmail || "—"
-        )}</div>
+        <div class="form-grid mbfd-form-grid">
+          <label class="form-field">
+            <span>Case Name</span>
+            <input class="lit-input mbfd-case-name" type="text" value="${escapeHtml(
+              item.caseName || ""
+            )}" />
+          </label>
+          <label class="form-field">
+            <span>Doe #</span>
+            <input class="lit-input mbfd-doe-number" type="text" value="${escapeHtml(
+              item.doeNumber || ""
+            )}" />
+          </label>
+          <label class="form-field">
+            <span>Amount</span>
+            <input class="lit-input mbfd-amount" type="number" min="0" step="0.01" value="${escapeHtml(
+              item.amount ?? ""
+            )}" />
+          </label>
+          <label class="form-field">
+            <span>Attorney Email</span>
+            <input class="lit-input mbfd-attorney-email" type="email" value="${escapeHtml(
+              item.attorneyEmail || ""
+            )}" />
+          </label>
+        </div>
       </div>
       <div class="form-actions">
         <div class="form-error row-error"></div>
         <div class="tab-switch">
+          <button class="ghost-button mbfd-save" type="button">Save</button>
           <button class="ghost-button mbfd-complete" type="button">Complete</button>
           <button class="ghost-button mbfd-complete-hide" type="button">Complete / Hide</button>
         </div>
@@ -615,6 +642,23 @@ const renderMbfdItems = async (renderId = latestTabRenderId) => {
     `;
 
     const rowError = card.querySelector(".row-error");
+    card.querySelector(".mbfd-save").addEventListener("click", async () => {
+      rowError.textContent = "";
+      try {
+        const updated = await updateMbfdItem(item.id, {
+          caseName: card.querySelector(".mbfd-case-name").value.trim(),
+          doeNumber: card.querySelector(".mbfd-doe-number").value.trim(),
+          amount: card.querySelector(".mbfd-amount").value.trim(),
+          attorneyEmail: card.querySelector(".mbfd-attorney-email").value.trim(),
+        });
+        card.querySelector(".mbfd-case-name").value = updated.caseName || "";
+        card.querySelector(".mbfd-doe-number").value = updated.doeNumber || "";
+        card.querySelector(".mbfd-amount").value = updated.amount ?? "";
+        card.querySelector(".mbfd-attorney-email").value = updated.attorneyEmail || "";
+      } catch (error) {
+        rowError.textContent = error.message || "Unable to save MBFD item.";
+      }
+    });
     card.querySelector(".mbfd-complete").addEventListener("click", async () => {
       rowError.textContent = "";
       try {
