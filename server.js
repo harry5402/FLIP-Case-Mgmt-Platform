@@ -30,6 +30,8 @@ const LOGIN_WINDOW_MS =
   parsePositiveInt(process.env.LOGIN_WINDOW_MINUTES, 15) * 60 * 1000;
 const BODY_LIMIT = process.env.BODY_LIMIT || "1mb";
 const UPLOAD_MAX_FILE_MB = parsePositiveInt(process.env.UPLOAD_MAX_FILE_MB, 10);
+const DOCKETBIRD_API_TOKEN = String(process.env.DOCKETBIRD_API_TOKEN || "").trim();
+const DOCKETBIRD_API_BASE = "https://api.docketbird.com";
 const LITIGATION_TABS = [
   "NDIL",
   "GAND",
@@ -51,6 +53,74 @@ const DOCKET_STATUS_OPTIONS = [
   "TRO Signed",
   "Case Closed",
 ];
+
+const DOCKETBIRD_COURT_ID_BY_JURISDICTION = {
+  NDIL: "ilnd",
+  GAND: "gand",
+  NDIN: "innd",
+  MDFL: "flmd",
+  WDPA: "pawd",
+  EDWI: "wied",
+};
+
+const toDateOnly = (value) => {
+  if (!value) return null;
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}/.test(value)) {
+    return value.slice(0, 10);
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString().slice(0, 10);
+};
+
+const parseCaseNumberSignature = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "")
+    .replace(/[–—]/g, "-");
+  if (!normalized) return null;
+
+  let match = normalized.match(/^(\d+):(\d{2,4})-([a-z]{2})-(\d{4,6})$/i);
+  if (match) {
+    const [, office, yearRaw, caseType, sequence] = match;
+    const year = yearRaw.length === 2 ? `20${yearRaw}` : yearRaw;
+    return { office, year, caseType, sequence };
+  }
+
+  match = normalized.match(/^(\d{2,4})-([a-z]{2})-(\d{4,6})$/i);
+  if (match) {
+    const [, yearRaw, caseType, sequence] = match;
+    const year = yearRaw.length === 2 ? `20${yearRaw}` : yearRaw;
+    return { office: null, year, caseType, sequence };
+  }
+
+  return null;
+};
+
+const buildLikelyDocketBirdCaseId = (jurisdiction, caseNumber) => {
+  const signature = parseCaseNumberSignature(caseNumber);
+  if (!signature) return "";
+  const courtId =
+    DOCKETBIRD_COURT_ID_BY_JURISDICTION[String(jurisdiction || "").toUpperCase()] || "";
+  if (!courtId) return "";
+  const office = signature.office || "1";
+  return `${courtId}-${office}:${signature.year}-${signature.caseType}-${signature.sequence}`;
+};
+
+const docketBirdCaseMatches = (docketbirdId, caseNumber) => {
+  const signature = parseCaseNumberSignature(caseNumber);
+  if (!signature) return false;
+  const normalizedId = String(docketbirdId || "").trim().toLowerCase();
+  if (!normalizedId) return false;
+  const officePattern = signature.office ? signature.office : "\\d+";
+  const escapedType = signature.caseType.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(
+    `^[a-z0-9]+-${officePattern}:${signature.year}-${escapedType}-${signature.sequence}$`,
+    "i"
+  );
+  return pattern.test(normalizedId);
+};
 
 const allowedOriginSet = new Set(
   String(process.env.ALLOWED_ORIGINS || "")
@@ -303,6 +373,14 @@ const ensureLitigationTables = async () => {
     ADD COLUMN IF NOT EXISTS docket_status TEXT
   `);
   await query(`
+    ALTER TABLE litigation_case_state
+    ADD COLUMN IF NOT EXISTS docketbird_case_id TEXT
+  `);
+  await query(`
+    ALTER TABLE litigation_case_state
+    ADD COLUMN IF NOT EXISTS docketbird_last_synced_at TIMESTAMPTZ
+  `);
+  await query(`
     CREATE TABLE IF NOT EXISTS litigation_actions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
@@ -339,6 +417,21 @@ const ensureLitigationTables = async () => {
   await query(`
     ALTER TABLE litigation_actions
     ADD COLUMN IF NOT EXISTS completed_by TEXT
+  `);
+  await query(`
+    ALTER TABLE litigation_actions
+    ADD COLUMN IF NOT EXISTS source TEXT
+  `);
+  await query(`
+    ALTER TABLE litigation_actions
+    ADD COLUMN IF NOT EXISTS source_reference_id TEXT
+  `);
+  await query(`
+    DROP INDEX IF EXISTS litigation_actions_source_ref_idx
+  `);
+  await query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS litigation_actions_source_ref_idx
+      ON litigation_actions (case_id, source, source_reference_id)
   `);
   await query(`
     CREATE TABLE IF NOT EXISTS litigation_collections (
@@ -398,6 +491,52 @@ const normalizeLitigationTab = (jurisdiction) => {
   return LITIGATION_TABS.includes(normalized) && normalized !== "ARCHIVED"
     ? normalized
     : null;
+};
+
+const fetchDocketBirdCalendarEntries = async (docketbirdCaseId) => {
+  if (!DOCKETBIRD_API_TOKEN) {
+    throw new Error("DOCKETBIRD_API_TOKEN is not configured.");
+  }
+  const url = new URL("/calendar_entries", DOCKETBIRD_API_BASE);
+  url.searchParams.set("case_id", docketbirdCaseId);
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${DOCKETBIRD_API_TOKEN}`,
+      Accept: "application/json",
+    },
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || `DocketBird request failed (${response.status}).`);
+  }
+
+  return Array.isArray(payload?.data?.calendar_entries)
+    ? payload.data.calendar_entries
+    : [];
+};
+
+const fetchDocketBirdCases = async () => {
+  if (!DOCKETBIRD_API_TOKEN) {
+    throw new Error("DOCKETBIRD_API_TOKEN is not configured.");
+  }
+  const url = new URL("/cases", DOCKETBIRD_API_BASE);
+  url.searchParams.set("scope", "company");
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${DOCKETBIRD_API_TOKEN}`,
+      Accept: "application/json",
+    },
+  });
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(payload.error || `DocketBird request failed (${response.status}).`);
+  }
+
+  return Array.isArray(payload?.data?.cases) ? payload.data.cases : [];
 };
 
 const syncLitigationTasks = async (caseId, entries, session) => {
@@ -938,6 +1077,8 @@ app.get("/api/litigation/cases", async (req, res) => {
             ELSE ''
           END
         ) AS docket_status,
+        state.docketbird_case_id,
+        state.docketbird_last_synced_at,
         COALESCE(state.docket_defendant_count, defs.count, 0) AS defendant_count,
         COALESCE(state.archived, FALSE) AS archived,
         COALESCE(a.created_at, c.updated_at, c.created_at) AS most_recent_edit_at,
@@ -991,6 +1132,8 @@ app.get("/api/litigation/cases", async (req, res) => {
       judge: row.judge,
       status: row.status || "",
       docketStatus: row.docket_status || "",
+      docketbirdCaseId: row.docketbird_case_id || "",
+      docketbirdLastSyncedAt: row.docketbird_last_synced_at,
       defendantCount: row.defendant_count,
       archived: row.archived,
       mostRecentEditAt: row.most_recent_edit_at,
@@ -1264,6 +1407,162 @@ app.put("/api/litigation/cases/:id/docket-status", async (req, res) => {
   });
 
   res.json({ ok: true, docketStatus: docketStatus || "" });
+});
+
+app.put("/api/litigation/cases/:id/docketbird-link", async (req, res) => {
+  const docketbirdCaseId = String(req.body?.docketbirdCaseId || "").trim();
+  const existing = await query("SELECT id FROM cases WHERE id = $1", [req.params.id]);
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "Case not found." });
+  }
+
+  await query(
+    `INSERT INTO litigation_case_state
+      (case_id, archived, docketbird_case_id)
+     VALUES ($1, FALSE, $2)
+     ON CONFLICT (case_id)
+     DO UPDATE SET docketbird_case_id = EXCLUDED.docketbird_case_id`,
+    [req.params.id, docketbirdCaseId || null]
+  );
+
+  await writeAuditLog(req, {
+    action: "litigation.case.docketbird_link",
+    entityType: "case",
+    entityId: req.params.id,
+    before: null,
+    after: { docketbirdCaseId: docketbirdCaseId || "" },
+  });
+
+  res.json({ ok: true, docketbirdCaseId: docketbirdCaseId || "" });
+});
+
+app.get("/api/litigation/cases/:id/docketbird-suggest", async (req, res) => {
+  try {
+    const caseResult = await query(
+      `SELECT c.id, c.case_number, c.jurisdiction, c.case_name
+       FROM cases c
+       WHERE c.id = $1`,
+      [req.params.id]
+    );
+    if (!caseResult.rows.length) {
+      return res.status(404).json({ error: "Case not found." });
+    }
+
+    const docketCase = caseResult.rows[0];
+    const signature = parseCaseNumberSignature(docketCase.case_number);
+    if (!signature) {
+      return res.status(400).json({ error: "Case number is required to suggest a DocketBird case." });
+    }
+
+    const guessedId = buildLikelyDocketBirdCaseId(docketCase.jurisdiction, docketCase.case_number);
+    const companyCases = await fetchDocketBirdCases();
+
+    let match =
+      (guessedId && companyCases.find((item) => String(item.id || "").toLowerCase() === guessedId)) ||
+      companyCases.find((item) => docketBirdCaseMatches(item.id, docketCase.case_number)) ||
+      null;
+
+    if (!match) {
+      return res.status(404).json({
+        error: "No DocketBird case match found.",
+        guessedId: guessedId || null,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      docketbirdCaseId: match.id,
+      title: match.title || "",
+      courtId: match.court_id || "",
+      guessedId: guessedId || null,
+    });
+  } catch (error) {
+    const message = error?.message || "Unable to search DocketBird cases.";
+    return res.status(502).json({ error: message });
+  }
+});
+
+app.post("/api/litigation/cases/:id/docketbird-sync", async (req, res) => {
+  try {
+    const caseResult = await query(
+      `SELECT c.id, state.docketbird_case_id
+       FROM cases c
+       LEFT JOIN litigation_case_state state ON state.case_id = c.id
+       WHERE c.id = $1`,
+      [req.params.id]
+    );
+    if (!caseResult.rows.length) {
+      return res.status(404).json({ error: "Case not found." });
+    }
+
+    const docketbirdCaseId = String(caseResult.rows[0].docketbird_case_id || "").trim();
+    if (!docketbirdCaseId) {
+      return res.status(400).json({ error: "DocketBird Case ID is not set for this case." });
+    }
+
+    const entries = await fetchDocketBirdCalendarEntries(docketbirdCaseId);
+    let sortOrderBase = 1000;
+    for (const entry of entries) {
+      const sourceReferenceId = String(entry.uuid || entry.id || "").trim();
+      if (!sourceReferenceId) continue;
+      const title = String(entry.title || "").trim();
+      const dateValue = toDateOnly(entry.iso8601_datetime);
+
+      await query(
+        `INSERT INTO litigation_actions
+          (case_id, action, internal_due_date, final_due_date, notes, assigned_to_user_id,
+           is_completed, is_hidden, completed_at, completed_by, source, source_reference_id,
+           sort_order, updated_at, updated_by)
+         VALUES ($1, $2, $3, NULL, $4, NULL, FALSE, FALSE, NULL, NULL, 'docketbird', $5, $6, NOW(), $7)
+         ON CONFLICT (case_id, source, source_reference_id)
+         DO UPDATE SET
+           action = EXCLUDED.action,
+           internal_due_date = EXCLUDED.internal_due_date,
+           notes = EXCLUDED.notes,
+           updated_at = NOW(),
+           updated_by = EXCLUDED.updated_by`,
+        [
+          req.params.id,
+          title || "DocketBird Entry",
+          dateValue,
+          "Synced from DocketBird",
+          sourceReferenceId,
+          sortOrderBase,
+          req.session?.name || req.session?.email || null,
+        ]
+      );
+      sortOrderBase += 1;
+    }
+
+    await query(
+      `INSERT INTO litigation_case_state
+        (case_id, archived, docketbird_case_id, docketbird_last_synced_at)
+       VALUES ($1, FALSE, $2, NOW())
+       ON CONFLICT (case_id)
+       DO UPDATE SET
+         docketbird_case_id = EXCLUDED.docketbird_case_id,
+         docketbird_last_synced_at = NOW()`,
+      [req.params.id, docketbirdCaseId]
+    );
+
+    await writeAuditLog(req, {
+      action: "litigation.case.docketbird_sync",
+      entityType: "case",
+      entityId: req.params.id,
+      before: null,
+      after: {
+        docketbirdCaseId,
+        syncedCount: entries.length,
+      },
+    });
+
+    res.json({ ok: true, syncedCount: entries.length });
+  } catch (error) {
+    const message = error?.message || "Unable to sync DocketBird.";
+    const statusCode =
+      message.includes("404") || message.toLowerCase().includes("not found") ? 404 : 502;
+    return res.status(statusCode).json({ error: message });
+  }
 });
 
 app.get("/api/litigation/cases/:id/collections", async (req, res) => {

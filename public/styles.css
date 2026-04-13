@@ -411,19 +411,22 @@ tbody td {
 }
 
 #collections-modal .modal-card,
-#hidden-mbfd-modal .modal-card {
+#hidden-mbfd-modal .modal-card,
+#hidden-actions-modal .modal-card {
   max-height: min(88vh, 900px);
   overflow: hidden;
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 #collections-modal .table-wrap,
-#hidden-mbfd-modal .table-wrap {
+#hidden-mbfd-modal .table-wrap,
+#hidden-actions-modal .table-wrap {
   overflow: auto;
 }
 
 #collections-modal .form-actions,
-#hidden-mbfd-modal .form-actions {
+#hidden-mbfd-modal .form-actions,
+#hidden-actions-modal .form-actions {
   position: sticky;
   bottom: 0;
   background: #fffdf9;
@@ -563,6 +566,10 @@ tbody td {
 
 .inline-select-field .lit-input {
   min-width: 220px;
+}
+
+.docketbird-link-row .lit-input {
+  min-width: 260px;
 }
 
 .case-status-feedback {

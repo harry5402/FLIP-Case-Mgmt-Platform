@@ -188,7 +188,10 @@ CREATE TABLE IF NOT EXISTS litigation_case_state (
   archived BOOLEAN NOT NULL DEFAULT FALSE,
   archived_at TIMESTAMPTZ,
   archived_by TEXT,
-  docket_defendant_count INTEGER
+  docket_defendant_count INTEGER,
+  docket_status TEXT,
+  docketbird_case_id TEXT,
+  docketbird_last_synced_at TIMESTAMPTZ
 );
 
 CREATE TABLE IF NOT EXISTS litigation_actions (
@@ -203,10 +206,15 @@ CREATE TABLE IF NOT EXISTS litigation_actions (
   is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
   completed_at TIMESTAMPTZ,
   completed_by TEXT,
+  source TEXT,
+  source_reference_id TEXT,
   sort_order INTEGER NOT NULL DEFAULT 0,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by TEXT
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS litigation_actions_source_ref_idx
+  ON litigation_actions (case_id, source, source_reference_id);
 
 CREATE TABLE IF NOT EXISTS litigation_collections (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

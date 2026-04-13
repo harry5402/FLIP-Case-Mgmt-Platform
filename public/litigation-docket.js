@@ -125,6 +125,18 @@ const updateDocketStatus = (caseId, docketStatus) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ docketStatus }),
   });
+const updateDocketBirdLink = (caseId, docketbirdCaseId) =>
+  fetchJson(`/api/litigation/cases/${caseId}/docketbird-link`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ docketbirdCaseId }),
+  });
+const suggestDocketBirdCase = (caseId) =>
+  fetchJson(`/api/litigation/cases/${caseId}/docketbird-suggest`);
+const syncDocketBirdCase = (caseId) =>
+  fetchJson(`/api/litigation/cases/${caseId}/docketbird-sync`, {
+    method: "POST",
+  });
 const updateDocketCase = (caseId, payload) =>
   fetchJson(`/api/cases/${caseId}`, {
     method: "PUT",
@@ -736,6 +748,9 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
         <div class="litigation-case-meta">Most recent edit: ${formatDateTime(
           item.mostRecentEditAt
         )} by ${escapeHtml(item.mostRecentEditBy || "—")}</div>
+        <div class="litigation-case-meta">DocketBird Last Synced: ${formatDateTime(
+          item.docketbirdLastSyncedAt
+        )}</div>
         <div class="litigation-case-status-row">
           <label class="inline-select-field">
             <span>Status</span>
@@ -745,6 +760,20 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
           </label>
           <span class="case-status-feedback"></span>
           <button class="ghost-button edit-title-button" type="button">Edit Title</button>
+        </div>
+        <div class="litigation-case-status-row">
+          <label class="inline-select-field docketbird-link-row">
+            <span>DocketBird Case ID</span>
+            <input
+              class="lit-input docketbird-case-id-input"
+              type="text"
+              value="${escapeHtml(item.docketbirdCaseId || "")}"
+            />
+          </label>
+          <button class="ghost-button find-docketbird-link" type="button">Find Case</button>
+          <button class="ghost-button save-docketbird-link" type="button">Save Link</button>
+          <button class="ghost-button sync-docketbird" type="button">Sync DocketBird</button>
+          <span class="case-status-feedback docketbird-feedback"></span>
         </div>
         ${entryLoadError ? `<div class="form-error">${escapeHtml(entryLoadError)}</div>` : ""}
       </div>
@@ -840,6 +869,43 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
       openHiddenActions(item.id).catch((error) => {
         rowError.textContent = error.message || "Unable to load hidden actions.";
       });
+    });
+    const docketbirdCaseIdInput = card.querySelector(".docketbird-case-id-input");
+    const docketbirdFeedback = card.querySelector(".docketbird-feedback");
+    card.querySelector(".find-docketbird-link").addEventListener("click", async () => {
+      docketbirdFeedback.textContent = "";
+      try {
+        const result = await suggestDocketBirdCase(item.id);
+        docketbirdCaseIdInput.value = result.docketbirdCaseId || "";
+        docketbirdFeedback.textContent = result.docketbirdCaseId
+          ? `Found ${result.docketbirdCaseId}`
+          : "No match found";
+      } catch (error) {
+        docketbirdFeedback.textContent = error.message || "Unable to find DocketBird case.";
+      }
+    });
+    card.querySelector(".save-docketbird-link").addEventListener("click", async () => {
+      docketbirdFeedback.textContent = "";
+      try {
+        await updateDocketBirdLink(item.id, docketbirdCaseIdInput.value.trim());
+        docketbirdFeedback.textContent = "Link saved";
+      } catch (error) {
+        docketbirdFeedback.textContent = error.message || "Unable to save link.";
+      }
+    });
+    card.querySelector(".sync-docketbird").addEventListener("click", async () => {
+      docketbirdFeedback.textContent = "";
+      try {
+        if (docketbirdCaseIdInput.value.trim() !== String(item.docketbirdCaseId || "").trim()) {
+          await updateDocketBirdLink(item.id, docketbirdCaseIdInput.value.trim());
+        }
+        const result = await syncDocketBirdCase(item.id);
+        const refreshedEntries = await loadEntries(item.id);
+        populateEntriesTable(tbody, refreshedEntries);
+        docketbirdFeedback.textContent = `Synced ${result.syncedCount || 0} entries`;
+      } catch (error) {
+        docketbirdFeedback.textContent = error.message || "Unable to sync DocketBird.";
+      }
     });
     const caseStatusSelect = card.querySelector(".case-status-select");
     const caseStatusFeedback = card.querySelector(".case-status-feedback");
