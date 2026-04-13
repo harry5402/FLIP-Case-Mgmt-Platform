@@ -1,10 +1,15 @@
 const tabs = Array.from(document.querySelectorAll(".docket-tabs [data-tab]"));
 const casesContainer = document.getElementById("litigation-cases");
 const newCaseButton = document.getElementById("new-litigation-case");
+const viewHiddenMbfdButton = document.getElementById("view-hidden-mbfd");
 const newCaseModal = document.getElementById("new-case-modal");
 const closeNewCaseModal = document.getElementById("close-new-case-modal");
 const newCaseForm = document.getElementById("new-case-form");
 const newCaseError = document.getElementById("new-case-error");
+const newMbfdModal = document.getElementById("new-mbfd-modal");
+const closeNewMbfdModal = document.getElementById("close-new-mbfd-modal");
+const newMbfdForm = document.getElementById("new-mbfd-form");
+const newMbfdError = document.getElementById("new-mbfd-error");
 const editTitleModal = document.getElementById("edit-title-modal");
 const closeEditTitleModal = document.getElementById("close-edit-title-modal");
 const editTitleForm = document.getElementById("edit-title-form");
@@ -24,6 +29,10 @@ const hiddenActionsModal = document.getElementById("hidden-actions-modal");
 const hiddenActionsBody = document.getElementById("hidden-actions-body");
 const hiddenActionsError = document.getElementById("hidden-actions-error");
 const closeHiddenActionsModal = document.getElementById("close-hidden-actions-modal");
+const hiddenMbfdModal = document.getElementById("hidden-mbfd-modal");
+const hiddenMbfdBody = document.getElementById("hidden-mbfd-body");
+const hiddenMbfdError = document.getElementById("hidden-mbfd-error");
+const closeHiddenMbfdModal = document.getElementById("close-hidden-mbfd-modal");
 
 let activeTab = "NDIL";
 let openCollectionsCaseId = null;
@@ -65,6 +74,16 @@ const formatDateTime = (value) => {
   });
 };
 
+const formatCurrency = (value) => {
+  if (value === null || value === undefined || value === "") return "—";
+  const numberValue = Number(value);
+  if (!Number.isFinite(numberValue)) return String(value);
+  return numberValue.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+  });
+};
+
 const toDateInputValue = (value) => {
   if (!value) return "";
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
@@ -90,6 +109,8 @@ const fetchJson = async (url, options) => {
 };
 
 const loadEntries = (caseId) => fetchJson(`/api/litigation/cases/${caseId}/entries`);
+const loadMbfdItems = () => fetchJson("/api/litigation/mbfd-items");
+const loadHiddenMbfdItems = () => fetchJson("/api/litigation/mbfd-items/hidden");
 const loadHiddenEntries = (caseId) => fetchJson(`/api/litigation/cases/${caseId}/hidden-entries`);
 const saveEntries = (caseId, entries) =>
   fetchJson(`/api/litigation/cases/${caseId}/entries`, {
@@ -109,8 +130,20 @@ const updateDocketCase = (caseId, payload) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+const createMbfdItem = (payload) =>
+  fetchJson("/api/litigation/mbfd-items", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 const updateActionState = (actionId, payload) =>
   fetchJson(`/api/litigation/actions/${actionId}/state`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+const updateMbfdItemState = (itemId, payload) =>
+  fetchJson(`/api/litigation/mbfd-items/${itemId}/state`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
@@ -469,6 +502,134 @@ const closeEditTitle = () => {
   editingCase = null;
 };
 
+const openNewMbfd = () => {
+  newMbfdError.textContent = "";
+  newMbfdForm.reset();
+  newMbfdModal.classList.remove("hidden");
+};
+
+const closeNewMbfd = () => {
+  newMbfdModal.classList.add("hidden");
+};
+
+const renderHiddenMbfdRow = (item = {}) => {
+  const row = document.createElement("tr");
+  const completedLabel = item.isCompleted
+    ? `${formatDateTime(item.completedAt)}${item.completedBy ? ` by ${item.completedBy}` : ""}`
+    : "No";
+  row.innerHTML = `
+    <td>${escapeHtml(item.caseName || "—")}</td>
+    <td>${escapeHtml(item.doeNumber || "—")}</td>
+    <td>${escapeHtml(formatCurrency(item.amount))}</td>
+    <td>${escapeHtml(item.attorneyEmail || "—")}</td>
+    <td>${escapeHtml(completedLabel)}</td>
+    <td><button class="ghost-button restore-hidden-mbfd" type="button">Restore</button></td>
+  `;
+  row.querySelector(".restore-hidden-mbfd").addEventListener("click", async () => {
+    hiddenMbfdError.textContent = "";
+    try {
+      await updateMbfdItemState(item.id, {
+        isCompleted: Boolean(item.isCompleted),
+        isHidden: false,
+      });
+      await openHiddenMbfd();
+      await renderMbfdItems();
+    } catch (error) {
+      hiddenMbfdError.textContent = error.message || "Unable to restore MBFD item.";
+    }
+  });
+  return row;
+};
+
+const openHiddenMbfd = async () => {
+  hiddenMbfdError.textContent = "";
+  hiddenMbfdBody.innerHTML = "";
+  const rows = await loadHiddenMbfdItems();
+  if (!rows.length) {
+    const emptyRow = document.createElement("tr");
+    emptyRow.innerHTML =
+      '<td colspan="6" class="empty-state">No hidden MBFD items.</td>';
+    hiddenMbfdBody.appendChild(emptyRow);
+  } else {
+    rows.forEach((row) => hiddenMbfdBody.appendChild(renderHiddenMbfdRow(row)));
+  }
+  hiddenMbfdModal.classList.remove("hidden");
+};
+
+const closeHiddenMbfd = () => {
+  hiddenMbfdModal.classList.add("hidden");
+};
+
+const renderMbfdItems = async () => {
+  casesContainer.innerHTML = '<div class="empty-state">Loading...</div>';
+  let items = [];
+  try {
+    items = await loadMbfdItems();
+  } catch (error) {
+    casesContainer.innerHTML = `<div class="empty-state">Unable to load MBFD items: ${escapeHtml(
+      error.message || "Request failed"
+    )}</div>`;
+    return;
+  }
+
+  casesContainer.innerHTML = "";
+  if (!items.length) {
+    casesContainer.innerHTML = '<div class="empty-state">No MBFD items.</div>';
+    return;
+  }
+
+  items.forEach((item) => {
+    const card = document.createElement("div");
+    card.className = "table-card litigation-case";
+    card.dataset.mbfdId = item.id;
+    card.innerHTML = `
+      <div class="litigation-case-header">
+        <div class="litigation-case-title">${escapeHtml(item.caseName || "—")}</div>
+        <div class="litigation-case-meta">Doe #: ${escapeHtml(item.doeNumber || "—")}</div>
+        <div class="litigation-case-meta">Amount: ${escapeHtml(formatCurrency(item.amount))}</div>
+        <div class="litigation-case-meta">Attorney Email: ${escapeHtml(
+          item.attorneyEmail || "—"
+        )}</div>
+      </div>
+      <div class="form-actions">
+        <div class="form-error row-error"></div>
+        <div class="tab-switch">
+          <button class="ghost-button mbfd-complete" type="button">Complete</button>
+          <button class="ghost-button mbfd-complete-hide" type="button">Complete / Hide</button>
+        </div>
+      </div>
+    `;
+
+    const rowError = card.querySelector(".row-error");
+    card.querySelector(".mbfd-complete").addEventListener("click", async () => {
+      rowError.textContent = "";
+      try {
+        await updateMbfdItemState(item.id, { isCompleted: true, isHidden: false });
+        card.classList.add("mbfd-completed");
+      } catch (error) {
+        rowError.textContent = error.message || "Unable to complete MBFD item.";
+      }
+    });
+    card.querySelector(".mbfd-complete-hide").addEventListener("click", async () => {
+      rowError.textContent = "";
+      try {
+        await updateMbfdItemState(item.id, { isCompleted: true, isHidden: true });
+        card.remove();
+        if (!casesContainer.querySelector(".litigation-case")) {
+          casesContainer.innerHTML = '<div class="empty-state">No MBFD items.</div>';
+        }
+      } catch (error) {
+        rowError.textContent = error.message || "Unable to hide MBFD item.";
+      }
+    });
+
+    if (item.isCompleted) {
+      card.classList.add("mbfd-completed");
+    }
+    casesContainer.appendChild(card);
+  });
+};
+
 const renderCases = async (tab) => {
   casesContainer.innerHTML = `<div class="empty-state">Loading...</div>`;
   let cases = [];
@@ -666,6 +827,13 @@ const setTab = async (tab) => {
   tabs.forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === tab);
   });
+  const isMbfdTab = tab === "MBFD";
+  newCaseButton.textContent = isMbfdTab ? "New MBFD Item" : "New Case";
+  viewHiddenMbfdButton.classList.toggle("hidden", !isMbfdTab);
+  if (isMbfdTab) {
+    await renderMbfdItems();
+    return;
+  }
   await renderCases(tab);
 };
 
@@ -696,9 +864,17 @@ const init = async () => {
     hiddenActionsModal?.addEventListener("click", (event) => {
       if (event.target === hiddenActionsModal) closeHiddenActions();
     });
+    closeHiddenMbfdModal?.addEventListener("click", closeHiddenMbfd);
+    hiddenMbfdModal?.addEventListener("click", (event) => {
+      if (event.target === hiddenMbfdModal) closeHiddenMbfd();
+    });
     closeEditTitleModal?.addEventListener("click", closeEditTitle);
     editTitleModal?.addEventListener("click", (event) => {
       if (event.target === editTitleModal) closeEditTitle();
+    });
+    closeNewMbfdModal?.addEventListener("click", closeNewMbfd);
+    newMbfdModal?.addEventListener("click", (event) => {
+      if (event.target === newMbfdModal) closeNewMbfd();
     });
     addCollectionRowButton?.addEventListener("click", () => {
       collectionsBody.appendChild(renderCollectionRow({}));
@@ -736,6 +912,10 @@ const init = async () => {
   });
 
     newCaseButton?.addEventListener("click", () => {
+      if (activeTab === "MBFD") {
+        openNewMbfd();
+        return;
+      }
       newCaseError.textContent = "";
       newCaseForm.reset();
       const jurisdictionField = newCaseForm.elements.jurisdiction;
@@ -749,6 +929,13 @@ const init = async () => {
     });
     newCaseModal?.addEventListener("click", (event) => {
       if (event.target === newCaseModal) newCaseModal.classList.add("hidden");
+    });
+    viewHiddenMbfdButton?.addEventListener("click", () => {
+      openHiddenMbfd().catch((error) => {
+        casesContainer.innerHTML = `<div class="empty-state">Unable to load hidden MBFD items: ${escapeHtml(
+          error.message || "Request failed"
+        )}</div>`;
+      });
     });
     newCaseForm?.addEventListener("submit", async (event) => {
       event.preventDefault();
@@ -790,6 +977,24 @@ const init = async () => {
         }
       } catch (error) {
         newCaseError.textContent = error.message || "Unable to create case.";
+      }
+    });
+
+    newMbfdForm?.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      newMbfdError.textContent = "";
+      const formData = new FormData(newMbfdForm);
+      try {
+        await createMbfdItem({
+          caseName: String(formData.get("caseName") || "").trim(),
+          doeNumber: String(formData.get("doeNumber") || "").trim(),
+          amount: String(formData.get("amount") || "").trim(),
+          attorneyEmail: String(formData.get("attorneyEmail") || "").trim(),
+        });
+        closeNewMbfd();
+        await renderMbfdItems();
+      } catch (error) {
+        newMbfdError.textContent = error.message || "Unable to create MBFD item.";
       }
     });
 

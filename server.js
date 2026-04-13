@@ -357,6 +357,38 @@ const ensureLitigationTables = async () => {
       updated_by TEXT
     )
   `);
+  await query(`
+    CREATE TABLE IF NOT EXISTS mbfd_items (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      case_name TEXT NOT NULL,
+      doe_number TEXT NOT NULL,
+      amount NUMERIC(12, 2),
+      attorney_email TEXT,
+      is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+      is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
+      completed_at TIMESTAMPTZ,
+      completed_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_by TEXT
+    )
+  `);
+  await query(`
+    ALTER TABLE mbfd_items
+    ADD COLUMN IF NOT EXISTS is_completed BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+  await query(`
+    ALTER TABLE mbfd_items
+    ADD COLUMN IF NOT EXISTS is_hidden BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+  await query(`
+    ALTER TABLE mbfd_items
+    ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ
+  `);
+  await query(`
+    ALTER TABLE mbfd_items
+    ADD COLUMN IF NOT EXISTS completed_by TEXT
+  `);
 };
 
 const normalizeLitigationTab = (jurisdiction) => {
@@ -639,6 +671,175 @@ app.get("/api/users/options", async (req, res) => {
     "SELECT id, name, email FROM users ORDER BY lower(email)"
   );
   res.json(result.rows);
+});
+
+app.get("/api/litigation/mbfd-items", async (_req, res) => {
+  const result = await query(
+    `SELECT id, case_name, doe_number, amount, attorney_email,
+            is_completed, is_hidden, completed_at, completed_by,
+            created_at, updated_at, updated_by
+     FROM mbfd_items
+     WHERE COALESCE(is_hidden, FALSE) = FALSE
+     ORDER BY COALESCE(is_completed, FALSE) ASC, updated_at DESC, created_at DESC`
+  );
+  res.json(
+    result.rows.map((row) => ({
+      id: row.id,
+      caseName: row.case_name,
+      doeNumber: row.doe_number,
+      amount: row.amount,
+      attorneyEmail: row.attorney_email || "",
+      isCompleted: row.is_completed,
+      isHidden: row.is_hidden,
+      completedAt: row.completed_at,
+      completedBy: row.completed_by,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      updatedBy: row.updated_by || "",
+    }))
+  );
+});
+
+app.get("/api/litigation/mbfd-items/hidden", async (_req, res) => {
+  const result = await query(
+    `SELECT id, case_name, doe_number, amount, attorney_email,
+            is_completed, is_hidden, completed_at, completed_by,
+            created_at, updated_at, updated_by
+     FROM mbfd_items
+     WHERE COALESCE(is_hidden, FALSE) = TRUE
+     ORDER BY updated_at DESC, created_at DESC`
+  );
+  res.json(
+    result.rows.map((row) => ({
+      id: row.id,
+      caseName: row.case_name,
+      doeNumber: row.doe_number,
+      amount: row.amount,
+      attorneyEmail: row.attorney_email || "",
+      isCompleted: row.is_completed,
+      isHidden: row.is_hidden,
+      completedAt: row.completed_at,
+      completedBy: row.completed_by,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      updatedBy: row.updated_by || "",
+    }))
+  );
+});
+
+app.post("/api/litigation/mbfd-items", async (req, res) => {
+  const caseName = String(req.body?.caseName || "").trim();
+  const doeNumber = String(req.body?.doeNumber || "").trim();
+  const attorneyEmail = String(req.body?.attorneyEmail || "").trim();
+  const amountRaw = String(req.body?.amount ?? "").trim();
+  const amount = amountRaw === "" ? null : Number(amountRaw);
+
+  if (!caseName || !doeNumber) {
+    return res.status(400).json({ error: "caseName and doeNumber are required." });
+  }
+  if (amountRaw !== "" && !Number.isFinite(amount)) {
+    return res.status(400).json({ error: "Amount must be a valid number." });
+  }
+
+  const actor = req.session?.name || req.session?.email || null;
+  const result = await query(
+    `INSERT INTO mbfd_items
+      (case_name, doe_number, amount, attorney_email, updated_at, updated_by)
+     VALUES ($1, $2, $3, $4, NOW(), $5)
+     RETURNING id, case_name, doe_number, amount, attorney_email,
+               is_completed, is_hidden, completed_at, completed_by,
+               created_at, updated_at, updated_by`,
+    [caseName, doeNumber, amount, attorneyEmail || null, actor]
+  );
+
+  await writeAuditLog(req, {
+    action: "mbfd.create",
+    entityType: "mbfd_item",
+    entityId: result.rows[0].id,
+    before: null,
+    after: {
+      caseName: result.rows[0].case_name,
+      doeNumber: result.rows[0].doe_number,
+      amount: result.rows[0].amount,
+      attorneyEmail: result.rows[0].attorney_email || "",
+    },
+  });
+
+  res.status(201).json({
+    id: result.rows[0].id,
+    caseName: result.rows[0].case_name,
+    doeNumber: result.rows[0].doe_number,
+    amount: result.rows[0].amount,
+    attorneyEmail: result.rows[0].attorney_email || "",
+    isCompleted: result.rows[0].is_completed,
+    isHidden: result.rows[0].is_hidden,
+    completedAt: result.rows[0].completed_at,
+    completedBy: result.rows[0].completed_by,
+    createdAt: result.rows[0].created_at,
+    updatedAt: result.rows[0].updated_at,
+    updatedBy: result.rows[0].updated_by || "",
+  });
+});
+
+app.put("/api/litigation/mbfd-items/:id/state", async (req, res) => {
+  const { isCompleted, isHidden } = req.body || {};
+  const existing = await query(
+    `SELECT id, case_name, doe_number, amount, attorney_email, is_completed, is_hidden
+     FROM mbfd_items
+     WHERE id = $1`,
+    [req.params.id]
+  );
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "MBFD item not found." });
+  }
+
+  const actor = req.session?.name || req.session?.email || null;
+  const result = await query(
+    `UPDATE mbfd_items
+     SET is_completed = $2,
+         is_hidden = $3,
+         completed_at = CASE WHEN $2 THEN NOW() ELSE NULL END,
+         completed_by = CASE WHEN $2 THEN $4 ELSE NULL END,
+         updated_at = NOW(),
+         updated_by = $4
+     WHERE id = $1
+     RETURNING id, case_name, doe_number, amount, attorney_email,
+               is_completed, is_hidden, completed_at, completed_by,
+               created_at, updated_at, updated_by`,
+    [req.params.id, Boolean(isCompleted), Boolean(isHidden), actor]
+  );
+
+  await writeAuditLog(req, {
+    action: "mbfd.state",
+    entityType: "mbfd_item",
+    entityId: req.params.id,
+    before: {
+      isCompleted: existing.rows[0].is_completed,
+      isHidden: existing.rows[0].is_hidden,
+    },
+    after: {
+      isCompleted: result.rows[0].is_completed,
+      isHidden: result.rows[0].is_hidden,
+    },
+  });
+
+  res.json({
+    ok: true,
+    item: {
+      id: result.rows[0].id,
+      caseName: result.rows[0].case_name,
+      doeNumber: result.rows[0].doe_number,
+      amount: result.rows[0].amount,
+      attorneyEmail: result.rows[0].attorney_email || "",
+      isCompleted: result.rows[0].is_completed,
+      isHidden: result.rows[0].is_hidden,
+      completedAt: result.rows[0].completed_at,
+      completedBy: result.rows[0].completed_by,
+      createdAt: result.rows[0].created_at,
+      updatedAt: result.rows[0].updated_at,
+      updatedBy: result.rows[0].updated_by || "",
+    },
+  });
 });
 
 app.get("/api/litigation/cases", async (req, res) => {

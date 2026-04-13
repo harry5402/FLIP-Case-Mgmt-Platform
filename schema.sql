@@ -223,3 +223,18 @@ CREATE TABLE IF NOT EXISTS litigation_collections (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_by TEXT
 );
+
+CREATE TABLE IF NOT EXISTS mbfd_items (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  case_name TEXT NOT NULL,
+  doe_number TEXT NOT NULL,
+  amount NUMERIC(12, 2),
+  attorney_email TEXT,
+  is_completed BOOLEAN NOT NULL DEFAULT FALSE,
+  is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
+  completed_at TIMESTAMPTZ,
+  completed_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by TEXT
+);

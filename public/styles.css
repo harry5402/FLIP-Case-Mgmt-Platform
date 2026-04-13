@@ -410,17 +410,20 @@ tbody td {
   gap: 16px;
 }
 
-#collections-modal .modal-card {
+#collections-modal .modal-card,
+#hidden-mbfd-modal .modal-card {
   max-height: min(88vh, 900px);
   overflow: hidden;
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
-#collections-modal .table-wrap {
+#collections-modal .table-wrap,
+#hidden-mbfd-modal .table-wrap {
   overflow: auto;
 }
 
-#collections-modal .form-actions {
+#collections-modal .form-actions,
+#hidden-mbfd-modal .form-actions {
   position: sticky;
   bottom: 0;
   background: #fffdf9;
@@ -610,6 +613,11 @@ tr.is-completed td {
 
 .focused-docket-row td {
   background: #fff0d9;
+}
+
+.mbfd-completed {
+  opacity: 0.78;
+  border-color: #9cb59e;
 }
 
 .row-action-buttons {

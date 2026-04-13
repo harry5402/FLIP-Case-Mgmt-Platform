@@ -19,9 +19,14 @@
         <div class="panel-header">
           <div class="panel-header-row">
             <h2>LITIGATION DOCKET</h2>
-            <button id="new-litigation-case" class="ghost-button" type="button">
-              New Case
-            </button>
+            <div class="tab-switch">
+              <button id="view-hidden-mbfd" class="ghost-button hidden" type="button">
+                View Hidden
+              </button>
+              <button id="new-litigation-case" class="ghost-button" type="button">
+                New Case
+              </button>
+            </div>
           </div>
           <div class="tab-switch docket-tabs">
             <button class="ghost-button active" data-tab="NDIL" type="button">NDIL</button>
@@ -69,7 +74,6 @@
               <option value="GAND">GAND</option>
               <option value="NDIN">NDIN</option>
               <option value="MDFL">MDFL</option>
-              <option value="MBFD">MBFD</option>
               <option value="WDPA">WDPA</option>
               <option value="EDWI">EDWI</option>
               <option value="FAIKERZ">FAIKERZ</option>
@@ -118,6 +122,39 @@
       </div>
     </div>
 
+    <div id="new-mbfd-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="info-card-header">
+          <h3>Create New MBFD Item</h3>
+          <button id="close-new-mbfd-modal" class="ghost-button" type="button">Close</button>
+        </div>
+        <form id="new-mbfd-form" class="form-grid">
+          <label class="form-field">
+            <span>Case Name</span>
+            <input name="caseName" required />
+          </label>
+          <label class="form-field">
+            <span>Doe #</span>
+            <input name="doeNumber" required />
+          </label>
+          <label class="form-field">
+            <span>Amount</span>
+            <input name="amount" type="number" min="0" step="0.01" />
+          </label>
+          <label class="form-field">
+            <span>Attorney Email</span>
+            <input name="attorneyEmail" type="email" />
+          </label>
+        </form>
+        <div class="form-actions">
+          <div id="new-mbfd-error" class="form-error"></div>
+          <button id="save-new-mbfd" class="ghost-button" type="submit" form="new-mbfd-form">
+            Create Item
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="collections-modal" class="modal hidden">
       <div class="modal-card">
         <div class="info-card-header">
@@ -147,6 +184,34 @@
             <div id="collections-error" class="form-error"></div>
             <button id="save-collections" class="ghost-button" type="button">Save</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="hidden-mbfd-modal" class="modal hidden">
+      <div class="modal-card">
+        <div class="info-card-header">
+          <h3>Hidden MBFD Items</h3>
+          <button id="close-hidden-mbfd-modal" class="ghost-button" type="button">Close</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Case Name</th>
+                <th>Doe #</th>
+                <th>Amount</th>
+                <th>Attorney Email</th>
+                <th>Completed</th>
+                <th>Restore</th>
+              </tr>
+            </thead>
+            <tbody id="hidden-mbfd-body"></tbody>
+          </table>
+        </div>
+        <div class="form-actions">
+          <div id="hidden-mbfd-error" class="form-error"></div>
+          <div></div>
         </div>
       </div>
     </div>
