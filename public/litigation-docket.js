@@ -41,6 +41,7 @@ let openHiddenActionsCaseId = null;
 let editingCase = null;
 let userOptions = [];
 let draggingEntryRow = null;
+let latestTabRenderId = 0;
 const focusCaseId = getParam("caseId");
 const focusAction = getParam("action");
 
@@ -207,7 +208,9 @@ const rerenderCasesPreservingScroll = async (caseId) => {
     ? document.querySelector(`.litigation-case[data-case-id="${caseId}"]`)
     : null;
   const cardTopOffset = currentCaseCard ? currentCaseCard.getBoundingClientRect().top : null;
-  await renderCases(activeTab);
+  const renderId = ++latestTabRenderId;
+  await renderActiveTab(renderId);
+  if (renderId !== latestTabRenderId) return;
   await new Promise((resolve) => window.requestAnimationFrame(resolve));
 
   if (caseId) {
@@ -220,6 +223,14 @@ const rerenderCasesPreservingScroll = async (caseId) => {
   }
 
   window.scrollTo(scrollX, scrollY);
+};
+
+const renderActiveTab = async (renderId) => {
+  if (activeTab === "MBFD") {
+    await renderMbfdItems(renderId);
+    return;
+  }
+  await renderCases(activeTab, renderId);
 };
 
 const clearEntryDragClasses = (tbody) => {
@@ -560,24 +571,27 @@ const closeHiddenMbfd = () => {
   hiddenMbfdModal.classList.add("hidden");
 };
 
-const renderMbfdItems = async () => {
+const renderMbfdItems = async (renderId = latestTabRenderId) => {
   casesContainer.innerHTML = '<div class="empty-state">Loading...</div>';
   let items = [];
   try {
     items = await loadMbfdItems();
   } catch (error) {
+    if (renderId !== latestTabRenderId) return;
     casesContainer.innerHTML = `<div class="empty-state">Unable to load MBFD items: ${escapeHtml(
       error.message || "Request failed"
     )}</div>`;
     return;
   }
 
+  if (renderId !== latestTabRenderId) return;
   casesContainer.innerHTML = "";
   if (!items.length) {
     casesContainer.innerHTML = '<div class="empty-state">No MBFD items.</div>';
     return;
   }
 
+  const fragment = document.createDocumentFragment();
   items.forEach((item) => {
     const card = document.createElement("div");
     card.className = "table-card litigation-case";
@@ -626,21 +640,25 @@ const renderMbfdItems = async () => {
     if (item.isCompleted) {
       card.classList.add("mbfd-completed");
     }
-    casesContainer.appendChild(card);
+    fragment.appendChild(card);
   });
+  if (renderId !== latestTabRenderId) return;
+  casesContainer.appendChild(fragment);
 };
 
-const renderCases = async (tab) => {
+const renderCases = async (tab, renderId = latestTabRenderId) => {
   casesContainer.innerHTML = `<div class="empty-state">Loading...</div>`;
   let cases = [];
   try {
     cases = await fetchJson(`/api/litigation/cases?tab=${encodeURIComponent(tab)}`);
   } catch (error) {
+    if (renderId !== latestTabRenderId) return;
     casesContainer.innerHTML = `<div class="empty-state">Unable to load docket cases: ${escapeHtml(
       error.message || "Request failed"
     )}</div>`;
     return;
   }
+  if (renderId !== latestTabRenderId) return;
   casesContainer.innerHTML = "";
 
   if (!cases.length) {
@@ -648,6 +666,7 @@ const renderCases = async (tab) => {
     return;
   }
 
+  const fragment = document.createDocumentFragment();
   for (const item of cases) {
     let entries = [];
     let entryLoadError = "";
@@ -656,6 +675,7 @@ const renderCases = async (tab) => {
     } catch (error) {
       entryLoadError = error.message || "Unable to load actions.";
     }
+    if (renderId !== latestTabRenderId) return;
     const card = document.createElement("div");
     card.className = "table-card litigation-case";
     card.dataset.caseId = item.id;
@@ -812,7 +832,7 @@ const renderCases = async (tab) => {
       archiveConfirmModal.classList.remove("hidden");
     });
 
-    casesContainer.appendChild(card);
+    fragment.appendChild(card);
 
     if (focusCaseId && item.id === focusCaseId) {
       setTimeout(() => {
@@ -820,9 +840,12 @@ const renderCases = async (tab) => {
       }, 50);
     }
   }
+  if (renderId !== latestTabRenderId) return;
+  casesContainer.appendChild(fragment);
 };
 
 const setTab = async (tab) => {
+  const renderId = ++latestTabRenderId;
   activeTab = tab;
   tabs.forEach((button) => {
     button.classList.toggle("active", button.dataset.tab === tab);
@@ -830,11 +853,7 @@ const setTab = async (tab) => {
   const isMbfdTab = tab === "MBFD";
   newCaseButton.textContent = isMbfdTab ? "New MBFD Item" : "New Case";
   viewHiddenMbfdButton.classList.toggle("hidden", !isMbfdTab);
-  if (isMbfdTab) {
-    await renderMbfdItems();
-    return;
-  }
-  await renderCases(tab);
+  await renderActiveTab(renderId);
 };
 
 const init = async () => {
