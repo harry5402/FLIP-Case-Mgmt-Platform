@@ -410,6 +410,23 @@ tbody td {
   gap: 16px;
 }
 
+#collections-modal .modal-card {
+  max-height: min(88vh, 900px);
+  overflow: hidden;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+}
+
+#collections-modal .table-wrap {
+  overflow: auto;
+}
+
+#collections-modal .form-actions {
+  position: sticky;
+  bottom: 0;
+  background: #fffdf9;
+  padding-top: 8px;
+}
+
 .modal-list {
   padding: 0 16px 12px;
   display: grid;
