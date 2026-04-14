@@ -1897,6 +1897,7 @@ const mapCase = (row) => ({
   caseNumber: row.case_number,
   judge: row.judge,
   status: row.status,
+  docketStatus: row.docket_status || "",
   recentStatus: row.recent_status,
   filedDate: row.filed_date,
   updatedAt: row.updated_at,
@@ -1937,13 +1938,23 @@ const touchCase = async (caseId, session) => {
 
 app.get("/api/cases", async (req, res) => {
   const result = await query(
-    "SELECT * FROM cases WHERE COALESCE(is_docket_only, FALSE) = FALSE ORDER BY created_at DESC"
+    `SELECT c.*, state.docket_status
+     FROM cases c
+     LEFT JOIN litigation_case_state state ON state.case_id = c.id
+     WHERE COALESCE(c.is_docket_only, FALSE) = FALSE
+     ORDER BY c.created_at DESC`
   );
   res.json(result.rows.map(mapCase));
 });
 
 app.get("/api/cases/:id", async (req, res) => {
-  const result = await query("SELECT * FROM cases WHERE id = $1", [req.params.id]);
+  const result = await query(
+    `SELECT c.*, state.docket_status
+     FROM cases c
+     LEFT JOIN litigation_case_state state ON state.case_id = c.id
+     WHERE c.id = $1`,
+    [req.params.id]
+  );
   if (result.rows.length === 0) {
     return res.status(404).json({ error: "Case not found" });
   }
@@ -1960,6 +1971,7 @@ app.post("/api/cases", async (req, res) => {
     plaintiffProfitPerUnit,
     jurisdiction,
     caseNumber,
+    filedDate,
     judge,
     status,
     updatedBy,
@@ -2029,15 +2041,31 @@ app.put("/api/cases/:id", async (req, res) => {
     plaintiffProfitPerUnit,
     jurisdiction,
     caseNumber,
+    filedDate,
     judge,
     status,
+    docketStatus,
     updatedBy,
     notes,
     docketDefendantCount,
   } = req.body;
   const actor = req.session?.name || req.session?.email || updatedBy || null;
 
-  const existing = await query("SELECT * FROM cases WHERE id = $1", [req.params.id]);
+  if (
+    docketStatus !== undefined &&
+    String(docketStatus || "").trim() &&
+    !DOCKET_STATUS_OPTIONS.includes(String(docketStatus).trim())
+  ) {
+    return res.status(400).json({ error: "Invalid docket status." });
+  }
+
+  const existing = await query(
+    `SELECT c.*, state.docket_status
+     FROM cases c
+     LEFT JOIN litigation_case_state state ON state.case_id = c.id
+     WHERE c.id = $1`,
+    [req.params.id]
+  );
   if (!existing.rows.length) {
     return res.status(404).json({ error: "Case not found" });
   }
@@ -2052,13 +2080,14 @@ app.put("/api/cases/:id", async (req, res) => {
       plaintiff_profit_per_unit = COALESCE($6, plaintiff_profit_per_unit),
       jurisdiction = COALESCE($7, jurisdiction),
       case_number = COALESCE($8, case_number),
-      judge = COALESCE($9, judge),
-      status = COALESCE($10, status),
-      updated_by = COALESCE($11, updated_by),
+      filed_date = COALESCE($9, filed_date),
+      judge = COALESCE($10, judge),
+      status = COALESCE($11, status),
+      updated_by = COALESCE($12, updated_by),
       updated_at = NOW(),
       court = COALESCE($7, court),
-      notes = COALESCE($12, notes)
-     WHERE id = $13
+      notes = COALESCE($13, notes)
+     WHERE id = $14
      RETURNING *`,
     [
       caseName,
@@ -2069,6 +2098,7 @@ app.put("/api/cases/:id", async (req, res) => {
       plaintiffProfitPerUnit,
       jurisdiction,
       caseNumber,
+      filedDate,
       judge,
       status,
       actor,
@@ -2090,15 +2120,35 @@ app.put("/api/cases/:id", async (req, res) => {
     }
   }
 
+  if (docketStatus !== undefined) {
+    await query(
+      `INSERT INTO litigation_case_state
+        (case_id, archived, docket_status)
+       VALUES ($1, FALSE, $2)
+       ON CONFLICT (case_id)
+       DO UPDATE SET docket_status = EXCLUDED.docket_status`,
+      [req.params.id, String(docketStatus || "").trim() || null]
+    );
+  }
+
+  const refreshed = await query(
+    `SELECT c.*, state.docket_status
+     FROM cases c
+     LEFT JOIN litigation_case_state state ON state.case_id = c.id
+     WHERE c.id = $1`,
+    [req.params.id]
+  );
+  const refreshedCase = refreshed.rows[0];
+
   await writeAuditLog(req, {
     action: "cases.update",
     entityType: "case",
     entityId: req.params.id,
     before: mapCase(existing.rows[0]),
-    after: mapCase(result.rows[0]),
+    after: mapCase(refreshedCase),
   });
 
-  res.json(mapCase(result.rows[0]));
+  res.json(mapCase(refreshedCase));
 });
 
 app.get("/api/cases/:id/ip-claims", async (req, res) => {

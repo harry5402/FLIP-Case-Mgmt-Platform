@@ -39,6 +39,16 @@ let notesDirty = false;
 let currentCaseId = null;
 let currentClaims = [];
 let editingClaimId = null;
+const docketStatusOptions = [
+  "",
+  "Case Filed",
+  "Default Requested",
+  "Default Granted",
+  "TRO Requested",
+  "Negotiating",
+  "TRO Signed",
+  "Case Closed",
+];
 
 const formatDateTime = (value) => {
   if (!value) return "";
@@ -53,8 +63,20 @@ const formatDateTime = (value) => {
   });
 };
 
+const toDateInputValue = (value) => {
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(String(value))) return String(value);
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
 const renderCaseInfo = (currentCase) => {
   const rows = [
+    ["Case Name", "caseName", currentCase.caseName || currentCase.title || ""],
     ["Client Name", "clientName", currentCase.clientName || ""],
     ["Brand Name", "brandName", currentCase.brandName || ""],
     ["IP Claims", "ipClaimsSummary", currentCase.ipClaimsSummary || ""],
@@ -66,6 +88,7 @@ const renderCaseInfo = (currentCase) => {
     ],
     ["Jurisdiction", "jurisdiction", currentCase.jurisdiction || currentCase.court || ""],
     ["Case #", "caseNumber", currentCase.caseNumber || ""],
+    ["Filed Date", "filedDate", toDateInputValue(currentCase.filedDate), "date"],
     ["Judge", "judge", currentCase.judge || ""],
     [
       "Case Group",
@@ -73,6 +96,13 @@ const renderCaseInfo = (currentCase) => {
       currentCase.status || "Undelivered",
       "select",
       ["Undelivered", "Active", "Fully Finished"],
+    ],
+    [
+      "Status",
+      "docketStatus",
+      currentCase.docketStatus || "",
+      "select",
+      docketStatusOptions,
     ],
     ["Updated at", "updatedAtDisplay", formatDateTime(currentCase.updatedAt), "text", null, true],
     ["Updated by", "updatedByDisplay", currentCase.updatedBy || "", "text", null, true],
@@ -355,9 +385,12 @@ const init = async () => {
   caseTitle.textContent = currentCase.caseName || currentCase.title;
   currentCaseId = currentCase.id;
   const defendants = await loadDefendants(currentCase.id);
-  caseMeta.textContent = `${currentCase.id} • Filed ${formatDate(
-    currentCase.filedDate
-  )} • ${defendants.length} defendants`;
+  const renderCaseMeta = () => {
+    caseMeta.textContent = `${currentCase.id} • Filed ${formatDate(
+      currentCase.filedDate
+    )} • ${defendants.length} defendants`;
+  };
+  renderCaseMeta();
   renderCaseInfo(currentCase);
   renderDocket(currentCase);
   caseNotes.value = currentCase.notes ?? "";
@@ -508,13 +541,11 @@ const init = async () => {
       fields[field.name] = field.value.trim();
     });
 
-    if (!fields.updatedAt) {
-      fields.updatedAt = new Date().toISOString().slice(0, 10);
-    }
-
     const updatedCase = await updateCase(currentCase.id, fields);
     if (updatedCase && !updatedCase.error) {
       currentCase = { ...currentCase, ...updatedCase };
+      caseTitle.textContent = currentCase.caseName || currentCase.title;
+      renderCaseMeta();
       renderCaseInfo(currentCase);
     }
     caseInfoSave.textContent = "Saved";
