@@ -230,6 +230,32 @@ h1 {
   gap: 8px;
 }
 
+.data-actions-card {
+  align-content: start;
+  gap: 6px;
+}
+
+.data-actions-card h3 {
+  margin-bottom: 0;
+}
+
+.data-actions-card .link-list {
+  align-content: start;
+  margin-top: 0;
+}
+
+.docket-card {
+  align-content: start;
+}
+
+.docket-card .info-card-header {
+  align-items: flex-start;
+}
+
+.docket-card .info-list {
+  align-content: start;
+}
+
 .link-item {
   font-family: "Inter", "Segoe UI", sans-serif;
   font-size: 13px;
