@@ -738,9 +738,14 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
     if (focusCaseId && item.id === focusCaseId) {
       card.classList.add("focused-docket-case");
     }
+    const caseTitleHtml = item.isDocketOnly
+      ? escapeHtml(item.caseName || "Case")
+      : `<a href="case.html?caseId=${encodeURIComponent(item.id)}">${escapeHtml(
+          item.caseName || "Case"
+        )}</a>`;
     card.innerHTML = `
       <div class="litigation-case-header">
-        <div class="litigation-case-title">${escapeHtml(item.caseName || "Case")}</div>
+        <div class="litigation-case-title">${caseTitleHtml}</div>
         <div class="litigation-case-meta">${escapeHtml(item.caseNumber || "—")} · ${escapeHtml(
           item.jurisdiction || "—"
         )} · Defendants: ${escapeHtml(item.defendantCount || 0)}</div>
