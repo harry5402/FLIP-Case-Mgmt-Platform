@@ -2354,7 +2354,7 @@ app.post(
     };
 
     const existing = await query(
-      "SELECT doe_number FROM defendants WHERE case_id = $1",
+      "SELECT doe_number, platform, name FROM defendants WHERE case_id = $1",
       [req.params.id]
     );
     const maxDoe = existing.rows.reduce((max, row) => {
@@ -2362,15 +2362,37 @@ app.post(
       const num = match ? Number(match[0]) : 0;
       return Math.max(max, num);
     }, 0);
+    const existingKeys = new Set(
+      existing.rows.map((row) => {
+        const platform = String(row.platform || "").trim().toLowerCase();
+        const seller = String(row.name || "").trim().toLowerCase();
+        return `${platform}|${seller}`;
+      })
+    );
 
     const values = [];
     const placeholders = [];
     let index = 1;
     let doeCounter = maxDoe;
+    let skippedDuplicates = 0;
 
     const filtered = records.filter((row) => valueFromRow(row, "seller") !== "");
-
+    const uniqueRows = [];
     filtered.forEach((row) => {
+      const platform = valueFromRow(row, "platform");
+      const seller = valueFromRow(row, "seller");
+      const duplicateKey = `${platform.trim().toLowerCase()}|${seller
+        .trim()
+        .toLowerCase()}`;
+      if (existingKeys.has(duplicateKey)) {
+        skippedDuplicates += 1;
+        return;
+      }
+      existingKeys.add(duplicateKey);
+      uniqueRows.push(row);
+    });
+
+    uniqueRows.forEach((row) => {
       doeCounter += 1;
       values.push(
         req.params.id,
@@ -2396,7 +2418,12 @@ app.post(
     });
 
     if (values.length === 0) {
-      return res.status(400).json({ error: "No valid seller rows found." });
+      return res.status(400).json({
+        error:
+          skippedDuplicates > 0
+            ? "No new defendants imported. All mapped rows already exist for this case."
+            : "No valid seller rows found.",
+      });
     }
 
     await query(
@@ -2414,13 +2441,18 @@ app.post(
       entityId: req.params.id,
       before: null,
       after: {
-        imported: filtered.length,
+        imported: uniqueRows.length,
+        skippedDuplicates,
         startingDoe: maxDoe + 1,
         mapping: mappedHeaders,
       },
     });
 
-    res.json({ imported: filtered.length, startingDoe: maxDoe + 1 });
+    res.json({
+      imported: uniqueRows.length,
+      skippedDuplicates,
+      startingDoe: maxDoe + 1,
+    });
   }
 );
 
