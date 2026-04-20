@@ -20,6 +20,7 @@ const collectionsBody = document.getElementById("collections-body");
 const addCollectionRowButton = document.getElementById("add-collection-row");
 const saveCollectionsButton = document.getElementById("save-collections");
 const collectionsError = document.getElementById("collections-error");
+const collectionsSaveState = document.getElementById("collections-save-state");
 const archiveConfirmModal = document.getElementById("archive-confirm-modal");
 const archiveConfirmTitle = document.getElementById("archive-confirm-title");
 const archiveConfirmText = document.getElementById("archive-confirm-text");
@@ -42,6 +43,7 @@ let editingCase = null;
 let userOptions = [];
 let draggingEntryRow = null;
 let latestTabRenderId = 0;
+let collectionsDirty = false;
 const focusCaseId = getParam("caseId");
 const focusAction = getParam("action");
 
@@ -218,6 +220,43 @@ const buildStatusOptions = (selectedValue) =>
         }>${escapeHtml(status || "—")}</option>`
     )
     .join("");
+
+const setSaveStateIndicator = (element, state, message = "") => {
+  if (!element) return;
+  element.dataset.state = state;
+  element.textContent = message;
+};
+
+const markCollectionsDirty = () => {
+  collectionsDirty = true;
+  setSaveStateIndicator(collectionsSaveState, "dirty", "Unsaved changes");
+};
+
+const clearCollectionsSaveState = () => {
+  collectionsDirty = false;
+  setSaveStateIndicator(collectionsSaveState, "idle", "");
+};
+
+const markCollectionsSaved = () => {
+  collectionsDirty = false;
+  setSaveStateIndicator(collectionsSaveState, "saved", "Saved");
+};
+
+const markEntriesDirty = (card) => {
+  setSaveStateIndicator(
+    card?.querySelector(".entries-save-state"),
+    "dirty",
+    "Unsaved changes"
+  );
+};
+
+const markEntriesSaved = (card) => {
+  setSaveStateIndicator(card?.querySelector(".entries-save-state"), "saved", "Saved");
+};
+
+const clearEntriesSaveState = (card) => {
+  setSaveStateIndicator(card?.querySelector(".entries-save-state"), "idle", "");
+};
 
 const rerenderCasesPreservingScroll = async (caseId) => {
   const scrollX = window.scrollX;
@@ -443,6 +482,7 @@ const openCollections = async (caseId) => {
   openCollectionsCaseId = caseId;
   collectionsError.textContent = "";
   collectionsBody.innerHTML = "";
+  clearCollectionsSaveState();
   const rows = await loadCollections(caseId);
   if (!rows.length) {
     collectionsBody.appendChild(renderCollectionRow({}));
@@ -453,8 +493,12 @@ const openCollections = async (caseId) => {
 };
 
 const closeCollections = () => {
+  if (collectionsDirty && !window.confirm("You have unsaved collection changes. Close anyway?")) {
+    return;
+  }
   collectionsModal.classList.add("hidden");
   openCollectionsCaseId = null;
+  clearCollectionsSaveState();
 };
 
 const renderHiddenActionRow = (entry = {}) => {
@@ -801,6 +845,7 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
       <div class="form-actions">
         <button class="ghost-button add-entry" type="button">Add Action</button>
         <div class="tab-switch">
+          <span class="save-state-indicator entries-save-state" data-state="idle"></span>
           <div class="form-error row-error"></div>
           <button class="ghost-button view-hidden-actions" type="button">View Hidden</button>
           <button class="ghost-button open-collections" type="button">COLLECTIONS</button>
@@ -814,11 +859,19 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
     const tbody = card.querySelector("tbody");
     attachEntriesTbodyDragBehavior(tbody);
     populateEntriesTable(tbody, entries);
+    clearEntriesSaveState(card);
 
     card.querySelector(".add-entry").addEventListener("click", () => {
       tbody.appendChild(renderEntryRow({}));
+      markEntriesDirty(card);
     });
     const rowError = card.querySelector(".row-error");
+    tbody.addEventListener("input", () => {
+      markEntriesDirty(card);
+    });
+    tbody.addEventListener("change", () => {
+      markEntriesDirty(card);
+    });
     tbody.addEventListener("click", async (event) => {
       const button = event.target.closest("button");
       if (!button) return;
@@ -853,6 +906,7 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
           row.classList.add("is-completed");
           row.classList.remove("due-soon");
         }
+        markEntriesSaved(card);
       } catch (error) {
         rowError.textContent = button.classList.contains("complete-hide-action")
           ? error.message || "Unable to hide action."
@@ -866,6 +920,7 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
         await saveEntries(item.id, payload);
         const refreshedEntries = await loadEntries(item.id);
         populateEntriesTable(tbody, refreshedEntries);
+        markEntriesSaved(card);
       } catch (error) {
         rowError.textContent = error.message || "Unable to save entries.";
       }
@@ -1012,18 +1067,21 @@ const init = async () => {
     });
     addCollectionRowButton?.addEventListener("click", () => {
       collectionsBody.appendChild(renderCollectionRow({}));
+      markCollectionsDirty();
     });
+    collectionsBody?.addEventListener("input", markCollectionsDirty);
+    collectionsBody?.addEventListener("change", markCollectionsDirty);
     saveCollectionsButton?.addEventListener("click", async () => {
       if (!openCollectionsCaseId) return;
       collectionsError.textContent = "";
       try {
-      await saveCollections(openCollectionsCaseId, readCollectionRows());
-      const currentCaseId = openCollectionsCaseId;
-      closeCollections();
-      await rerenderCasesPreservingScroll(currentCaseId);
-    } catch (error) {
-      collectionsError.textContent = error.message || "Unable to save collections.";
-    }
+        await saveCollections(openCollectionsCaseId, readCollectionRows());
+        markCollectionsSaved();
+        const currentCaseId = openCollectionsCaseId;
+        await rerenderCasesPreservingScroll(currentCaseId);
+      } catch (error) {
+        collectionsError.textContent = error.message || "Unable to save collections.";
+      }
     });
 
     closeArchiveConfirmModal?.addEventListener("click", () => {

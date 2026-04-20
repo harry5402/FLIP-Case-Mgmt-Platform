@@ -444,6 +444,10 @@ tbody td {
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
+#collections-modal .modal-card {
+  width: min(1240px, 96vw);
+}
+
 #collections-modal .table-wrap,
 #hidden-mbfd-modal .table-wrap,
 #hidden-actions-modal .table-wrap {
@@ -602,6 +606,21 @@ tbody td {
   font-family: "Inter", "Segoe UI", sans-serif;
   font-size: 12px;
   color: var(--accent);
+}
+
+.save-state-indicator {
+  min-height: 18px;
+  font-family: "Inter", "Segoe UI", sans-serif;
+  font-size: 12px;
+  align-self: center;
+}
+
+.save-state-indicator[data-state="dirty"] {
+  color: #9a5a11;
+}
+
+.save-state-indicator[data-state="saved"] {
+  color: #1f6b2e;
 }
 
 .lit-input {
