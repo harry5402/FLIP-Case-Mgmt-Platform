@@ -1704,6 +1704,61 @@ app.get("/api/tasks/my", async (req, res) => {
   );
 });
 
+app.get("/api/tasks", async (_req, res) => {
+  const result = await query(
+    `SELECT t.*,
+            c.case_name,
+            c.jurisdiction,
+            d.name AS defendant_name,
+            g.group_name,
+            u.name AS assigned_user_name,
+            u.email AS assigned_user_email,
+            docket_action.final_due_date AS fallback_final_due_date
+     FROM tasks t
+     JOIN cases c ON c.id = t.case_id
+     LEFT JOIN defendants d ON d.id = t.defendant_id
+     LEFT JOIN groups g ON g.id = t.group_id
+     LEFT JOIN users u ON u.id = t.assigned_to_user_id
+     LEFT JOIN LATERAL (
+       SELECT la.final_due_date
+       FROM litigation_actions la
+       WHERE la.case_id = t.case_id
+         AND la.assigned_to_user_id = t.assigned_to_user_id
+         AND COALESCE(la.is_hidden, FALSE) = FALSE
+         AND CONCAT('Docket: ', COALESCE(la.action, '')) = COALESCE(t.task_type, '')
+       ORDER BY la.updated_at DESC NULLS LAST, la.id DESC
+       LIMIT 1
+     ) docket_action ON TRUE
+     WHERE t.status = 'Open'
+     ORDER BY COALESCE(t.due_date, docket_action.final_due_date) NULLS LAST, t.created_at DESC`
+  );
+  res.json(
+    result.rows.map((row) => ({
+      id: row.id,
+      caseId: row.case_id,
+      defendantId: row.defendant_id,
+      groupId: row.group_id,
+      assignedToUserId: row.assigned_to_user_id,
+      assignedToName: row.assigned_user_name || "",
+      assignedToEmail: row.assigned_user_email || "",
+      targetType: row.group_id
+        ? "group"
+        : row.defendant_id
+          ? "defendant"
+          : String(row.task_type || "").startsWith("Docket:")
+            ? "docket"
+            : "case",
+      taskType: row.task_type,
+      dueDate: row.due_date || row.fallback_final_due_date,
+      status: row.status,
+      caseName: row.case_name,
+      jurisdiction: row.jurisdiction,
+      defendantName: row.defendant_name,
+      groupName: row.group_name,
+    }))
+  );
+});
+
 app.post("/api/tasks", async (req, res) => {
   const { caseId, defendantId, taskType, assignedToUserId, dueDate } = req.body;
   if (!caseId || !defendantId || !taskType || !assignedToUserId || !dueDate) {
