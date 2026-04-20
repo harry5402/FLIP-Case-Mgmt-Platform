@@ -64,6 +64,8 @@ const docketStatusOptions = [
   "Case Closed",
 ];
 
+const docketCaseTabs = ["NDIL", "GAND", "NDIN", "MDFL", "WDPA", "EDWI", "FAIKERZ"];
+
 const formatDateTime = (value) => {
   if (!value) return "—";
   const date = new Date(value);
@@ -565,6 +567,9 @@ const openEditTitle = (item) => {
   editTitleForm.elements.caseName.value = item.caseName || "";
   editTitleForm.elements.caseNumber.value = item.caseNumber || "";
   editTitleForm.elements.judge.value = item.judge || "";
+  editTitleForm.elements.jurisdiction.value = docketCaseTabs.includes(item.jurisdiction)
+    ? item.jurisdiction
+    : "NDIL";
   editTitleForm.elements.defendantCount.value = item.defendantCount ?? 0;
   editTitleForm.elements.defendantCount.disabled = !item.isDocketOnly;
   editTitleModal.classList.remove("hidden");
@@ -1204,16 +1209,23 @@ const init = async () => {
       }
 
       try {
+        const nextJurisdiction =
+          String(formData.get("jurisdiction") || "").trim() || editingCase.jurisdiction || "NDIL";
         await updateDocketCase(editingCase.id, {
           caseName,
           caseNumber: String(formData.get("caseNumber") || "").trim() || null,
           judge: String(formData.get("judge") || "").trim() || null,
+          jurisdiction: nextJurisdiction,
           docketDefendantCount: editingCase.isDocketOnly ? defendantCount : undefined,
           updatedBy: getUser()?.name || getUser()?.email || null,
         });
         const currentCaseId = editingCase.id;
         closeEditTitle();
-        await rerenderCasesPreservingScroll(currentCaseId);
+        if (activeTab !== nextJurisdiction) {
+          await setTab(nextJurisdiction);
+        } else {
+          await rerenderCasesPreservingScroll(currentCaseId);
+        }
       } catch (error) {
         editTitleError.textContent = error.message || "Unable to save docket title.";
       }
