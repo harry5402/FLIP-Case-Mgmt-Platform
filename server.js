@@ -552,7 +552,7 @@ const syncLitigationTasks = async (caseId, entries, session) => {
   for (const entry of entries) {
     const action = String(entry.action || "").trim();
     const assignedToUserId = entry.assignedToUserId || null;
-    const dueDate = entry.internalDueDate || null;
+    const dueDate = entry.internalDueDate || entry.finalDueDate || null;
     if (!action || !assignedToUserId || entry.isCompleted || entry.isHidden) continue;
 
     await query(
@@ -1659,14 +1659,25 @@ app.get("/api/tasks/my", async (req, res) => {
             c.case_name,
             c.jurisdiction,
             d.name AS defendant_name,
-            g.group_name
+            g.group_name,
+            docket_action.final_due_date AS fallback_final_due_date
      FROM tasks t
      JOIN cases c ON c.id = t.case_id
      LEFT JOIN defendants d ON d.id = t.defendant_id
      LEFT JOIN groups g ON g.id = t.group_id
+     LEFT JOIN LATERAL (
+       SELECT la.final_due_date
+       FROM litigation_actions la
+       WHERE la.case_id = t.case_id
+         AND la.assigned_to_user_id = t.assigned_to_user_id
+         AND COALESCE(la.is_hidden, FALSE) = FALSE
+         AND CONCAT('Docket: ', COALESCE(la.action, '')) = COALESCE(t.task_type, '')
+       ORDER BY la.updated_at DESC NULLS LAST, la.id DESC
+       LIMIT 1
+     ) docket_action ON TRUE
      WHERE t.assigned_to_user_id = $1
        AND t.status = 'Open'
-     ORDER BY t.due_date NULLS LAST, t.created_at DESC`,
+     ORDER BY COALESCE(t.due_date, docket_action.final_due_date) NULLS LAST, t.created_at DESC`,
     [req.session.userId]
   );
   res.json(
@@ -1683,7 +1694,7 @@ app.get("/api/tasks/my", async (req, res) => {
             ? "docket"
             : "case",
       taskType: row.task_type,
-      dueDate: row.due_date,
+      dueDate: row.due_date || row.fallback_final_due_date,
       status: row.status,
       caseName: row.case_name,
       jurisdiction: row.jurisdiction,
@@ -1756,6 +1767,18 @@ app.post("/api/groups/:id/tasks", async (req, res) => {
 });
 
 app.put("/api/tasks/:id/complete", async (req, res) => {
+  const existing = await query(
+    `SELECT id, case_id, defendant_id, group_id, task_type, assigned_to_user_id, status
+     FROM tasks
+     WHERE id = $1
+       AND assigned_to_user_id = $2`,
+    [req.params.id, req.session.userId]
+  );
+
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "Task not found." });
+  }
+
   const result = await query(
     `UPDATE tasks
      SET status = 'Complete'
@@ -1765,15 +1788,41 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
     [req.params.id, req.session.userId]
   );
 
-  if (!result.rows.length) {
-    return res.status(404).json({ error: "Task not found." });
+  const currentTask = existing.rows[0];
+  const docketActionName = String(currentTask.task_type || "").replace(/^Docket:\s*/, "").trim();
+  const isDocketTask =
+    !currentTask.defendant_id &&
+    !currentTask.group_id &&
+    String(currentTask.task_type || "").startsWith("Docket:") &&
+    docketActionName;
+
+  if (isDocketTask) {
+    await query(
+      `UPDATE litigation_actions
+       SET is_completed = TRUE,
+           is_hidden = FALSE,
+           completed_at = NOW(),
+           completed_by = $4,
+           updated_at = NOW(),
+           updated_by = $4
+       WHERE case_id = $1
+         AND assigned_to_user_id = $2
+         AND COALESCE(action, '') = $3`,
+      [
+        currentTask.case_id,
+        currentTask.assigned_to_user_id,
+        docketActionName,
+        req.session?.name || req.session?.email || null,
+      ]
+    );
   }
+
   await writeAuditLog(req, {
     action: "tasks.complete",
     entityType: "task",
     entityId: req.params.id,
-    before: { status: "Open" },
-    after: { status: "Complete" },
+    before: { status: currentTask.status || "Open" },
+    after: { status: "Complete", syncedDocketAction: Boolean(isDocketTask) },
   });
 
   res.json({ ok: true });
