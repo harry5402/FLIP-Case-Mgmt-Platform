@@ -304,6 +304,42 @@ const setCaseCollapsedState = (card, isCollapsed) => {
   }
 };
 
+const setCaseEntriesLoadingState = (tbody, message = "Loading actions...") => {
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="7" class="empty-state">${escapeHtml(message)}</td></tr>`;
+};
+
+const hydrateCaseEntries = async (card, item, options = {}) => {
+  const tbody = card?.querySelector("tbody");
+  const rowError = card?.querySelector(".row-error");
+  if (!card || !tbody) return false;
+  if (card.dataset.entriesLoading === "true") return false;
+  if (!options.force && card.dataset.entriesLoaded === "true") return true;
+
+  card.dataset.entriesLoading = "true";
+  if (rowError) {
+    rowError.textContent = "";
+  }
+  setCaseEntriesLoadingState(tbody);
+
+  try {
+    const entries = await loadEntries(item.id);
+    populateEntriesTable(tbody, entries);
+    clearEntriesSaveState(card);
+    card.dataset.entriesLoaded = "true";
+    return true;
+  } catch (error) {
+    tbody.innerHTML = "";
+    if (rowError) {
+      rowError.textContent = error.message || "Unable to load actions.";
+    }
+    card.dataset.entriesLoaded = "false";
+    return false;
+  } finally {
+    card.dataset.entriesLoading = "false";
+  }
+};
+
 const rerenderCasesPreservingScroll = async (caseId) => {
   const scrollX = window.scrollX;
   const scrollY = window.scrollY;
@@ -917,17 +953,12 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
 
   const fragment = document.createDocumentFragment();
   for (const item of cases) {
-    let entries = [];
-    let entryLoadError = "";
-    try {
-      entries = await loadEntries(item.id);
-    } catch (error) {
-      entryLoadError = error.message || "Unable to load actions.";
-    }
     if (renderId !== latestTabRenderId) return;
     const card = document.createElement("div");
     card.className = "table-card litigation-case";
     card.dataset.caseId = item.id;
+    card.dataset.entriesLoaded = "false";
+    card.dataset.entriesLoading = "false";
     if (focusCaseId && item.id === focusCaseId) {
       card.classList.add("focused-docket-case");
     }
@@ -981,7 +1012,6 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
           <button class="ghost-button sync-docketbird" type="button">Sync DocketBird</button>
           <span class="case-status-feedback docketbird-feedback"></span>
         </div>
-        ${entryLoadError ? `<div class="form-error">${escapeHtml(entryLoadError)}</div>` : ""}
       </div>
       <div class="litigation-case-body">
         <div class="table-wrap">
@@ -1018,10 +1048,14 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
     setCaseCollapsedState(card, shouldStartCollapsed);
     const tbody = card.querySelector("tbody");
     attachEntriesTbodyDragBehavior(tbody);
-    populateEntriesTable(tbody, entries);
+    if (shouldStartCollapsed) {
+      tbody.innerHTML = "";
+    } else {
+      setCaseEntriesLoadingState(tbody);
+    }
     clearEntriesSaveState(card);
     const collapseToggle = card.querySelector(".case-collapse-toggle");
-    collapseToggle?.addEventListener("click", () => {
+    collapseToggle?.addEventListener("click", async () => {
       const isCollapsed = !card.classList.contains("is-collapsed");
       setCaseCollapsedState(card, isCollapsed);
       const nextCollapsedCaseIds = getCollapsedCaseIds(tab);
@@ -1029,12 +1063,15 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
         nextCollapsedCaseIds.add(item.id);
       } else {
         nextCollapsedCaseIds.delete(item.id);
+        await hydrateCaseEntries(card, item);
       }
     });
 
-    card.querySelector(".add-entry").addEventListener("click", () => {
+    card.querySelector(".add-entry").addEventListener("click", async () => {
       setCaseCollapsedState(card, false);
       getCollapsedCaseIds(tab).delete(item.id);
+      const loaded = await hydrateCaseEntries(card, item);
+      if (!loaded) return;
       tbody.appendChild(renderEntryRow({}));
       markEntriesDirty(card);
     });
@@ -1092,11 +1129,12 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
     });
     card.querySelector(".save-entries").addEventListener("click", async () => {
       rowError.textContent = "";
+      const loaded = await hydrateCaseEntries(card, item);
+      if (!loaded) return;
       const payload = readEntryRows(tbody);
       try {
         await saveEntries(item.id, payload);
-        const refreshedEntries = await loadEntries(item.id);
-        populateEntriesTable(tbody, refreshedEntries);
+        await hydrateCaseEntries(card, item, { force: true });
         markEntriesSaved(card);
       } catch (error) {
         rowError.textContent = error.message || "Unable to save entries.";
@@ -1137,8 +1175,7 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
           await updateDocketBirdLink(item.id, docketbirdCaseIdInput.value.trim());
         }
         const result = await syncDocketBirdCase(item.id);
-        const refreshedEntries = await loadEntries(item.id);
-        populateEntriesTable(tbody, refreshedEntries);
+        await hydrateCaseEntries(card, item, { force: true });
         docketbirdFeedback.textContent = `Synced ${result.syncedCount || 0} entries`;
       } catch (error) {
         docketbirdFeedback.textContent = error.message || "Unable to sync DocketBird.";
@@ -1185,11 +1222,15 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
   if (renderId !== latestTabRenderId) return;
   casesContainer.appendChild(fragment);
   if (focusCaseId) {
-    setTimeout(() => {
+    setTimeout(async () => {
       const focusedCaseCard = casesContainer.querySelector(
         `.litigation-case[data-case-id="${CSS.escape(String(focusCaseId))}"]`
       );
       if (!focusedCaseCard) return;
+      const focusedCase = cases.find((item) => item.id === focusCaseId);
+      if (focusedCase) {
+        await hydrateCaseEntries(focusedCaseCard, focusedCase);
+      }
       const focusedRow = focusedCaseCard.querySelector(".focused-docket-row");
       if (focusedRow) {
         focusedRow.scrollIntoView({ behavior: "smooth", block: "center" });
