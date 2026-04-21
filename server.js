@@ -1823,7 +1823,7 @@ app.post("/api/groups/:id/tasks", async (req, res) => {
 
 app.put("/api/tasks/:id/complete", async (req, res) => {
   const existing = await query(
-    `SELECT id, case_id, defendant_id, group_id, task_type, assigned_to_user_id, status
+    `SELECT id, case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status
      FROM tasks
      WHERE id = $1
        AND assigned_to_user_id = $2`,
@@ -1852,24 +1852,47 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
     docketActionName;
 
   if (isDocketTask) {
-    await query(
-      `UPDATE litigation_actions
+    const syncedAction = await query(
+      `WITH target AS (
+         SELECT id
+         FROM litigation_actions
+         WHERE case_id = $1
+           AND assigned_to_user_id = $2
+           AND COALESCE(action, '') = $3
+           AND COALESCE(is_hidden, FALSE) = FALSE
+           AND COALESCE(is_completed, FALSE) = FALSE
+           AND (
+             $4::date IS NULL
+             OR internal_due_date = $4
+             OR (internal_due_date IS NULL AND final_due_date = $4)
+           )
+         ORDER BY
+           CASE
+             WHEN internal_due_date = $4 THEN 0
+             WHEN internal_due_date IS NULL AND final_due_date = $4 THEN 1
+             ELSE 2
+           END,
+           updated_at DESC NULLS LAST,
+           id DESC
+         LIMIT 1
+       )
+       UPDATE litigation_actions
        SET is_completed = TRUE,
-           is_hidden = FALSE,
            completed_at = NOW(),
-           completed_by = $4,
+           completed_by = $5,
            updated_at = NOW(),
-           updated_by = $4
-       WHERE case_id = $1
-         AND assigned_to_user_id = $2
-         AND COALESCE(action, '') = $3`,
+           updated_by = $5
+       WHERE id IN (SELECT id FROM target)
+       RETURNING id`,
       [
         currentTask.case_id,
         currentTask.assigned_to_user_id,
         docketActionName,
+        currentTask.due_date || null,
         req.session?.name || req.session?.email || null,
       ]
     );
+    currentTask.syncedDocketAction = Boolean(syncedAction.rows.length);
   }
 
   await writeAuditLog(req, {
@@ -1877,7 +1900,10 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
     entityType: "task",
     entityId: req.params.id,
     before: { status: currentTask.status || "Open" },
-    after: { status: "Complete", syncedDocketAction: Boolean(isDocketTask) },
+    after: {
+      status: "Complete",
+      syncedDocketAction: Boolean(currentTask.syncedDocketAction),
+    },
   });
 
   res.json({ ok: true });
