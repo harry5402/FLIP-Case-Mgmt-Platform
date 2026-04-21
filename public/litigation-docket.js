@@ -44,6 +44,7 @@ let userOptions = [];
 let draggingEntryRow = null;
 let latestTabRenderId = 0;
 let collectionsDirty = false;
+const collapsedCaseIdsByTab = new Map();
 const focusCaseId = getParam("caseId");
 const focusActionId = getParam("actionId");
 const focusAction = getParam("action");
@@ -273,6 +274,22 @@ const markEntriesSaved = (card) => {
 
 const clearEntriesSaveState = (card) => {
   setSaveStateIndicator(card?.querySelector(".entries-save-state"), "idle", "");
+};
+
+const getCollapsedCaseIds = (tab) => {
+  if (!collapsedCaseIdsByTab.has(tab)) {
+    collapsedCaseIdsByTab.set(tab, new Set());
+  }
+  return collapsedCaseIdsByTab.get(tab);
+};
+
+const setCaseCollapsedState = (card, isCollapsed) => {
+  card.classList.toggle("is-collapsed", Boolean(isCollapsed));
+  const toggle = card.querySelector(".case-collapse-toggle");
+  if (toggle) {
+    toggle.textContent = isCollapsed ? "Expand" : "Collapse";
+    toggle.setAttribute("aria-expanded", String(!isCollapsed));
+  }
 };
 
 const rerenderCasesPreservingScroll = async (caseId) => {
@@ -900,9 +917,17 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
       : `<a href="case.html?caseId=${encodeURIComponent(item.id)}">${escapeHtml(
           item.caseName || "Case"
         )}</a>`;
+    const collapsedCaseIds = getCollapsedCaseIds(tab);
+    const shouldStartCollapsed =
+      focusCaseId && item.id === focusCaseId ? false : collapsedCaseIds.has(item.id) || !focusCaseId;
     card.innerHTML = `
       <div class="litigation-case-header">
-        <div class="litigation-case-title">${caseTitleHtml}</div>
+        <div class="litigation-case-topline">
+          <div class="litigation-case-title">${caseTitleHtml}</div>
+          <button class="ghost-button case-collapse-toggle" type="button" aria-expanded="true">
+            Collapse
+          </button>
+        </div>
         <div class="litigation-case-meta">${escapeHtml(item.caseNumber || "—")} · ${escapeHtml(
           item.jurisdiction || "—"
         )} · Defendants: ${escapeHtml(item.defendantCount || 0)}</div>
@@ -939,42 +964,58 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
         </div>
         ${entryLoadError ? `<div class="form-error">${escapeHtml(entryLoadError)}</div>` : ""}
       </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Move</th>
-              <th>Action</th>
-              <th>Assigned To</th>
-              <th>Internal Due Date</th>
-              <th>Final Due Date</th>
-              <th>Notes</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <div class="form-actions">
-        <button class="ghost-button add-entry" type="button">Add Action</button>
-        <div class="tab-switch">
-          <span class="save-state-indicator entries-save-state" data-state="idle"></span>
-          <div class="form-error row-error"></div>
-          <button class="ghost-button view-hidden-actions" type="button">View Hidden</button>
-          <button class="ghost-button open-collections" type="button">COLLECTIONS</button>
-          <button class="ghost-button save-entries" type="button">Save</button>
-          <button class="ghost-button archive-case" type="button">${
-            tab === "ARCHIVED" ? "Reopen" : "Archive"
-          }</button>
+      <div class="litigation-case-body">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Move</th>
+                <th>Action</th>
+                <th>Assigned To</th>
+                <th>Internal Due Date</th>
+                <th>Final Due Date</th>
+                <th>Notes</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="form-actions">
+          <button class="ghost-button add-entry" type="button">Add Action</button>
+          <div class="tab-switch">
+            <span class="save-state-indicator entries-save-state" data-state="idle"></span>
+            <div class="form-error row-error"></div>
+            <button class="ghost-button view-hidden-actions" type="button">View Hidden</button>
+            <button class="ghost-button open-collections" type="button">COLLECTIONS</button>
+            <button class="ghost-button save-entries" type="button">Save</button>
+            <button class="ghost-button archive-case" type="button">${
+              tab === "ARCHIVED" ? "Reopen" : "Archive"
+            }</button>
+          </div>
         </div>
       </div>
     `;
+    setCaseCollapsedState(card, shouldStartCollapsed);
     const tbody = card.querySelector("tbody");
     attachEntriesTbodyDragBehavior(tbody);
     populateEntriesTable(tbody, entries);
     clearEntriesSaveState(card);
+    const collapseToggle = card.querySelector(".case-collapse-toggle");
+    collapseToggle?.addEventListener("click", () => {
+      const isCollapsed = !card.classList.contains("is-collapsed");
+      setCaseCollapsedState(card, isCollapsed);
+      const nextCollapsedCaseIds = getCollapsedCaseIds(tab);
+      if (isCollapsed) {
+        nextCollapsedCaseIds.add(item.id);
+      } else {
+        nextCollapsedCaseIds.delete(item.id);
+      }
+    });
 
     card.querySelector(".add-entry").addEventListener("click", () => {
+      setCaseCollapsedState(card, false);
+      getCollapsedCaseIds(tab).delete(item.id);
       tbody.appendChild(renderEntryRow({}));
       markEntriesDirty(card);
     });

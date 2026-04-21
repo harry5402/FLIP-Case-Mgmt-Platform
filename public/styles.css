@@ -555,20 +555,93 @@ tbody td {
   flex-wrap: wrap;
 }
 
+.docket-panel {
+  padding: 0;
+}
+
+.docket-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  min-height: 720px;
+}
+
+.docket-sidebar {
+  border-right: 1px solid var(--border);
+  background: linear-gradient(180deg, #fffaf4 0%, #fff6ee 100%);
+}
+
+.docket-sidebar-inner {
+  position: sticky;
+  top: 88px;
+  display: grid;
+  gap: 16px;
+  padding: 18px 16px 18px 18px;
+}
+
+.docket-sidebar-header {
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.docket-sidebar-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.docket-sidebar-actions .ghost-button,
+.docket-tabs .ghost-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.docket-tabs {
+  display: grid;
+  gap: 8px;
+}
+
+.docket-main {
+  min-width: 0;
+}
+
+.docket-main-header {
+  padding: 20px 22px 0;
+}
+
 .litigation-case {
   margin: 0;
 }
 
 .litigation-case-header {
-  text-align: center;
+  text-align: left;
   padding-bottom: 10px;
   display: grid;
   gap: 6px;
 }
 
+.litigation-case-topline {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .litigation-case-title {
   font-size: 18px;
   font-weight: 700;
+}
+
+.case-collapse-toggle {
+  flex-shrink: 0;
+}
+
+.litigation-case-body {
+  display: grid;
+  gap: 12px;
+}
+
+.litigation-case.is-collapsed .litigation-case-body {
+  display: none;
 }
 
 .litigation-case-meta {
@@ -777,6 +850,26 @@ tr.drag-over-below td {
   font-size: 13px;
   color: var(--muted);
   padding: 8px 6px;
+}
+
+@media (max-width: 980px) {
+  .docket-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .docket-sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .docket-sidebar-inner {
+    position: static;
+    padding: 18px 18px 8px;
+  }
+
+  .docket-tabs {
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
 }
 
 .card:hover {

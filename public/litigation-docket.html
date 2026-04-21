@@ -15,33 +15,47 @@
     </header>
 
     <main class="layout single">
-      <section class="panel">
-        <div class="panel-header">
-          <div class="panel-header-row">
-            <h2>LITIGATION DOCKET</h2>
-            <div class="tab-switch">
-              <button id="view-hidden-mbfd" class="ghost-button hidden" type="button">
-                View Hidden
-              </button>
-              <button id="new-litigation-case" class="ghost-button" type="button">
-                New Case
-              </button>
+      <section class="panel docket-panel">
+        <div class="docket-layout">
+          <aside class="docket-sidebar">
+            <div class="docket-sidebar-inner">
+              <div class="panel-header docket-sidebar-header">
+                <div>
+                  <h2>LITIGATION DOCKET</h2>
+                  <div class="muted">Jump tabs and keep them visible while you scroll.</div>
+                </div>
+                <div class="docket-sidebar-actions">
+                  <button id="view-hidden-mbfd" class="ghost-button hidden" type="button">
+                    View Hidden
+                  </button>
+                  <button id="new-litigation-case" class="ghost-button" type="button">
+                    New Case
+                  </button>
+                </div>
+              </div>
+              <div class="tab-switch docket-tabs">
+                <button class="ghost-button active" data-tab="NDIL" type="button">NDIL</button>
+                <button class="ghost-button" data-tab="GAND" type="button">GAND</button>
+                <button class="ghost-button" data-tab="NDIN" type="button">NDIN</button>
+                <button class="ghost-button" data-tab="MDFL" type="button">MDFL</button>
+                <button class="ghost-button" data-tab="WDPA" type="button">WDPA</button>
+                <button class="ghost-button" data-tab="EDWI" type="button">EDWI</button>
+                <button class="ghost-button" data-tab="EDMO" type="button">EDMO</button>
+                <button class="ghost-button" data-tab="UNFILED" type="button">UNFILED</button>
+                <button class="ghost-button" data-tab="MBFD" type="button">Money Back to Doe</button>
+                <button class="ghost-button" data-tab="ARCHIVED" type="button">ARCHIVED</button>
+              </div>
             </div>
-          </div>
-          <div class="tab-switch docket-tabs">
-            <button class="ghost-button active" data-tab="NDIL" type="button">NDIL</button>
-            <button class="ghost-button" data-tab="GAND" type="button">GAND</button>
-            <button class="ghost-button" data-tab="NDIN" type="button">NDIN</button>
-            <button class="ghost-button" data-tab="MDFL" type="button">MDFL</button>
-            <button class="ghost-button" data-tab="WDPA" type="button">WDPA</button>
-            <button class="ghost-button" data-tab="EDWI" type="button">EDWI</button>
-            <button class="ghost-button" data-tab="EDMO" type="button">EDMO</button>
-            <button class="ghost-button" data-tab="UNFILED" type="button">UNFILED</button>
-            <button class="ghost-button" data-tab="MBFD" type="button">Money Back to Doe</button>
-            <button class="ghost-button" data-tab="ARCHIVED" type="button">ARCHIVED</button>
+          </aside>
+          <div class="docket-main">
+            <div class="docket-main-header">
+              <div class="muted">
+                Cases can be collapsed individually to make long tabs easier to scan.
+              </div>
+            </div>
+            <div id="litigation-cases" class="list"></div>
           </div>
         </div>
-        <div id="litigation-cases" class="list"></div>
       </section>
     </main>
 
