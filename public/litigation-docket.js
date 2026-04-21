@@ -69,6 +69,21 @@ const docketStatusOptions = [
 
 const docketCaseTabs = ["NDIL", "GAND", "NDIN", "MDFL", "WDPA", "EDWI", "EDMO", "UNFILED"];
 const LEAD_COUNSEL_ASSIGNEE = "__lead_counsel__";
+const jurisdictionDisplayLabels = {
+  NDIL: "ILND",
+  GAND: "GAND",
+  NDIN: "INND",
+  MDFL: "FLMD",
+  WDPA: "PAWD",
+  EDWI: "WIED",
+  EDMO: "MOED",
+  UNFILED: "UNFILED",
+  MBFD: "Money Back to Doe",
+  ARCHIVED: "ARCHIVED",
+};
+
+const formatJurisdictionLabel = (value) =>
+  jurisdictionDisplayLabels[String(value || "").toUpperCase()] || String(value || "—");
 
 const formatDateTime = (value) => {
   if (!value) return "—";
@@ -398,9 +413,24 @@ const attachEntryDragBehavior = (row) => {
 
 const setEntryRowCompletionState = (row, isCompleted) => {
   row.classList.toggle("is-completed", Boolean(isCompleted));
+  if (isCompleted) {
+    row.classList.remove("is-in-progress");
+  }
+  const progressButton = row.querySelector(".progress-action");
+  if (progressButton) {
+    progressButton.disabled = Boolean(isCompleted);
+  }
   const completeButton = row.querySelector(".complete-action");
   if (completeButton) {
     completeButton.textContent = isCompleted ? "Incomplete" : "Complete";
+  }
+};
+
+const setEntryRowInProgressState = (row, isInProgress) => {
+  row.classList.toggle("is-in-progress", Boolean(isInProgress) && !row.classList.contains("is-completed"));
+  const progressButton = row.querySelector(".progress-action");
+  if (progressButton) {
+    progressButton.textContent = isInProgress ? "Clear Progress" : "In Progress";
   }
 };
 
@@ -454,6 +484,9 @@ const renderEntryRow = (entry = {}) => {
     )}</textarea></td>
     <td>
       <div class="row-action-buttons">
+        <button class="ghost-button progress-action" type="button" ${
+          entry.id ? "" : "disabled"
+        }>${entry.isInProgress ? "Clear Progress" : "In Progress"}</button>
         <button class="ghost-button complete-action" type="button" ${
           entry.id ? "" : "disabled"
         }>${entry.isCompleted ? "Incomplete" : "Complete"}</button>
@@ -466,6 +499,7 @@ const renderEntryRow = (entry = {}) => {
   row.querySelectorAll('input[type="date"]').forEach((input) => {
     input.addEventListener("change", () => refreshEntryRowDueHighlight(row));
   });
+  setEntryRowInProgressState(row, Boolean(entry.isInProgress));
   setEntryRowCompletionState(row, Boolean(entry.isCompleted));
   refreshEntryRowDueHighlight(row);
   const actionValue = String(entry.action || "").trim().toLowerCase();
@@ -492,9 +526,11 @@ const renderEntryRow = (entry = {}) => {
       const user = userOptions.find((option) => String(option.id) === userId) || {};
       const label = meta.name || user.name || meta.email || user.email || userId || "Collaborator";
       const pill = document.createElement("span");
-      pill.className = `collaborator-pill${meta.isComplete ? " is-complete" : ""}`;
+      pill.className = `collaborator-pill${meta.isComplete ? " is-complete" : ""}${
+        !meta.isComplete && meta.isInProgress ? " is-in-progress" : ""
+      }`;
       const labelSpan = document.createElement("span");
-      labelSpan.textContent = `${label}${meta.isComplete ? " ✓" : ""}`;
+      labelSpan.textContent = `${label}${meta.isComplete ? " ✓" : meta.isInProgress ? " • In Progress" : ""}`;
       const removeButton = document.createElement("button");
       removeButton.type = "button";
       removeButton.className = "collaborator-remove";
@@ -979,7 +1015,7 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
           </button>
         </div>
         <div class="litigation-case-meta">${escapeHtml(item.caseNumber || "—")} · ${escapeHtml(
-          item.jurisdiction || "—"
+          formatJurisdictionLabel(item.jurisdiction)
         )} · Defendants: ${escapeHtml(item.defendantCount || 0)}</div>
         <div class="litigation-case-meta">Judge: ${escapeHtml(item.judge || "—")}</div>
         <div class="litigation-case-meta">Most recent edit: ${formatDateTime(
@@ -1086,6 +1122,7 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
       const button = event.target.closest("button");
       if (!button) return;
       if (
+        !button.classList.contains("progress-action") &&
         !button.classList.contains("complete-action") &&
         !button.classList.contains("complete-hide-action")
       ) {
@@ -1098,15 +1135,20 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
       if (!actionId) {
         rowError.textContent = button.classList.contains("complete-hide-action")
           ? "Save this row before hiding it."
-          : "Save this row before marking it complete.";
+          : button.classList.contains("progress-action")
+            ? "Save this row before marking it in progress."
+            : "Save this row before marking it complete.";
         return;
       }
 
       try {
+        const isProgressButton = button.classList.contains("progress-action");
         const isCompleteButton = button.classList.contains("complete-action");
         const isCurrentlyCompleted = row.classList.contains("is-completed");
+        const isCurrentlyInProgress = row.classList.contains("is-in-progress");
         const result = await updateActionState(actionId, {
-          isCompleted: isCompleteButton ? !isCurrentlyCompleted : true,
+          isInProgress: isProgressButton ? !isCurrentlyInProgress : false,
+          isCompleted: isCompleteButton ? !isCurrentlyCompleted : button.classList.contains("complete-hide-action"),
           isHidden: button.classList.contains("complete-hide-action"),
         });
         if (result?.action?.isHidden) {
@@ -1115,6 +1157,7 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
             tbody.appendChild(renderEntryRow({}));
           }
         } else {
+          setEntryRowInProgressState(row, Boolean(result?.action?.isInProgress));
           setEntryRowCompletionState(row, Boolean(result?.action?.isCompleted));
           refreshEntryRowDueHighlight(row);
         }
@@ -1122,6 +1165,8 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
       } catch (error) {
         rowError.textContent = button.classList.contains("complete-hide-action")
           ? error.message || "Unable to hide action."
+          : button.classList.contains("progress-action")
+            ? error.message || "Unable to update action progress."
           : row.classList.contains("is-completed")
             ? error.message || "Unable to mark action incomplete."
             : error.message || "Unable to complete action.";

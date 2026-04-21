@@ -73,13 +73,15 @@ const createTaskCard = (task) => {
   const currentUser = getUser();
   const isAssignedToCurrentUser =
     Boolean(currentUser?.id) && currentUser.id === task.assignedToUserId;
+  const canToggleProgress = !task.assignedToUserId || isAssignedToCurrentUser;
   const canComplete = !task.assignedToUserId || isAssignedToCurrentUser;
   const isComplete = task.status === "Complete";
+  const isInProgress = task.status === "In Progress" || task.isInProgress;
   const assigneeLabel = task.assignedToName
     ? `${task.assignedToName}${task.assignedToEmail ? ` (${task.assignedToEmail})` : ""}`
     : task.assignedToEmail || task.assignedToLabel || "Unassigned";
   const row = document.createElement("div");
-  row.className = "card row";
+  row.className = `card row${isInProgress ? " is-in-progress" : ""}`;
   row.innerHTML = `
     <div class="row-left">
       <a class="card-title task-link" href="${getTaskTargetUrl(task)}">${task.taskType}</a>
@@ -89,10 +91,22 @@ const createTaskCard = (task) => {
         <span>Assigned to ${assigneeLabel}</span>
         ${task.taskRole === "collaborator" ? "<span>Support Task</span>" : ""}
         <span>Due ${formatDate(task.dueDate)}</span>
+        ${isInProgress && !isComplete ? "<span>In Progress</span>" : ""}
         ${isComplete ? "<span>Completed</span>" : ""}
       </div>
     </div>
     <div class="row-right task-actions">
+      <button class="ghost-button progress-task" type="button" ${
+        canToggleProgress && !isComplete ? "" : "disabled"
+      }>${
+        isComplete
+          ? "Completed"
+          : isInProgress
+            ? "Clear Progress"
+            : canToggleProgress
+              ? "In Progress"
+              : "Assigned Elsewhere"
+      }</button>
       <button class="ghost-button complete-task" type="button" ${
         canComplete && !isComplete ? "" : "disabled"
       }>${
@@ -106,6 +120,14 @@ const createTaskCard = (task) => {
       }</button>
     </div>
   `;
+  row.querySelector(".progress-task").addEventListener("click", async () => {
+    if (!canToggleProgress || isComplete) return;
+    const result = await updateTaskState(task.id, isInProgress ? "Open" : "In Progress");
+    if (!result?.error) {
+      const tasks = await loadAllTasks();
+      renderWeeklyTasks(tasks);
+    }
+  });
   row.querySelector(".complete-task").addEventListener("click", async () => {
     if (!canComplete || isComplete) return;
     const result = await completeTask(task.id);

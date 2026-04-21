@@ -86,16 +86,19 @@ const renderTasks = (tasks) => {
 
   tasks.forEach((task) => {
     const row = document.createElement("div");
-    row.className = "card row";
+    const isInProgress = task.status === "In Progress" || task.isInProgress;
+    row.className = `card row${isInProgress ? " is-in-progress" : ""}`;
     const targetUrl =
       task.targetType === "group"
         ? `group.html?groupId=${encodeURIComponent(task.groupId)}`
         : task.targetType === "docket"
-          ? `litigation-docket.html?tab=${encodeURIComponent(
+        ? `litigation-docket.html?tab=${encodeURIComponent(
               task.jurisdiction || "NDIL"
-            )}&caseId=${encodeURIComponent(task.caseId)}&action=${encodeURIComponent(
-              String(task.taskType || "").replace(/^Docket:\s*/, "")
-            )}`
+            )}&caseId=${encodeURIComponent(task.caseId)}${
+              task.sourceLitigationActionId
+                ? `&actionId=${encodeURIComponent(task.sourceLitigationActionId)}`
+                : `&action=${encodeURIComponent(String(task.taskType || "").replace(/^Docket:\s*/, ""))}`
+            }`
         : task.targetType === "case"
           ? `case.html?caseId=${encodeURIComponent(task.caseId)}`
         : `defendant.html?caseId=${encodeURIComponent(
@@ -124,11 +127,21 @@ const renderTasks = (tasks) => {
       </div>
       <div class="row-right task-actions">
         <span>Due ${formatDate(task.dueDate)}</span>
+        <button class="ghost-button progress-task" type="button">${
+          isInProgress ? "Clear Progress" : "In Progress"
+        }</button>
         <button class="ghost-button complete-task" type="button">${
           task.taskRole === "collaborator" ? "Mark My Part Complete" : "Task Complete"
         }</button>
       </div>
     `;
+    row.querySelector(".progress-task").addEventListener("click", async () => {
+      const result = await updateTaskState(task.id, isInProgress ? "Open" : "In Progress");
+      if (!result?.error) {
+        const tasks = await loadMyTasks();
+        renderTasks(tasks);
+      }
+    });
     const button = row.querySelector(".complete-task");
     button.addEventListener("click", async () => {
       const result = await completeTask(task.id);

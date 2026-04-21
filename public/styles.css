@@ -533,6 +533,11 @@ tbody td {
   gap: 16px;
 }
 
+.card.row.is-in-progress {
+  background: #fff1bf;
+  border-color: #e0c15f;
+}
+
 .row-left {
   display: grid;
   gap: 6px;
@@ -768,6 +773,12 @@ tbody td {
   color: #1f6b2e;
 }
 
+.collaborator-pill.is-in-progress {
+  background: #fff1bf;
+  border-color: #e0c15f;
+  color: #8a6500;
+}
+
 .action-textarea {
   min-height: 58px;
 }
@@ -778,6 +789,11 @@ tbody td {
 
 tr.due-soon td {
   background: #ffe8e6;
+}
+
+tr.is-in-progress td {
+  background: #fff1bf;
+  color: #6e5100;
 }
 
 tr.is-completed td {

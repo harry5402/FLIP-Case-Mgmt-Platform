@@ -204,6 +204,7 @@ CREATE TABLE IF NOT EXISTS litigation_actions (
   notes TEXT,
   assigned_to_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   assigned_to_label TEXT,
+  is_in_progress BOOLEAN NOT NULL DEFAULT FALSE,
   is_completed BOOLEAN NOT NULL DEFAULT FALSE,
   is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
   completed_at TIMESTAMPTZ,
@@ -221,6 +222,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS litigation_actions_source_ref_idx
 CREATE TABLE IF NOT EXISTS litigation_action_collaborators (
   action_id UUID REFERENCES litigation_actions(id) ON DELETE CASCADE,
   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  is_in_progress BOOLEAN NOT NULL DEFAULT FALSE,
   is_complete BOOLEAN NOT NULL DEFAULT FALSE,
   completed_at TIMESTAMPTZ,
   completed_by TEXT,

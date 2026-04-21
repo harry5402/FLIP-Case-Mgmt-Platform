@@ -391,6 +391,7 @@ const ensureLitigationTables = async () => {
       final_due_date DATE,
       notes TEXT,
       assigned_to_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+      is_in_progress BOOLEAN NOT NULL DEFAULT FALSE,
       is_completed BOOLEAN NOT NULL DEFAULT FALSE,
       is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
       completed_at TIMESTAMPTZ,
@@ -410,7 +411,16 @@ const ensureLitigationTables = async () => {
   `);
   await query(`
     ALTER TABLE litigation_actions
+    ADD COLUMN IF NOT EXISTS is_in_progress BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+  await query(`
+    ALTER TABLE litigation_actions
     ADD COLUMN IF NOT EXISTS is_completed BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+  await query(`
+    UPDATE litigation_actions
+    SET is_in_progress = FALSE
+    WHERE COALESCE(is_completed, FALSE) = TRUE
   `);
   await query(`
     ALTER TABLE litigation_actions
@@ -443,12 +453,22 @@ const ensureLitigationTables = async () => {
     CREATE TABLE IF NOT EXISTS litigation_action_collaborators (
       action_id UUID REFERENCES litigation_actions(id) ON DELETE CASCADE,
       user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      is_in_progress BOOLEAN NOT NULL DEFAULT FALSE,
       is_complete BOOLEAN NOT NULL DEFAULT FALSE,
       completed_at TIMESTAMPTZ,
       completed_by TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (action_id, user_id)
     )
+  `);
+  await query(`
+    ALTER TABLE litigation_action_collaborators
+    ADD COLUMN IF NOT EXISTS is_in_progress BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+  await query(`
+    UPDATE litigation_action_collaborators
+    SET is_in_progress = FALSE
+    WHERE COALESCE(is_complete, FALSE) = TRUE
   `);
   await query(`
     CREATE TABLE IF NOT EXISTS litigation_collections (
@@ -608,8 +628,8 @@ const syncLitigationActionCollaborators = async (
     if (options.resetNewCollaborators) {
       await query(
         `INSERT INTO litigation_action_collaborators
-          (action_id, user_id, is_complete, completed_at, completed_by)
-         VALUES ($1, $2, FALSE, NULL, NULL)
+          (action_id, user_id, is_in_progress, is_complete, completed_at, completed_by)
+         VALUES ($1, $2, FALSE, FALSE, NULL, NULL)
          ON CONFLICT (action_id, user_id)
          DO NOTHING`,
         [actionId, userId]
@@ -617,8 +637,8 @@ const syncLitigationActionCollaborators = async (
     } else {
       await query(
         `INSERT INTO litigation_action_collaborators
-          (action_id, user_id, is_complete, completed_at, completed_by)
-         VALUES ($1, $2, FALSE, NULL, NULL)
+          (action_id, user_id, is_in_progress, is_complete, completed_at, completed_by)
+         VALUES ($1, $2, FALSE, FALSE, NULL, NULL)
          ON CONFLICT (action_id, user_id)
          DO UPDATE SET
            completed_by = litigation_action_collaborators.completed_by`,
@@ -653,7 +673,7 @@ const syncLitigationTasks = async (caseId, entries, session) => {
         `Docket: ${action}`,
         assignedToUserId,
         dueDate,
-        entry.isCompleted ? "Complete" : "Open",
+        entry.isCompleted ? "Complete" : entry.isInProgress ? "In Progress" : "Open",
         session?.userId || null,
         entry.id || null,
       ]
@@ -672,7 +692,11 @@ const syncLitigationTasks = async (caseId, entries, session) => {
           `Docket: ${action}`,
           collaboratorUserId,
           dueDate,
-          entry.isCompleted || collaborator?.isComplete ? "Complete" : "Open",
+          entry.isCompleted || collaborator?.isComplete
+            ? "Complete"
+            : collaborator?.isInProgress
+              ? "In Progress"
+              : "Open",
           session?.userId || null,
           entry.id || null,
         ]
@@ -1267,7 +1291,7 @@ app.get("/api/litigation/cases", async (req, res) => {
 app.get("/api/litigation/cases/:id/entries", async (req, res) => {
   const result = await query(
     `SELECT la.id, la.action, la.internal_due_date, la.final_due_date, la.notes, la.sort_order,
-            la.assigned_to_user_id, la.assigned_to_label, la.is_completed, la.is_hidden, la.completed_at, la.completed_by,
+            la.assigned_to_user_id, la.assigned_to_label, la.is_in_progress, la.is_completed, la.is_hidden, la.completed_at, la.completed_by,
             COALESCE(collabs.collaborators, '[]'::json) AS collaborators
      FROM litigation_actions la
      LEFT JOIN LATERAL (
@@ -1276,6 +1300,7 @@ app.get("/api/litigation/cases/:id/entries", async (req, res) => {
            'userId', lac.user_id,
            'name', u.name,
            'email', u.email,
+           'isInProgress', lac.is_in_progress,
            'isComplete', lac.is_complete,
            'completedAt', lac.completed_at,
            'completedBy', lac.completed_by
@@ -1300,6 +1325,7 @@ app.get("/api/litigation/cases/:id/entries", async (req, res) => {
       notes: row.notes || "",
       assignedToUserId: row.assigned_to_user_id,
       assignedToLabel: row.assigned_to_label || "",
+      isInProgress: row.is_in_progress,
       isCompleted: row.is_completed,
       isHidden: row.is_hidden,
       completedAt: row.completed_at,
@@ -1313,7 +1339,7 @@ app.get("/api/litigation/cases/:id/entries", async (req, res) => {
 app.get("/api/litigation/cases/:id/hidden-entries", async (req, res) => {
   const result = await query(
     `SELECT la.id, la.action, la.internal_due_date, la.final_due_date, la.notes, la.sort_order,
-            la.assigned_to_user_id, la.assigned_to_label, la.is_completed, la.is_hidden, la.completed_at, la.completed_by,
+            la.assigned_to_user_id, la.assigned_to_label, la.is_in_progress, la.is_completed, la.is_hidden, la.completed_at, la.completed_by,
             COALESCE(collabs.collaborators, '[]'::json) AS collaborators
      FROM litigation_actions la
      LEFT JOIN LATERAL (
@@ -1322,6 +1348,7 @@ app.get("/api/litigation/cases/:id/hidden-entries", async (req, res) => {
            'userId', lac.user_id,
            'name', u.name,
            'email', u.email,
+           'isInProgress', lac.is_in_progress,
            'isComplete', lac.is_complete,
            'completedAt', lac.completed_at,
            'completedBy', lac.completed_by
@@ -1346,6 +1373,7 @@ app.get("/api/litigation/cases/:id/hidden-entries", async (req, res) => {
       notes: row.notes || "",
       assignedToUserId: row.assigned_to_user_id,
       assignedToLabel: row.assigned_to_label || "",
+      isInProgress: row.is_in_progress,
       isCompleted: row.is_completed,
       isHidden: row.is_hidden,
       completedAt: row.completed_at,
@@ -1426,18 +1454,19 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
 
   const refreshed = await query(
     `SELECT la.id, la.action, la.internal_due_date, la.final_due_date, la.notes,
-            la.assigned_to_user_id, la.assigned_to_label, la.is_completed, la.is_hidden,
+            la.assigned_to_user_id, la.assigned_to_label, la.is_in_progress, la.is_completed, la.is_hidden,
             COALESCE(collabs.collaborators, '[]'::json) AS collaborators
      FROM litigation_actions la
      LEFT JOIN LATERAL (
        SELECT json_agg(
          json_build_object(
            'userId', lac.user_id,
-           'name', u.name,
-           'email', u.email,
-           'isComplete', lac.is_complete,
-           'completedAt', lac.completed_at,
-           'completedBy', lac.completed_by
+            'name', u.name,
+            'email', u.email,
+            'isInProgress', lac.is_in_progress,
+            'isComplete', lac.is_complete,
+            'completedAt', lac.completed_at,
+            'completedBy', lac.completed_by
          )
        ) AS collaborators
        FROM litigation_action_collaborators lac
@@ -1457,6 +1486,7 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
       notes: row.notes || "",
       assignedToUserId: row.assigned_to_user_id,
       assignedToLabel: row.assigned_to_label || "",
+      isInProgress: row.is_in_progress,
       collaborators: Array.isArray(row.collaborators) ? row.collaborators : [],
       isCompleted: row.is_completed,
       isHidden: row.is_hidden,
@@ -1476,10 +1506,10 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
 });
 
 app.put("/api/litigation/actions/:id/state", async (req, res) => {
-  const { isCompleted, isHidden } = req.body || {};
+  const { isCompleted, isHidden, isInProgress, collaboratorUserId } = req.body || {};
   const existing = await query(
     `SELECT id, case_id, action, internal_due_date, final_due_date, notes, assigned_to_user_id,
-            assigned_to_label, is_completed, is_hidden
+            assigned_to_label, is_in_progress, is_completed, is_hidden
      FROM litigation_actions
      WHERE id = $1`,
     [req.params.id]
@@ -1489,30 +1519,130 @@ app.put("/api/litigation/actions/:id/state", async (req, res) => {
   }
 
   const current = existing.rows[0];
+  const actor = req.session?.name || req.session?.email || null;
+  if (collaboratorUserId) {
+    const collaboratorResult = await query(
+      `UPDATE litigation_action_collaborators
+       SET is_in_progress = CASE WHEN $3 THEN FALSE ELSE $2 END,
+           is_complete = $3,
+           completed_at = CASE WHEN $3 THEN NOW() ELSE NULL END,
+           completed_by = CASE WHEN $3 THEN $4 ELSE NULL END
+       WHERE action_id = $1
+         AND user_id = $5
+       RETURNING action_id, user_id, is_in_progress, is_complete, completed_at, completed_by`,
+      [
+        req.params.id,
+        Boolean(isInProgress),
+        Boolean(isCompleted),
+        actor,
+        collaboratorUserId,
+      ]
+    );
+    if (!collaboratorResult.rows.length) {
+      return res.status(404).json({ error: "Collaborator not found for this action." });
+    }
+
+    const caseRows = await query(
+      `SELECT la.id, la.action, la.internal_due_date, la.final_due_date, la.notes,
+              la.assigned_to_user_id, la.assigned_to_label, la.is_in_progress, la.is_completed, la.is_hidden,
+              COALESCE(collabs.collaborators, '[]'::json) AS collaborators
+       FROM litigation_actions la
+       LEFT JOIN LATERAL (
+         SELECT json_agg(
+           json_build_object(
+             'userId', lac.user_id,
+             'name', u.name,
+             'email', u.email,
+             'isInProgress', lac.is_in_progress,
+             'isComplete', lac.is_complete,
+             'completedAt', lac.completed_at,
+             'completedBy', lac.completed_by
+           )
+         ) AS collaborators
+         FROM litigation_action_collaborators lac
+         LEFT JOIN users u ON u.id = lac.user_id
+         WHERE lac.action_id = la.id
+       ) collabs ON TRUE
+       WHERE la.case_id = $1`,
+      [current.case_id]
+    );
+    await syncLitigationTasks(
+      current.case_id,
+      caseRows.rows.map((row) => ({
+        id: row.id,
+        action: row.action || "",
+        internalDueDate: row.internal_due_date,
+        finalDueDate: row.final_due_date,
+        notes: row.notes || "",
+        assignedToUserId: row.assigned_to_user_id,
+        assignedToLabel: row.assigned_to_label || "",
+        isInProgress: row.is_in_progress,
+        collaborators: Array.isArray(row.collaborators) ? row.collaborators : [],
+        isCompleted: row.is_completed,
+        isHidden: row.is_hidden,
+      })),
+      req.session
+    );
+
+    await writeAuditLog(req, {
+      action: "litigation.action.collaborator_state",
+      entityType: "litigation_action",
+      entityId: req.params.id,
+      before: null,
+      after: {
+        collaboratorUserId,
+        isInProgress: collaboratorResult.rows[0].is_in_progress,
+        isCompleted: collaboratorResult.rows[0].is_complete,
+      },
+    });
+
+    return res.json({
+      ok: true,
+      collaborator: {
+        userId: collaboratorResult.rows[0].user_id,
+        isInProgress: collaboratorResult.rows[0].is_in_progress,
+        isComplete: collaboratorResult.rows[0].is_complete,
+        completedAt: collaboratorResult.rows[0].completed_at,
+        completedBy: collaboratorResult.rows[0].completed_by,
+      },
+    });
+  }
+
   const nextCompleted = Boolean(isCompleted);
   const nextHidden = Boolean(isHidden);
+  const nextInProgress = nextCompleted ? false : Boolean(isInProgress);
 
   const result = await query(
     `UPDATE litigation_actions
-     SET is_completed = $2,
-         is_hidden = $3,
-         completed_at = CASE WHEN $2 THEN NOW() ELSE NULL END,
-         completed_by = CASE WHEN $2 THEN $4 ELSE NULL END,
+     SET is_in_progress = $2,
+         is_completed = $3,
+         is_hidden = $4,
+         completed_at = CASE WHEN $3 THEN NOW() ELSE NULL END,
+         completed_by = CASE WHEN $3 THEN $5 ELSE NULL END,
          updated_at = NOW(),
-         updated_by = $4
+         updated_by = $5
      WHERE id = $1
-     RETURNING id, case_id, action, internal_due_date, final_due_date, notes, assigned_to_user_id, assigned_to_label, is_completed, is_hidden`,
+     RETURNING id, case_id, action, internal_due_date, final_due_date, notes, assigned_to_user_id, assigned_to_label, is_in_progress, is_completed, is_hidden`,
     [
       req.params.id,
+      nextInProgress,
       nextCompleted,
       nextHidden,
-      req.session?.name || req.session?.email || null,
+      actor,
     ]
   );
+  if (nextCompleted) {
+    await query(
+      `UPDATE litigation_action_collaborators
+       SET is_in_progress = FALSE
+       WHERE action_id = $1`,
+      [req.params.id]
+    );
+  }
 
   const caseRows = await query(
     `SELECT la.id, la.action, la.internal_due_date, la.final_due_date, la.notes,
-            la.assigned_to_user_id, la.assigned_to_label, la.is_completed, la.is_hidden,
+            la.assigned_to_user_id, la.assigned_to_label, la.is_in_progress, la.is_completed, la.is_hidden,
             COALESCE(collabs.collaborators, '[]'::json) AS collaborators
      FROM litigation_actions la
      LEFT JOIN LATERAL (
@@ -1521,6 +1651,7 @@ app.put("/api/litigation/actions/:id/state", async (req, res) => {
            'userId', lac.user_id,
            'name', u.name,
            'email', u.email,
+           'isInProgress', lac.is_in_progress,
            'isComplete', lac.is_complete,
            'completedAt', lac.completed_at,
            'completedBy', lac.completed_by
@@ -1543,6 +1674,7 @@ app.put("/api/litigation/actions/:id/state", async (req, res) => {
       notes: row.notes || "",
       assignedToUserId: row.assigned_to_user_id,
       assignedToLabel: row.assigned_to_label || "",
+      isInProgress: row.is_in_progress,
       collaborators: Array.isArray(row.collaborators) ? row.collaborators : [],
       isCompleted: row.is_completed,
       isHidden: row.is_hidden,
@@ -1555,10 +1687,12 @@ app.put("/api/litigation/actions/:id/state", async (req, res) => {
     entityType: "litigation_action",
     entityId: req.params.id,
     before: {
+      isInProgress: current.is_in_progress,
       isCompleted: current.is_completed,
       isHidden: current.is_hidden,
     },
     after: {
+      isInProgress: result.rows[0].is_in_progress,
       isCompleted: result.rows[0].is_completed,
       isHidden: result.rows[0].is_hidden,
     },
@@ -1575,6 +1709,7 @@ app.put("/api/litigation/actions/:id/state", async (req, res) => {
       notes: result.rows[0].notes || "",
       assignedToUserId: result.rows[0].assigned_to_user_id,
       assignedToLabel: result.rows[0].assigned_to_label || "",
+      isInProgress: result.rows[0].is_in_progress,
       isCompleted: result.rows[0].is_completed,
       isHidden: result.rows[0].is_hidden,
     },
@@ -1887,13 +2022,14 @@ app.get("/api/tasks/my", async (req, res) => {
      LEFT JOIN LATERAL (
        SELECT la.final_due_date
              , la.assigned_to_label
+             , la.is_in_progress
        FROM litigation_actions la
        WHERE la.id = t.source_litigation_action_id
        ORDER BY la.updated_at DESC NULLS LAST, la.id DESC
        LIMIT 1
      ) docket_action ON TRUE
      WHERE t.assigned_to_user_id = $1
-       AND t.status = 'Open'
+       AND t.status <> 'Complete'
      ORDER BY COALESCE(t.due_date, docket_action.final_due_date) NULLS LAST, t.created_at DESC`,
     [req.session.userId]
   );
@@ -1907,6 +2043,7 @@ app.get("/api/tasks/my", async (req, res) => {
       assignedToName: row.assigned_user_name || "",
       assignedToEmail: row.assigned_user_email || "",
       assignedToLabel: row.source_action_assigned_to_label || "",
+      isInProgress: row.status === "In Progress" || Boolean(row.is_in_progress),
       sourceLitigationActionId: row.source_litigation_action_id || null,
       taskRole: row.task_role || "owner",
       targetType: row.group_id
@@ -1945,7 +2082,7 @@ app.get("/api/tasks", async (_req, res) => {
      LEFT JOIN groups g ON g.id = t.group_id
      LEFT JOIN users u ON u.id = t.assigned_to_user_id
      LEFT JOIN LATERAL (
-       SELECT la.final_due_date, la.is_hidden, la.assigned_to_label
+       SELECT la.final_due_date, la.is_hidden, la.assigned_to_label, la.is_in_progress
        FROM litigation_actions la
        WHERE la.id = t.source_litigation_action_id
        ORDER BY la.updated_at DESC NULLS LAST, la.id DESC
@@ -1964,6 +2101,7 @@ app.get("/api/tasks", async (_req, res) => {
       assignedToName: row.assigned_user_name || "",
       assignedToEmail: row.assigned_user_email || "",
       assignedToLabel: row.source_action_assigned_to_label || "",
+      isInProgress: row.status === "In Progress" || Boolean(row.is_in_progress),
       sourceLitigationActionId: row.source_litigation_action_id || null,
       taskRole: row.task_role || "owner",
       targetType: row.group_id
@@ -2080,7 +2218,8 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
     if (currentTask.task_role === "collaborator" && currentTask.source_litigation_action_id) {
       const collaboratorUpdate = await query(
         `UPDATE litigation_action_collaborators
-         SET is_complete = TRUE,
+         SET is_in_progress = FALSE,
+             is_complete = TRUE,
              completed_at = NOW(),
              completed_by = $3
          WHERE action_id = $1
@@ -2096,7 +2235,8 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
     } else if (currentTask.source_litigation_action_id) {
       const syncedAction = await query(
         `UPDATE litigation_actions
-         SET is_completed = TRUE,
+         SET is_in_progress = FALSE,
+             is_completed = TRUE,
              completed_at = NOW(),
              completed_by = $2,
              updated_at = NOW(),
@@ -2116,7 +2256,7 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
            SET status = 'Complete'
            WHERE source_litigation_action_id = $1
              AND id <> $2
-             AND status = 'Open'`,
+             AND status <> 'Complete'`,
           [currentTask.source_litigation_action_id, currentTask.id]
         );
       }
@@ -2137,6 +2277,119 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
   });
 
   res.json({ ok: true });
+});
+
+app.put("/api/tasks/:id/state", async (req, res) => {
+  const nextStatusRaw = String(req.body?.status || "").trim();
+  const nextStatus = nextStatusRaw === "In Progress" ? "In Progress" : "Open";
+  const existing = await query(
+    `SELECT id, case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status,
+            source_litigation_action_id, task_role
+     FROM tasks
+     WHERE id = $1
+       AND status <> 'Complete'
+       AND (assigned_to_user_id = $2 OR assigned_to_user_id IS NULL)`,
+    [req.params.id, req.session.userId]
+  );
+
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "Task not found." });
+  }
+
+  const currentTask = existing.rows[0];
+  const result = await query(
+    `UPDATE tasks
+     SET status = $2
+     WHERE id = $1
+       AND status <> 'Complete'
+       AND (assigned_to_user_id = $3 OR assigned_to_user_id IS NULL)
+     RETURNING id, status`,
+    [req.params.id, nextStatus, req.session.userId]
+  );
+
+  const isDocketTask =
+    !currentTask.defendant_id &&
+    !currentTask.group_id &&
+    String(currentTask.task_type || "").startsWith("Docket:");
+  const actor = req.session?.name || req.session?.email || null;
+
+  if (isDocketTask && currentTask.source_litigation_action_id) {
+    if (currentTask.task_role === "collaborator") {
+      await query(
+        `UPDATE litigation_action_collaborators
+         SET is_in_progress = CASE WHEN is_complete THEN FALSE ELSE $3 END
+         WHERE action_id = $1
+           AND user_id = $2`,
+        [
+          currentTask.source_litigation_action_id,
+          currentTask.assigned_to_user_id,
+          nextStatus === "In Progress",
+        ]
+      );
+    } else {
+      await query(
+        `UPDATE litigation_actions
+         SET is_in_progress = CASE WHEN is_completed THEN FALSE ELSE $2 END,
+             updated_at = NOW(),
+             updated_by = $3
+         WHERE id = $1
+           AND COALESCE(is_hidden, FALSE) = FALSE`,
+        [currentTask.source_litigation_action_id, nextStatus === "In Progress", actor]
+      );
+    }
+
+    const caseRows = await query(
+      `SELECT la.id, la.action, la.internal_due_date, la.final_due_date, la.notes,
+              la.assigned_to_user_id, la.assigned_to_label, la.is_in_progress, la.is_completed, la.is_hidden,
+              COALESCE(collabs.collaborators, '[]'::json) AS collaborators
+       FROM litigation_actions la
+       LEFT JOIN LATERAL (
+         SELECT json_agg(
+           json_build_object(
+             'userId', lac.user_id,
+             'name', u.name,
+             'email', u.email,
+             'isInProgress', lac.is_in_progress,
+             'isComplete', lac.is_complete,
+             'completedAt', lac.completed_at,
+             'completedBy', lac.completed_by
+           )
+         ) AS collaborators
+         FROM litigation_action_collaborators lac
+         LEFT JOIN users u ON u.id = lac.user_id
+         WHERE lac.action_id = la.id
+       ) collabs ON TRUE
+       WHERE la.case_id = $1`,
+      [currentTask.case_id]
+    );
+    await syncLitigationTasks(
+      currentTask.case_id,
+      caseRows.rows.map((row) => ({
+        id: row.id,
+        action: row.action || "",
+        internalDueDate: row.internal_due_date,
+        finalDueDate: row.final_due_date,
+        notes: row.notes || "",
+        assignedToUserId: row.assigned_to_user_id,
+        assignedToLabel: row.assigned_to_label || "",
+        isInProgress: row.is_in_progress,
+        collaborators: Array.isArray(row.collaborators) ? row.collaborators : [],
+        isCompleted: row.is_completed,
+        isHidden: row.is_hidden,
+      })),
+      req.session
+    );
+  }
+
+  await writeAuditLog(req, {
+    action: "tasks.state",
+    entityType: "task",
+    entityId: req.params.id,
+    before: { status: currentTask.status },
+    after: { status: result.rows[0].status },
+  });
+
+  res.json({ ok: true, id: result.rows[0].id, status: result.rows[0].status });
 });
 
 app.post(

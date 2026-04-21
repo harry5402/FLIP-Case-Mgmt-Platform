@@ -255,6 +255,18 @@ const completeTask = async (taskId) => {
   return null;
 };
 
+const updateTaskState = async (taskId, status) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/tasks/${taskId}/state`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    return response.json();
+  }
+  return null;
+};
+
 const logoutAllSessions = async () => {
   if (USE_API) {
     const response = await authFetch(`${API_BASE}/api/auth/logout-all`, {
