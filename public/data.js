@@ -365,9 +365,27 @@ const getParam = (name) => {
   return params.get(name);
 };
 
+const parseDateValue = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : new Date(value);
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    const dateOnlyMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (dateOnlyMatch) {
+      const [, year, month, day] = dateOnlyMatch;
+      return new Date(Number(year), Number(month) - 1, Number(day));
+    }
+  }
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
 const formatDate = (value) => {
   if (!value) return "—";
-  const date = new Date(value);
+  const date = parseDateValue(value);
+  if (!date) return "—";
   return date.toLocaleDateString("en-US", {
     year: "numeric",
     month: "short",

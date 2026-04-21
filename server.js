@@ -37,10 +37,11 @@ const LITIGATION_TABS = [
   "GAND",
   "NDIN",
   "MDFL",
-  "MBFD",
   "WDPA",
   "EDWI",
-  "FAIKERZ",
+  "EDMO",
+  "UNFILED",
+  "MBFD",
   "ARCHIVED",
 ];
 
@@ -434,6 +435,17 @@ const ensureLitigationTables = async () => {
       ON litigation_actions (case_id, source, source_reference_id)
   `);
   await query(`
+    CREATE TABLE IF NOT EXISTS litigation_action_collaborators (
+      action_id UUID REFERENCES litigation_actions(id) ON DELETE CASCADE,
+      user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+      is_complete BOOLEAN NOT NULL DEFAULT FALSE,
+      completed_at TIMESTAMPTZ,
+      completed_by TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (action_id, user_id)
+    )
+  `);
+  await query(`
     CREATE TABLE IF NOT EXISTS litigation_collections (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
@@ -481,6 +493,18 @@ const ensureLitigationTables = async () => {
   await query(`
     ALTER TABLE mbfd_items
     ADD COLUMN IF NOT EXISTS completed_by TEXT
+  `);
+  await query(`
+    ALTER TABLE mbfd_items
+    ADD COLUMN IF NOT EXISTS notes TEXT
+  `);
+  await query(`
+    ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS source_litigation_action_id UUID REFERENCES litigation_actions(id) ON DELETE CASCADE
+  `);
+  await query(`
+    ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS task_role TEXT NOT NULL DEFAULT 'owner'
   `);
 };
 
@@ -539,6 +563,66 @@ const fetchDocketBirdCases = async () => {
   return Array.isArray(payload?.data?.cases) ? payload.data.cases : [];
 };
 
+const normalizeUserIdList = (value, ownerUserId = null) => {
+  const list = Array.isArray(value)
+    ? value
+    : value === undefined || value === null || value === ""
+      ? []
+      : [value];
+  const seen = new Set();
+  return list
+    .map((item) => String(item || "").trim())
+    .filter(Boolean)
+    .filter((item) => item !== String(ownerUserId || "").trim())
+    .filter((item) => {
+      if (seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
+};
+
+const syncLitigationActionCollaborators = async (
+  actionId,
+  collaboratorUserIds,
+  actor,
+  options = {}
+) => {
+  const keepIds = normalizeUserIdList(collaboratorUserIds);
+  if (keepIds.length) {
+    await query(
+      `DELETE FROM litigation_action_collaborators
+       WHERE action_id = $1
+         AND user_id <> ALL($2::uuid[])`,
+      [actionId, keepIds]
+    );
+  } else {
+    await query(`DELETE FROM litigation_action_collaborators WHERE action_id = $1`, [actionId]);
+  }
+
+  for (const userId of keepIds) {
+    if (options.resetNewCollaborators) {
+      await query(
+        `INSERT INTO litigation_action_collaborators
+          (action_id, user_id, is_complete, completed_at, completed_by)
+         VALUES ($1, $2, FALSE, NULL, NULL)
+         ON CONFLICT (action_id, user_id)
+         DO NOTHING`,
+        [actionId, userId]
+      );
+    } else {
+      await query(
+        `INSERT INTO litigation_action_collaborators
+          (action_id, user_id, is_complete, completed_at, completed_by)
+         VALUES ($1, $2, FALSE, NULL, NULL)
+         ON CONFLICT (action_id, user_id)
+         DO UPDATE SET
+           completed_by = litigation_action_collaborators.completed_by`,
+        [actionId, userId]
+      );
+    }
+  }
+};
+
 const syncLitigationTasks = async (caseId, entries, session) => {
   await query(
     `DELETE FROM tasks
@@ -553,20 +637,42 @@ const syncLitigationTasks = async (caseId, entries, session) => {
     const action = String(entry.action || "").trim();
     const assignedToUserId = entry.assignedToUserId || null;
     const dueDate = entry.internalDueDate || entry.finalDueDate || null;
-    if (!action || !assignedToUserId || entry.isCompleted || entry.isHidden) continue;
+    if (!action || !assignedToUserId || entry.isHidden) continue;
 
     await query(
       `INSERT INTO tasks
-        (case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status, created_by_user_id)
-       VALUES ($1, NULL, NULL, $2, $3, $4, 'Open', $5)`,
+        (case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status, created_by_user_id, source_litigation_action_id, task_role)
+       VALUES ($1, NULL, NULL, $2, $3, $4, $5, $6, $7, 'owner')`,
       [
         caseId,
         `Docket: ${action}`,
         assignedToUserId,
         dueDate,
+        entry.isCompleted ? "Complete" : "Open",
         session?.userId || null,
+        entry.id || null,
       ]
     );
+
+    const collaborators = Array.isArray(entry.collaborators) ? entry.collaborators : [];
+    for (const collaborator of collaborators) {
+      const collaboratorUserId = String(collaborator?.userId || "").trim();
+      if (!collaboratorUserId) continue;
+      await query(
+        `INSERT INTO tasks
+          (case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status, created_by_user_id, source_litigation_action_id, task_role)
+         VALUES ($1, NULL, NULL, $2, $3, $4, $5, $6, $7, 'collaborator')`,
+        [
+          caseId,
+          `Docket: ${action}`,
+          collaboratorUserId,
+          dueDate,
+          entry.isCompleted || collaborator?.isComplete ? "Complete" : "Open",
+          session?.userId || null,
+          entry.id || null,
+        ]
+      );
+    }
   }
 };
 
@@ -814,7 +920,7 @@ app.get("/api/users/options", async (req, res) => {
 
 app.get("/api/litigation/mbfd-items", async (_req, res) => {
   const result = await query(
-    `SELECT id, case_name, doe_number, amount, attorney_email,
+    `SELECT id, case_name, doe_number, amount, attorney_email, notes,
             is_completed, is_hidden, completed_at, completed_by,
             created_at, updated_at, updated_by
      FROM mbfd_items
@@ -828,6 +934,7 @@ app.get("/api/litigation/mbfd-items", async (_req, res) => {
       doeNumber: row.doe_number,
       amount: row.amount,
       attorneyEmail: row.attorney_email || "",
+      notes: row.notes || "",
       isCompleted: row.is_completed,
       isHidden: row.is_hidden,
       completedAt: row.completed_at,
@@ -841,7 +948,7 @@ app.get("/api/litigation/mbfd-items", async (_req, res) => {
 
 app.get("/api/litigation/mbfd-items/hidden", async (_req, res) => {
   const result = await query(
-    `SELECT id, case_name, doe_number, amount, attorney_email,
+    `SELECT id, case_name, doe_number, amount, attorney_email, notes,
             is_completed, is_hidden, completed_at, completed_by,
             created_at, updated_at, updated_by
      FROM mbfd_items
@@ -855,6 +962,7 @@ app.get("/api/litigation/mbfd-items/hidden", async (_req, res) => {
       doeNumber: row.doe_number,
       amount: row.amount,
       attorneyEmail: row.attorney_email || "",
+      notes: row.notes || "",
       isCompleted: row.is_completed,
       isHidden: row.is_hidden,
       completedAt: row.completed_at,
@@ -870,6 +978,7 @@ app.post("/api/litigation/mbfd-items", async (req, res) => {
   const caseName = String(req.body?.caseName || "").trim();
   const doeNumber = String(req.body?.doeNumber || "").trim();
   const attorneyEmail = String(req.body?.attorneyEmail || "").trim();
+  const notes = String(req.body?.notes || "").trim();
   const amountRaw = String(req.body?.amount ?? "").trim();
   const amount = amountRaw === "" ? null : Number(amountRaw);
 
@@ -883,12 +992,12 @@ app.post("/api/litigation/mbfd-items", async (req, res) => {
   const actor = req.session?.name || req.session?.email || null;
   const result = await query(
     `INSERT INTO mbfd_items
-      (case_name, doe_number, amount, attorney_email, updated_at, updated_by)
-     VALUES ($1, $2, $3, $4, NOW(), $5)
-     RETURNING id, case_name, doe_number, amount, attorney_email,
+      (case_name, doe_number, amount, attorney_email, notes, updated_at, updated_by)
+     VALUES ($1, $2, $3, $4, $5, NOW(), $6)
+     RETURNING id, case_name, doe_number, amount, attorney_email, notes,
                is_completed, is_hidden, completed_at, completed_by,
                created_at, updated_at, updated_by`,
-    [caseName, doeNumber, amount, attorneyEmail || null, actor]
+    [caseName, doeNumber, amount, attorneyEmail || null, notes || null, actor]
   );
 
   await writeAuditLog(req, {
@@ -901,6 +1010,7 @@ app.post("/api/litigation/mbfd-items", async (req, res) => {
       doeNumber: result.rows[0].doe_number,
       amount: result.rows[0].amount,
       attorneyEmail: result.rows[0].attorney_email || "",
+      notes: result.rows[0].notes || "",
     },
   });
 
@@ -910,6 +1020,7 @@ app.post("/api/litigation/mbfd-items", async (req, res) => {
     doeNumber: result.rows[0].doe_number,
     amount: result.rows[0].amount,
     attorneyEmail: result.rows[0].attorney_email || "",
+    notes: result.rows[0].notes || "",
     isCompleted: result.rows[0].is_completed,
     isHidden: result.rows[0].is_hidden,
     completedAt: result.rows[0].completed_at,
@@ -924,6 +1035,7 @@ app.put("/api/litigation/mbfd-items/:id", async (req, res) => {
   const caseName = String(req.body?.caseName || "").trim();
   const doeNumber = String(req.body?.doeNumber || "").trim();
   const attorneyEmail = String(req.body?.attorneyEmail || "").trim();
+  const notes = String(req.body?.notes || "").trim();
   const amountRaw = String(req.body?.amount ?? "").trim();
   const amount = amountRaw === "" ? null : Number(amountRaw);
 
@@ -935,7 +1047,7 @@ app.put("/api/litigation/mbfd-items/:id", async (req, res) => {
   }
 
   const existing = await query(
-    `SELECT id, case_name, doe_number, amount, attorney_email
+    `SELECT id, case_name, doe_number, amount, attorney_email, notes
      FROM mbfd_items
      WHERE id = $1`,
     [req.params.id]
@@ -951,13 +1063,14 @@ app.put("/api/litigation/mbfd-items/:id", async (req, res) => {
          doe_number = $3,
          amount = $4,
          attorney_email = $5,
+         notes = $6,
          updated_at = NOW(),
-         updated_by = $6
+         updated_by = $7
      WHERE id = $1
-     RETURNING id, case_name, doe_number, amount, attorney_email,
+     RETURNING id, case_name, doe_number, amount, attorney_email, notes,
                is_completed, is_hidden, completed_at, completed_by,
                created_at, updated_at, updated_by`,
-    [req.params.id, caseName, doeNumber, amount, attorneyEmail || null, actor]
+    [req.params.id, caseName, doeNumber, amount, attorneyEmail || null, notes || null, actor]
   );
 
   await writeAuditLog(req, {
@@ -969,12 +1082,14 @@ app.put("/api/litigation/mbfd-items/:id", async (req, res) => {
       doeNumber: existing.rows[0].doe_number,
       amount: existing.rows[0].amount,
       attorneyEmail: existing.rows[0].attorney_email || "",
+      notes: existing.rows[0].notes || "",
     },
     after: {
       caseName: result.rows[0].case_name,
       doeNumber: result.rows[0].doe_number,
       amount: result.rows[0].amount,
       attorneyEmail: result.rows[0].attorney_email || "",
+      notes: result.rows[0].notes || "",
     },
   });
 
@@ -984,6 +1099,7 @@ app.put("/api/litigation/mbfd-items/:id", async (req, res) => {
     doeNumber: result.rows[0].doe_number,
     amount: result.rows[0].amount,
     attorneyEmail: result.rows[0].attorney_email || "",
+    notes: result.rows[0].notes || "",
     isCompleted: result.rows[0].is_completed,
     isHidden: result.rows[0].is_hidden,
     completedAt: result.rows[0].completed_at,
@@ -997,7 +1113,7 @@ app.put("/api/litigation/mbfd-items/:id", async (req, res) => {
 app.put("/api/litigation/mbfd-items/:id/state", async (req, res) => {
   const { isCompleted, isHidden } = req.body || {};
   const existing = await query(
-    `SELECT id, case_name, doe_number, amount, attorney_email, is_completed, is_hidden
+    `SELECT id, case_name, doe_number, amount, attorney_email, notes, is_completed, is_hidden
      FROM mbfd_items
      WHERE id = $1`,
     [req.params.id]
@@ -1044,6 +1160,7 @@ app.put("/api/litigation/mbfd-items/:id/state", async (req, res) => {
       doeNumber: result.rows[0].doe_number,
       amount: result.rows[0].amount,
       attorneyEmail: result.rows[0].attorney_email || "",
+      notes: result.rows[0].notes || "",
       isCompleted: result.rows[0].is_completed,
       isHidden: result.rows[0].is_hidden,
       completedAt: result.rows[0].completed_at,
@@ -1144,12 +1261,29 @@ app.get("/api/litigation/cases", async (req, res) => {
 
 app.get("/api/litigation/cases/:id/entries", async (req, res) => {
   const result = await query(
-    `SELECT id, action, internal_due_date, final_due_date, notes, sort_order, assigned_to_user_id,
-            is_completed, is_hidden, completed_at, completed_by
-     FROM litigation_actions
-     WHERE case_id = $1
-       AND COALESCE(is_hidden, FALSE) = FALSE
-     ORDER BY sort_order, updated_at, id`,
+    `SELECT la.id, la.action, la.internal_due_date, la.final_due_date, la.notes, la.sort_order,
+            la.assigned_to_user_id, la.is_completed, la.is_hidden, la.completed_at, la.completed_by,
+            COALESCE(collabs.collaborators, '[]'::json) AS collaborators
+     FROM litigation_actions la
+     LEFT JOIN LATERAL (
+       SELECT json_agg(
+         json_build_object(
+           'userId', lac.user_id,
+           'name', u.name,
+           'email', u.email,
+           'isComplete', lac.is_complete,
+           'completedAt', lac.completed_at,
+           'completedBy', lac.completed_by
+         )
+         ORDER BY COALESCE(u.name, u.email, '')
+       ) AS collaborators
+       FROM litigation_action_collaborators lac
+       LEFT JOIN users u ON u.id = lac.user_id
+       WHERE lac.action_id = la.id
+     ) collabs ON TRUE
+     WHERE la.case_id = $1
+       AND COALESCE(la.is_hidden, FALSE) = FALSE
+     ORDER BY la.sort_order, la.updated_at, la.id`,
     [req.params.id]
   );
   res.json(
@@ -1164,6 +1298,7 @@ app.get("/api/litigation/cases/:id/entries", async (req, res) => {
       isHidden: row.is_hidden,
       completedAt: row.completed_at,
       completedBy: row.completed_by,
+      collaborators: Array.isArray(row.collaborators) ? row.collaborators : [],
       sortOrder: row.sort_order,
     }))
   );
@@ -1171,12 +1306,29 @@ app.get("/api/litigation/cases/:id/entries", async (req, res) => {
 
 app.get("/api/litigation/cases/:id/hidden-entries", async (req, res) => {
   const result = await query(
-    `SELECT id, action, internal_due_date, final_due_date, notes, sort_order, assigned_to_user_id,
-            is_completed, is_hidden, completed_at, completed_by
-     FROM litigation_actions
-     WHERE case_id = $1
-       AND COALESCE(is_hidden, FALSE) = TRUE
-     ORDER BY updated_at DESC, sort_order, id`,
+    `SELECT la.id, la.action, la.internal_due_date, la.final_due_date, la.notes, la.sort_order,
+            la.assigned_to_user_id, la.is_completed, la.is_hidden, la.completed_at, la.completed_by,
+            COALESCE(collabs.collaborators, '[]'::json) AS collaborators
+     FROM litigation_actions la
+     LEFT JOIN LATERAL (
+       SELECT json_agg(
+         json_build_object(
+           'userId', lac.user_id,
+           'name', u.name,
+           'email', u.email,
+           'isComplete', lac.is_complete,
+           'completedAt', lac.completed_at,
+           'completedBy', lac.completed_by
+         )
+         ORDER BY COALESCE(u.name, u.email, '')
+       ) AS collaborators
+       FROM litigation_action_collaborators lac
+       LEFT JOIN users u ON u.id = lac.user_id
+       WHERE lac.action_id = la.id
+     ) collabs ON TRUE
+     WHERE la.case_id = $1
+       AND COALESCE(la.is_hidden, FALSE) = TRUE
+     ORDER BY la.updated_at DESC, la.sort_order, la.id`,
     [req.params.id]
   );
   res.json(
@@ -1191,6 +1343,7 @@ app.get("/api/litigation/cases/:id/hidden-entries", async (req, res) => {
       isHidden: row.is_hidden,
       completedAt: row.completed_at,
       completedBy: row.completed_by,
+      collaborators: Array.isArray(row.collaborators) ? row.collaborators : [],
       sortOrder: row.sort_order,
     }))
   );
@@ -1204,8 +1357,13 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
 
   for (let i = 0; i < entries.length; i += 1) {
     const entry = entries[i] || {};
+    const collaboratorUserIds = normalizeUserIdList(
+      entry.collaboratorUserIds,
+      entry.assignedToUserId || null
+    );
+    let actionId = entry.id || null;
     if (entry.id) {
-      await query(
+      const updated = await query(
         `UPDATE litigation_actions
          SET action = $2,
              internal_due_date = $3,
@@ -1215,7 +1373,8 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
              sort_order = $7,
              updated_at = NOW(),
              updated_by = $8
-         WHERE id = $1`,
+         WHERE id = $1
+         RETURNING id`,
         [
           entry.id,
           entry.action || null,
@@ -1227,11 +1386,13 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
           req.session?.name || req.session?.email || null,
         ]
       );
+      actionId = updated.rows[0]?.id || actionId;
     } else {
-      await query(
+      const inserted = await query(
         `INSERT INTO litigation_actions
           (case_id, action, internal_due_date, final_due_date, notes, assigned_to_user_id, sort_order, updated_at, updated_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8)`,
+         VALUES ($1,$2,$3,$4,$5,$6,$7,NOW(),$8)
+         RETURNING id`,
         [
           req.params.id,
           entry.action || null,
@@ -1243,14 +1404,37 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
           req.session?.name || req.session?.email || null,
         ]
       );
+      actionId = inserted.rows[0]?.id || actionId;
+    }
+
+    if (actionId) {
+      await syncLitigationActionCollaborators(actionId, collaboratorUserIds, req.session, {
+        resetNewCollaborators: true,
+      });
     }
   }
 
   const refreshed = await query(
-    `SELECT id, action, internal_due_date, final_due_date, notes, assigned_to_user_id,
-            is_completed, is_hidden
-     FROM litigation_actions
-     WHERE case_id = $1`,
+    `SELECT la.id, la.action, la.internal_due_date, la.final_due_date, la.notes,
+            la.assigned_to_user_id, la.is_completed, la.is_hidden,
+            COALESCE(collabs.collaborators, '[]'::json) AS collaborators
+     FROM litigation_actions la
+     LEFT JOIN LATERAL (
+       SELECT json_agg(
+         json_build_object(
+           'userId', lac.user_id,
+           'name', u.name,
+           'email', u.email,
+           'isComplete', lac.is_complete,
+           'completedAt', lac.completed_at,
+           'completedBy', lac.completed_by
+         )
+       ) AS collaborators
+       FROM litigation_action_collaborators lac
+       LEFT JOIN users u ON u.id = lac.user_id
+       WHERE lac.action_id = la.id
+     ) collabs ON TRUE
+     WHERE la.case_id = $1`,
     [req.params.id]
   );
   await syncLitigationTasks(
@@ -1262,6 +1446,7 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
       finalDueDate: row.final_due_date,
       notes: row.notes || "",
       assignedToUserId: row.assigned_to_user_id,
+      collaborators: Array.isArray(row.collaborators) ? row.collaborators : [],
       isCompleted: row.is_completed,
       isHidden: row.is_hidden,
     })),
@@ -1315,10 +1500,26 @@ app.put("/api/litigation/actions/:id/state", async (req, res) => {
   );
 
   const caseRows = await query(
-    `SELECT id, action, internal_due_date, final_due_date, notes, assigned_to_user_id,
-            is_completed, is_hidden
-     FROM litigation_actions
-     WHERE case_id = $1`,
+    `SELECT la.id, la.action, la.internal_due_date, la.final_due_date, la.notes,
+            la.assigned_to_user_id, la.is_completed, la.is_hidden,
+            COALESCE(collabs.collaborators, '[]'::json) AS collaborators
+     FROM litigation_actions la
+     LEFT JOIN LATERAL (
+       SELECT json_agg(
+         json_build_object(
+           'userId', lac.user_id,
+           'name', u.name,
+           'email', u.email,
+           'isComplete', lac.is_complete,
+           'completedAt', lac.completed_at,
+           'completedBy', lac.completed_by
+         )
+       ) AS collaborators
+       FROM litigation_action_collaborators lac
+       LEFT JOIN users u ON u.id = lac.user_id
+       WHERE lac.action_id = la.id
+     ) collabs ON TRUE
+     WHERE la.case_id = $1`,
     [current.case_id]
   );
   await syncLitigationTasks(
@@ -1330,6 +1531,7 @@ app.put("/api/litigation/actions/:id/state", async (req, res) => {
       finalDueDate: row.final_due_date,
       notes: row.notes || "",
       assignedToUserId: row.assigned_to_user_id,
+      collaborators: Array.isArray(row.collaborators) ? row.collaborators : [],
       isCompleted: row.is_completed,
       isHidden: row.is_hidden,
     })),
@@ -1660,18 +1862,18 @@ app.get("/api/tasks/my", async (req, res) => {
             c.jurisdiction,
             d.name AS defendant_name,
             g.group_name,
+            u.name AS assigned_user_name,
+            u.email AS assigned_user_email,
             docket_action.final_due_date AS fallback_final_due_date
      FROM tasks t
      JOIN cases c ON c.id = t.case_id
      LEFT JOIN defendants d ON d.id = t.defendant_id
      LEFT JOIN groups g ON g.id = t.group_id
+     LEFT JOIN users u ON u.id = t.assigned_to_user_id
      LEFT JOIN LATERAL (
        SELECT la.final_due_date
        FROM litigation_actions la
-       WHERE la.case_id = t.case_id
-         AND la.assigned_to_user_id = t.assigned_to_user_id
-         AND COALESCE(la.is_hidden, FALSE) = FALSE
-         AND CONCAT('Docket: ', COALESCE(la.action, '')) = COALESCE(t.task_type, '')
+       WHERE la.id = t.source_litigation_action_id
        ORDER BY la.updated_at DESC NULLS LAST, la.id DESC
        LIMIT 1
      ) docket_action ON TRUE
@@ -1686,6 +1888,11 @@ app.get("/api/tasks/my", async (req, res) => {
       caseId: row.case_id,
       defendantId: row.defendant_id,
       groupId: row.group_id,
+      assignedToUserId: row.assigned_to_user_id,
+      assignedToName: row.assigned_user_name || "",
+      assignedToEmail: row.assigned_user_email || "",
+      sourceLitigationActionId: row.source_litigation_action_id || null,
+      taskRole: row.task_role || "owner",
       targetType: row.group_id
         ? "group"
         : row.defendant_id
@@ -1713,23 +1920,21 @@ app.get("/api/tasks", async (_req, res) => {
             g.group_name,
             u.name AS assigned_user_name,
             u.email AS assigned_user_email,
-            docket_action.final_due_date AS fallback_final_due_date
+            docket_action.final_due_date AS fallback_final_due_date,
+            COALESCE(docket_action.is_hidden, FALSE) AS source_action_is_hidden
      FROM tasks t
      JOIN cases c ON c.id = t.case_id
      LEFT JOIN defendants d ON d.id = t.defendant_id
      LEFT JOIN groups g ON g.id = t.group_id
      LEFT JOIN users u ON u.id = t.assigned_to_user_id
      LEFT JOIN LATERAL (
-       SELECT la.final_due_date
+       SELECT la.final_due_date, la.is_hidden
        FROM litigation_actions la
-       WHERE la.case_id = t.case_id
-         AND la.assigned_to_user_id = t.assigned_to_user_id
-         AND COALESCE(la.is_hidden, FALSE) = FALSE
-         AND CONCAT('Docket: ', COALESCE(la.action, '')) = COALESCE(t.task_type, '')
+       WHERE la.id = t.source_litigation_action_id
        ORDER BY la.updated_at DESC NULLS LAST, la.id DESC
        LIMIT 1
      ) docket_action ON TRUE
-     WHERE t.status = 'Open'
+     WHERE COALESCE(docket_action.is_hidden, FALSE) = FALSE
      ORDER BY COALESCE(t.due_date, docket_action.final_due_date) NULLS LAST, t.created_at DESC`
   );
   res.json(
@@ -1741,6 +1946,8 @@ app.get("/api/tasks", async (_req, res) => {
       assignedToUserId: row.assigned_to_user_id,
       assignedToName: row.assigned_user_name || "",
       assignedToEmail: row.assigned_user_email || "",
+      sourceLitigationActionId: row.source_litigation_action_id || null,
+      taskRole: row.task_role || "owner",
       targetType: row.group_id
         ? "group"
         : row.defendant_id
@@ -1751,6 +1958,7 @@ app.get("/api/tasks", async (_req, res) => {
       taskType: row.task_type,
       dueDate: row.due_date || row.fallback_final_due_date,
       status: row.status,
+      isHidden: Boolean(row.source_action_is_hidden),
       caseName: row.case_name,
       jurisdiction: row.jurisdiction,
       defendantName: row.defendant_name,
@@ -1823,7 +2031,8 @@ app.post("/api/groups/:id/tasks", async (req, res) => {
 
 app.put("/api/tasks/:id/complete", async (req, res) => {
   const existing = await query(
-    `SELECT id, case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status
+    `SELECT id, case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status,
+            source_litigation_action_id, task_role
      FROM tasks
      WHERE id = $1
        AND assigned_to_user_id = $2`,
@@ -1844,55 +2053,58 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
   );
 
   const currentTask = existing.rows[0];
-  const docketActionName = String(currentTask.task_type || "").replace(/^Docket:\s*/, "").trim();
   const isDocketTask =
     !currentTask.defendant_id &&
     !currentTask.group_id &&
-    String(currentTask.task_type || "").startsWith("Docket:") &&
-    docketActionName;
+    String(currentTask.task_type || "").startsWith("Docket:");
 
   if (isDocketTask) {
-    const syncedAction = await query(
-      `WITH target AS (
-         SELECT id
-         FROM litigation_actions
-         WHERE case_id = $1
-           AND assigned_to_user_id = $2
-           AND COALESCE(action, '') = $3
+    if (currentTask.task_role === "collaborator" && currentTask.source_litigation_action_id) {
+      const collaboratorUpdate = await query(
+        `UPDATE litigation_action_collaborators
+         SET is_complete = TRUE,
+             completed_at = NOW(),
+             completed_by = $3
+         WHERE action_id = $1
+           AND user_id = $2
+         RETURNING action_id`,
+        [
+          currentTask.source_litigation_action_id,
+          currentTask.assigned_to_user_id,
+          req.session?.name || req.session?.email || null,
+        ]
+      );
+      currentTask.syncedDocketAction = Boolean(collaboratorUpdate.rows.length);
+    } else if (currentTask.source_litigation_action_id) {
+      const syncedAction = await query(
+        `UPDATE litigation_actions
+         SET is_completed = TRUE,
+             completed_at = NOW(),
+             completed_by = $2,
+             updated_at = NOW(),
+             updated_by = $2
+         WHERE id = $1
            AND COALESCE(is_hidden, FALSE) = FALSE
-           AND COALESCE(is_completed, FALSE) = FALSE
-           AND (
-             $4::date IS NULL
-             OR internal_due_date = $4
-             OR (internal_due_date IS NULL AND final_due_date = $4)
-           )
-         ORDER BY
-           CASE
-             WHEN internal_due_date = $4 THEN 0
-             WHEN internal_due_date IS NULL AND final_due_date = $4 THEN 1
-             ELSE 2
-           END,
-           updated_at DESC NULLS LAST,
-           id DESC
-         LIMIT 1
-       )
-       UPDATE litigation_actions
-       SET is_completed = TRUE,
-           completed_at = NOW(),
-           completed_by = $5,
-           updated_at = NOW(),
-           updated_by = $5
-       WHERE id IN (SELECT id FROM target)
-       RETURNING id`,
-      [
-        currentTask.case_id,
-        currentTask.assigned_to_user_id,
-        docketActionName,
-        currentTask.due_date || null,
-        req.session?.name || req.session?.email || null,
-      ]
-    );
-    currentTask.syncedDocketAction = Boolean(syncedAction.rows.length);
+         RETURNING id`,
+        [
+          currentTask.source_litigation_action_id,
+          req.session?.name || req.session?.email || null,
+        ]
+      );
+      currentTask.syncedDocketAction = Boolean(syncedAction.rows.length);
+      if (currentTask.syncedDocketAction) {
+        await query(
+          `UPDATE tasks
+           SET status = 'Complete'
+           WHERE source_litigation_action_id = $1
+             AND id <> $2
+             AND status = 'Open'`,
+          [currentTask.source_litigation_action_id, currentTask.id]
+        );
+      }
+    } else {
+      currentTask.syncedDocketAction = false;
+    }
   }
 
   await writeAuditLog(req, {

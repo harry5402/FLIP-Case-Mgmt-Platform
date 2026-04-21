@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   due_date DATE,
   status TEXT NOT NULL DEFAULT 'Open',
   created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  task_role TEXT NOT NULL DEFAULT 'owner',
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -216,6 +217,19 @@ CREATE TABLE IF NOT EXISTS litigation_actions (
 CREATE UNIQUE INDEX IF NOT EXISTS litigation_actions_source_ref_idx
   ON litigation_actions (case_id, source, source_reference_id);
 
+CREATE TABLE IF NOT EXISTS litigation_action_collaborators (
+  action_id UUID REFERENCES litigation_actions(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  is_complete BOOLEAN NOT NULL DEFAULT FALSE,
+  completed_at TIMESTAMPTZ,
+  completed_by TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (action_id, user_id)
+);
+
+ALTER TABLE tasks
+ADD COLUMN IF NOT EXISTS source_litigation_action_id UUID REFERENCES litigation_actions(id) ON DELETE CASCADE;
+
 CREATE TABLE IF NOT EXISTS litigation_collections (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
@@ -238,6 +252,7 @@ CREATE TABLE IF NOT EXISTS mbfd_items (
   doe_number TEXT NOT NULL,
   amount NUMERIC(12, 2),
   attorney_email TEXT,
+  notes TEXT,
   is_completed BOOLEAN NOT NULL DEFAULT FALSE,
   is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
   completed_at TIMESTAMPTZ,

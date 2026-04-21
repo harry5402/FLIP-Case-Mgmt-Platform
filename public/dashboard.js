@@ -115,11 +115,18 @@ const renderTasks = (tasks) => {
                 ? "Case Reminder"
                 : task.defendantName || "Defendant"
           }</span>
+          ${
+            task.taskRole === "collaborator"
+              ? `<span>Support Task</span>`
+              : ""
+          }
         </div>
       </div>
       <div class="row-right task-actions">
         <span>Due ${formatDate(task.dueDate)}</span>
-        <button class="ghost-button complete-task" type="button">Task Complete</button>
+        <button class="ghost-button complete-task" type="button">${
+          task.taskRole === "collaborator" ? "Mark My Part Complete" : "Task Complete"
+        }</button>
       </div>
     `;
     const button = row.querySelector(".complete-task");

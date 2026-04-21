@@ -9,9 +9,11 @@ const getTaskTargetUrl = (task) =>
     : task.targetType === "docket"
       ? `litigation-docket.html?tab=${encodeURIComponent(
           task.jurisdiction || "NDIL"
-        )}&caseId=${encodeURIComponent(task.caseId)}&action=${encodeURIComponent(
-          String(task.taskType || "").replace(/^Docket:\s*/, "")
-        )}`
+        )}&caseId=${encodeURIComponent(task.caseId)}${
+          task.sourceLitigationActionId
+            ? `&actionId=${encodeURIComponent(task.sourceLitigationActionId)}`
+            : `&action=${encodeURIComponent(String(task.taskType || "").replace(/^Docket:\s*/, ""))}`
+        }`
       : task.targetType === "case"
         ? `case.html?caseId=${encodeURIComponent(task.caseId)}`
         : `defendant.html?caseId=${encodeURIComponent(
@@ -51,10 +53,15 @@ const getCurrentWorkWeek = () => {
 };
 
 const getTaskBucket = (task, week) => {
+  if (task.isHidden) return null;
   if (!task.dueDate) return null;
-  const due = startOfDay(new Date(task.dueDate));
+  const parsedDueDate = parseDateValue(task.dueDate);
+  if (!parsedDueDate) return null;
+  const due = startOfDay(parsedDueDate);
   if (Number.isNaN(due.getTime())) return null;
-  if (due < week.today) return "OVERDUE";
+  if (due < week.monday) {
+    return task.status === "Complete" ? null : "OVERDUE";
+  }
   if (due < week.monday || due > week.friday) return null;
   const day = due.getDay();
   if (day === 0 || day === 6) return null;
@@ -65,6 +72,7 @@ const createTaskCard = (task) => {
   const currentUser = getUser();
   const isAssignedToCurrentUser =
     Boolean(currentUser?.id) && currentUser.id === task.assignedToUserId;
+  const isComplete = task.status === "Complete";
   const assigneeLabel = task.assignedToName
     ? `${task.assignedToName}${task.assignedToEmail ? ` (${task.assignedToEmail})` : ""}`
     : task.assignedToEmail || "Unassigned";
@@ -77,23 +85,31 @@ const createTaskCard = (task) => {
         <span>${task.caseName || "Case"}</span>
         <span>${getTaskContextLabel(task)}</span>
         <span>Assigned to ${assigneeLabel}</span>
+        ${task.taskRole === "collaborator" ? "<span>Support Task</span>" : ""}
         <span>Due ${formatDate(task.dueDate)}</span>
+        ${isComplete ? "<span>Completed</span>" : ""}
       </div>
     </div>
     <div class="row-right task-actions">
       <button class="ghost-button complete-task" type="button" ${
-        isAssignedToCurrentUser ? "" : "disabled"
-      }>${isAssignedToCurrentUser ? "Task Complete" : "Assigned Elsewhere"}</button>
+        isAssignedToCurrentUser && !isComplete ? "" : "disabled"
+      }>${
+        isComplete
+          ? "Completed"
+          : isAssignedToCurrentUser
+          ? task.taskRole === "collaborator"
+            ? "Mark My Part Complete"
+            : "Task Complete"
+          : "Assigned Elsewhere"
+      }</button>
     </div>
   `;
   row.querySelector(".complete-task").addEventListener("click", async () => {
-    if (!isAssignedToCurrentUser) return;
+    if (!isAssignedToCurrentUser || isComplete) return;
     const result = await completeTask(task.id);
     if (!result?.error) {
-      row.remove();
-      if (!weeklyTaskGroups.querySelector(".card.row")) {
-        renderWeeklyTasks([]);
-      }
+      const tasks = await loadAllTasks();
+      renderWeeklyTasks(tasks);
     }
   });
   return row;

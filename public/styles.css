@@ -641,6 +641,51 @@ tbody td {
   line-height: 1.4;
 }
 
+.assignment-stack {
+  display: grid;
+  gap: 6px;
+  min-width: 220px;
+}
+
+.collaborator-select {
+  min-height: 84px;
+}
+
+.collaborator-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: "Inter", "Segoe UI", sans-serif;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.collaborator-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f6efe6;
+  border: 1px solid var(--border);
+}
+
+.collaborator-remove {
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1;
+  padding: 0;
+}
+
+.collaborator-pill.is-complete {
+  background: #eaf7ed;
+  border-color: #cfe9d4;
+  color: #1f6b2e;
+}
+
 .action-textarea {
   min-height: 58px;
 }
@@ -654,8 +699,8 @@ tr.due-soon td {
 }
 
 tr.is-completed td {
-  background: #eef6ef;
-  color: #4f6751;
+  background: #d7ead9;
+  color: #23452a;
 }
 
 .focused-docket-case {

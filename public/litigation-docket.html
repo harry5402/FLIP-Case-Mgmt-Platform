@@ -33,10 +33,11 @@
             <button class="ghost-button" data-tab="GAND" type="button">GAND</button>
             <button class="ghost-button" data-tab="NDIN" type="button">NDIN</button>
             <button class="ghost-button" data-tab="MDFL" type="button">MDFL</button>
-            <button class="ghost-button" data-tab="MBFD" type="button">MBFD</button>
             <button class="ghost-button" data-tab="WDPA" type="button">WDPA</button>
             <button class="ghost-button" data-tab="EDWI" type="button">EDWI</button>
-            <button class="ghost-button" data-tab="FAIKERZ" type="button">FAIKERZ</button>
+            <button class="ghost-button" data-tab="EDMO" type="button">EDMO</button>
+            <button class="ghost-button" data-tab="UNFILED" type="button">UNFILED</button>
+            <button class="ghost-button" data-tab="MBFD" type="button">Money Back to Doe</button>
             <button class="ghost-button" data-tab="ARCHIVED" type="button">ARCHIVED</button>
           </div>
         </div>
@@ -76,7 +77,8 @@
               <option value="MDFL">MDFL</option>
               <option value="WDPA">WDPA</option>
               <option value="EDWI">EDWI</option>
-              <option value="FAIKERZ">FAIKERZ</option>
+              <option value="EDMO">EDMO</option>
+              <option value="UNFILED">UNFILED</option>
             </select>
           </label>
         </form>
@@ -117,7 +119,8 @@
               <option value="MDFL">MDFL</option>
               <option value="WDPA">WDPA</option>
               <option value="EDWI">EDWI</option>
-              <option value="FAIKERZ">FAIKERZ</option>
+              <option value="EDMO">EDMO</option>
+              <option value="UNFILED">UNFILED</option>
             </select>
           </label>
           <label class="form-field">
@@ -137,7 +140,7 @@
     <div id="new-mbfd-modal" class="modal hidden">
       <div class="modal-card">
         <div class="info-card-header">
-          <h3>Create New MBFD Item</h3>
+          <h3>Create New Money Back to Doe Item</h3>
           <button id="close-new-mbfd-modal" class="ghost-button" type="button">Close</button>
         </div>
         <form id="new-mbfd-form" class="form-grid">
@@ -156,6 +159,10 @@
           <label class="form-field">
             <span>Attorney Email</span>
             <input name="attorneyEmail" type="email" />
+          </label>
+          <label class="form-field form-field-full">
+            <span>Notes</span>
+            <textarea name="notes" class="lit-input lit-textarea" rows="6"></textarea>
           </label>
         </form>
         <div class="form-actions">
@@ -204,7 +211,7 @@
     <div id="hidden-mbfd-modal" class="modal hidden">
       <div class="modal-card">
         <div class="info-card-header">
-          <h3>Hidden MBFD Items</h3>
+          <h3>Hidden Money Back to Doe Items</h3>
           <button id="close-hidden-mbfd-modal" class="ghost-button" type="button">Close</button>
         </div>
         <div class="table-wrap">

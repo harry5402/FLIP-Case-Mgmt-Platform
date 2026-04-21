@@ -45,6 +45,7 @@ let draggingEntryRow = null;
 let latestTabRenderId = 0;
 let collectionsDirty = false;
 const focusCaseId = getParam("caseId");
+const focusActionId = getParam("actionId");
 const focusAction = getParam("action");
 
 const yesNoOptions = `
@@ -64,7 +65,7 @@ const docketStatusOptions = [
   "Case Closed",
 ];
 
-const docketCaseTabs = ["NDIL", "GAND", "NDIN", "MDFL", "WDPA", "EDWI", "FAIKERZ"];
+const docketCaseTabs = ["NDIL", "GAND", "NDIN", "MDFL", "WDPA", "EDWI", "EDMO", "UNFILED"];
 
 const formatDateTime = (value) => {
   if (!value) return "—";
@@ -213,6 +214,20 @@ const buildUserOptions = (selectedValue) => {
   return options.join("");
 };
 
+const buildUserMultiOptions = (selectedValues = []) => {
+  const selectedSet = new Set((selectedValues || []).map((value) => String(value || "")));
+  const options = [];
+  userOptions.forEach((user) => {
+    const label = user.name ? `${user.name} (${user.email})` : user.email;
+    options.push(
+      `<option value="${escapeHtml(user.id)}" ${
+        selectedSet.has(String(user.id)) ? "selected" : ""
+      }>${escapeHtml(label)}</option>`
+    );
+  });
+  return options.join("");
+};
+
 const buildStatusOptions = (selectedValue) =>
   docketStatusOptions
     .map(
@@ -316,8 +331,29 @@ const attachEntryDragBehavior = (row) => {
   });
 };
 
+const setEntryRowCompletionState = (row, isCompleted) => {
+  row.classList.toggle("is-completed", Boolean(isCompleted));
+  const completeButton = row.querySelector(".complete-action");
+  if (completeButton) {
+    completeButton.textContent = isCompleted ? "Incomplete" : "Complete";
+  }
+};
+
+const refreshEntryRowDueHighlight = (row) => {
+  const internalDue = row.querySelector('[data-field="internalDueDate"]')?.value;
+  const finalDue = row.querySelector('[data-field="finalDueDate"]')?.value;
+  row.classList.toggle(
+    "due-soon",
+    !row.classList.contains("is-completed") && (isDueSoon(internalDue) || isDueSoon(finalDue))
+  );
+};
+
 const renderEntryRow = (entry = {}) => {
   const row = document.createElement("tr");
+  const collaboratorIds = (entry.collaborators || []).map((collaborator) => collaborator.userId);
+  const collaboratorMetaByUserId = new Map(
+    (entry.collaborators || []).map((collaborator) => [String(collaborator.userId || ""), collaborator])
+  );
   if (entry.id) {
     row.dataset.actionId = entry.id;
   }
@@ -328,9 +364,20 @@ const renderEntryRow = (entry = {}) => {
     <td><textarea class="lit-input lit-textarea action-textarea" data-field="action" rows="2">${escapeHtml(
       entry.action || ""
     )}</textarea></td>
-    <td><select class="lit-input" data-field="assignedToUserId">${buildUserOptions(
-      entry.assignedToUserId || ""
-    )}</select></td>
+    <td>
+      <div class="assignment-stack">
+        <select class="lit-input" data-field="assignedToUserId">${buildUserOptions(
+          entry.assignedToUserId || ""
+        )}</select>
+        <button class="ghost-button collaborator-toggle" type="button">${
+          collaboratorIds.length ? `Edit Collaborators (${collaboratorIds.length})` : "Add Collaborators"
+        }</button>
+        <select class="lit-input collaborator-select hidden" data-field="collaboratorUserIds" multiple size="3">${buildUserMultiOptions(
+          collaboratorIds
+        )}</select>
+        <div class="collaborator-status" data-field="collaboratorStatus"></div>
+      </div>
+    </td>
     <td><input class="lit-input" data-field="internalDueDate" type="date" value="${toDateInputValue(
       entry.internalDueDate
     )}" /></td>
@@ -344,31 +391,80 @@ const renderEntryRow = (entry = {}) => {
       <div class="row-action-buttons">
         <button class="ghost-button complete-action" type="button" ${
           entry.id ? "" : "disabled"
-        }>Complete</button>
+        }>${entry.isCompleted ? "Incomplete" : "Complete"}</button>
         <button class="ghost-button complete-hide-action" type="button" ${
           entry.id ? "" : "disabled"
         }>Complete / Hide</button>
       </div>
     </td>
   `;
-  const refreshDueHighlight = () => {
-    const internalDue = row.querySelector('[data-field="internalDueDate"]').value;
-    const finalDue = row.querySelector('[data-field="finalDueDate"]').value;
-    row.classList.toggle(
-      "due-soon",
-      !row.classList.contains("is-completed") &&
-        (isDueSoon(internalDue) || isDueSoon(finalDue))
-    );
-  };
   row.querySelectorAll('input[type="date"]').forEach((input) => {
-    input.addEventListener("change", refreshDueHighlight);
+    input.addEventListener("change", () => refreshEntryRowDueHighlight(row));
   });
-  row.classList.toggle("is-completed", Boolean(entry.isCompleted));
-  refreshDueHighlight();
+  setEntryRowCompletionState(row, Boolean(entry.isCompleted));
+  refreshEntryRowDueHighlight(row);
   const actionValue = String(entry.action || "").trim().toLowerCase();
-  if (focusAction && actionValue === String(focusAction).trim().toLowerCase()) {
+  const matchesFocusedAction =
+    (focusActionId && String(entry.id || "") === String(focusActionId)) ||
+    (focusAction && actionValue === String(focusAction).trim().toLowerCase());
+  if (matchesFocusedAction) {
     row.classList.add("focused-docket-row");
   }
+  const collaboratorToggle = row.querySelector(".collaborator-toggle");
+  const collaboratorSelect = row.querySelector(".collaborator-select");
+  const collaboratorStatus = row.querySelector('[data-field="collaboratorStatus"]');
+  const renderCollaboratorChips = () => {
+    const selectedIds = Array.from(collaboratorSelect?.selectedOptions || []).map((option) =>
+      String(option.value || "")
+    );
+    if (!selectedIds.length) {
+      collaboratorStatus.innerHTML = `<div class="muted">No collaborators</div>`;
+      return;
+    }
+    collaboratorStatus.innerHTML = "";
+    selectedIds.forEach((userId) => {
+      const meta = collaboratorMetaByUserId.get(userId) || {};
+      const user = userOptions.find((option) => String(option.id) === userId) || {};
+      const label = meta.name || user.name || meta.email || user.email || userId || "Collaborator";
+      const pill = document.createElement("span");
+      pill.className = `collaborator-pill${meta.isComplete ? " is-complete" : ""}`;
+      const labelSpan = document.createElement("span");
+      labelSpan.textContent = `${label}${meta.isComplete ? " ✓" : ""}`;
+      const removeButton = document.createElement("button");
+      removeButton.type = "button";
+      removeButton.className = "collaborator-remove";
+      removeButton.textContent = "x";
+      removeButton.setAttribute("aria-label", `Remove ${label}`);
+      removeButton.addEventListener("click", () => {
+        Array.from(collaboratorSelect.options).forEach((option) => {
+          if (String(option.value) === userId) {
+            option.selected = false;
+          }
+        });
+        collaboratorSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      pill.append(labelSpan, removeButton);
+      collaboratorStatus.appendChild(pill);
+    });
+  };
+  const updateCollaboratorToggleLabel = () => {
+    const selectedCount = collaboratorSelect?.selectedOptions?.length || 0;
+    collaboratorToggle.textContent = collaboratorSelect.classList.contains("hidden")
+      ? selectedCount
+        ? `Edit Collaborators (${selectedCount})`
+        : "Add Collaborators"
+      : "Hide Collaborators";
+  };
+  collaboratorToggle?.addEventListener("click", () => {
+    collaboratorSelect.classList.toggle("hidden");
+    updateCollaboratorToggleLabel();
+  });
+  collaboratorSelect?.addEventListener("change", () => {
+    updateCollaboratorToggleLabel();
+    renderCollaboratorChips();
+  });
+  renderCollaboratorChips();
+  updateCollaboratorToggleLabel();
   attachEntryDragBehavior(row);
   return row;
 };
@@ -378,6 +474,9 @@ const readEntryRows = (tbody) =>
     id: row.dataset.actionId || null,
     action: row.querySelector('[data-field="action"]').value.trim(),
     assignedToUserId: row.querySelector('[data-field="assignedToUserId"]').value || null,
+    collaboratorUserIds: Array.from(
+      row.querySelector('[data-field="collaboratorUserIds"]').selectedOptions || []
+    ).map((option) => option.value),
     internalDueDate:
       toDateInputValue(row.querySelector('[data-field="internalDueDate"]').value) || null,
     finalDueDate:
@@ -613,7 +712,8 @@ const renderHiddenMbfdRow = (item = {}) => {
       await openHiddenMbfd();
       await renderMbfdItems();
     } catch (error) {
-      hiddenMbfdError.textContent = error.message || "Unable to restore MBFD item.";
+      hiddenMbfdError.textContent =
+        error.message || "Unable to restore Money Back to Doe item.";
     }
   });
   return row;
@@ -626,7 +726,7 @@ const openHiddenMbfd = async () => {
   if (!rows.length) {
     const emptyRow = document.createElement("tr");
     emptyRow.innerHTML =
-      '<td colspan="6" class="empty-state">No hidden MBFD items.</td>';
+      '<td colspan="6" class="empty-state">No hidden Money Back to Doe items.</td>';
     hiddenMbfdBody.appendChild(emptyRow);
   } else {
     rows.forEach((row) => hiddenMbfdBody.appendChild(renderHiddenMbfdRow(row)));
@@ -645,7 +745,7 @@ const renderMbfdItems = async (renderId = latestTabRenderId) => {
     items = await loadMbfdItems();
   } catch (error) {
     if (renderId !== latestTabRenderId) return;
-    casesContainer.innerHTML = `<div class="empty-state">Unable to load MBFD items: ${escapeHtml(
+    casesContainer.innerHTML = `<div class="empty-state">Unable to load Money Back to Doe items: ${escapeHtml(
       error.message || "Request failed"
     )}</div>`;
     return;
@@ -654,7 +754,7 @@ const renderMbfdItems = async (renderId = latestTabRenderId) => {
   if (renderId !== latestTabRenderId) return;
   casesContainer.innerHTML = "";
   if (!items.length) {
-    casesContainer.innerHTML = '<div class="empty-state">No MBFD items.</div>';
+    casesContainer.innerHTML = '<div class="empty-state">No Money Back to Doe items.</div>';
     return;
   }
 
@@ -690,6 +790,12 @@ const renderMbfdItems = async (renderId = latestTabRenderId) => {
               item.attorneyEmail || ""
             )}" />
           </label>
+          <label class="form-field form-field-full">
+            <span>Notes</span>
+            <textarea class="lit-input lit-textarea mbfd-notes" rows="8">${escapeHtml(
+              item.notes || ""
+            )}</textarea>
+          </label>
         </div>
       </div>
       <div class="form-actions">
@@ -711,13 +817,15 @@ const renderMbfdItems = async (renderId = latestTabRenderId) => {
           doeNumber: card.querySelector(".mbfd-doe-number").value.trim(),
           amount: card.querySelector(".mbfd-amount").value.trim(),
           attorneyEmail: card.querySelector(".mbfd-attorney-email").value.trim(),
+          notes: card.querySelector(".mbfd-notes").value.trim(),
         });
         card.querySelector(".mbfd-case-name").value = updated.caseName || "";
         card.querySelector(".mbfd-doe-number").value = updated.doeNumber || "";
         card.querySelector(".mbfd-amount").value = updated.amount ?? "";
         card.querySelector(".mbfd-attorney-email").value = updated.attorneyEmail || "";
+        card.querySelector(".mbfd-notes").value = updated.notes || "";
       } catch (error) {
-        rowError.textContent = error.message || "Unable to save MBFD item.";
+        rowError.textContent = error.message || "Unable to save Money Back to Doe item.";
       }
     });
     card.querySelector(".mbfd-complete").addEventListener("click", async () => {
@@ -726,7 +834,7 @@ const renderMbfdItems = async (renderId = latestTabRenderId) => {
         await updateMbfdItemState(item.id, { isCompleted: true, isHidden: false });
         card.classList.add("mbfd-completed");
       } catch (error) {
-        rowError.textContent = error.message || "Unable to complete MBFD item.";
+        rowError.textContent = error.message || "Unable to complete Money Back to Doe item.";
       }
     });
     card.querySelector(".mbfd-complete-hide").addEventListener("click", async () => {
@@ -735,10 +843,10 @@ const renderMbfdItems = async (renderId = latestTabRenderId) => {
         await updateMbfdItemState(item.id, { isCompleted: true, isHidden: true });
         card.remove();
         if (!casesContainer.querySelector(".litigation-case")) {
-          casesContainer.innerHTML = '<div class="empty-state">No MBFD items.</div>';
+          casesContainer.innerHTML = '<div class="empty-state">No Money Back to Doe items.</div>';
         }
       } catch (error) {
-        rowError.textContent = error.message || "Unable to hide MBFD item.";
+        rowError.textContent = error.message || "Unable to hide Money Back to Doe item.";
       }
     });
 
@@ -898,8 +1006,10 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
       }
 
       try {
+        const isCompleteButton = button.classList.contains("complete-action");
+        const isCurrentlyCompleted = row.classList.contains("is-completed");
         const result = await updateActionState(actionId, {
-          isCompleted: true,
+          isCompleted: isCompleteButton ? !isCurrentlyCompleted : true,
           isHidden: button.classList.contains("complete-hide-action"),
         });
         if (result?.action?.isHidden) {
@@ -908,14 +1018,16 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
             tbody.appendChild(renderEntryRow({}));
           }
         } else {
-          row.classList.add("is-completed");
-          row.classList.remove("due-soon");
+          setEntryRowCompletionState(row, Boolean(result?.action?.isCompleted));
+          refreshEntryRowDueHighlight(row);
         }
         markEntriesSaved(card);
       } catch (error) {
         rowError.textContent = button.classList.contains("complete-hide-action")
           ? error.message || "Unable to hide action."
-          : error.message || "Unable to complete action.";
+          : row.classList.contains("is-completed")
+            ? error.message || "Unable to mark action incomplete."
+            : error.message || "Unable to complete action.";
       }
     });
     card.querySelector(".save-entries").addEventListener("click", async () => {
@@ -1009,14 +1121,23 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
 
     fragment.appendChild(card);
 
-    if (focusCaseId && item.id === focusCaseId) {
-      setTimeout(() => {
-        card.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 50);
-    }
   }
   if (renderId !== latestTabRenderId) return;
   casesContainer.appendChild(fragment);
+  if (focusCaseId) {
+    setTimeout(() => {
+      const focusedCaseCard = casesContainer.querySelector(
+        `.litigation-case[data-case-id="${CSS.escape(String(focusCaseId))}"]`
+      );
+      if (!focusedCaseCard) return;
+      const focusedRow = focusedCaseCard.querySelector(".focused-docket-row");
+      if (focusedRow) {
+        focusedRow.scrollIntoView({ behavior: "smooth", block: "center" });
+      } else {
+        focusedCaseCard.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 50);
+  }
 };
 
 const setTab = async (tab) => {
@@ -1026,7 +1147,7 @@ const setTab = async (tab) => {
     button.classList.toggle("active", button.dataset.tab === tab);
   });
   const isMbfdTab = tab === "MBFD";
-  newCaseButton.textContent = isMbfdTab ? "New MBFD Item" : "New Case";
+  newCaseButton.textContent = isMbfdTab ? "New Money Back to Doe Item" : "New Case";
   viewHiddenMbfdButton.classList.toggle("hidden", !isMbfdTab);
   await renderActiveTab(renderId);
 };
@@ -1129,7 +1250,7 @@ const init = async () => {
     });
     viewHiddenMbfdButton?.addEventListener("click", () => {
       openHiddenMbfd().catch((error) => {
-        casesContainer.innerHTML = `<div class="empty-state">Unable to load hidden MBFD items: ${escapeHtml(
+        casesContainer.innerHTML = `<div class="empty-state">Unable to load hidden Money Back to Doe items: ${escapeHtml(
           error.message || "Request failed"
         )}</div>`;
       });
@@ -1187,11 +1308,12 @@ const init = async () => {
           doeNumber: String(formData.get("doeNumber") || "").trim(),
           amount: String(formData.get("amount") || "").trim(),
           attorneyEmail: String(formData.get("attorneyEmail") || "").trim(),
+          notes: String(formData.get("notes") || "").trim(),
         });
         closeNewMbfd();
         await renderMbfdItems();
       } catch (error) {
-        newMbfdError.textContent = error.message || "Unable to create MBFD item.";
+        newMbfdError.textContent = error.message || "Unable to create Money Back to Doe item.";
       }
     });
 
