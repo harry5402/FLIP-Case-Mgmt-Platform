@@ -58,8 +58,9 @@ const yesNoOptions = `
 const docketStatusOptions = [
   "",
   "Case Filed",
-  "Default Requested",
-  "Default Granted",
+  "Default Entered",
+  "Default Judgement Requested",
+  "Default Judgement Granted",
   "TRO Requested",
   "Negotiating",
   "TRO Signed",
@@ -67,6 +68,7 @@ const docketStatusOptions = [
 ];
 
 const docketCaseTabs = ["NDIL", "GAND", "NDIN", "MDFL", "WDPA", "EDWI", "EDMO", "UNFILED"];
+const LEAD_COUNSEL_ASSIGNEE = "__lead_counsel__";
 
 const formatDateTime = (value) => {
   if (!value) return "—";
@@ -202,8 +204,18 @@ const escapeHtml = (value) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
+const getAssignedToSelectValue = (entry = {}) => {
+  if (entry.assignedToUserId) return entry.assignedToUserId;
+  return entry.assignedToLabel === "Lead Counsel" ? LEAD_COUNSEL_ASSIGNEE : "";
+};
+
 const buildUserOptions = (selectedValue) => {
-  const options = [`<option value=""></option>`];
+  const options = [
+    `<option value="" ${selectedValue === "" ? "selected" : ""}>Unassigned</option>`,
+    `<option value="${LEAD_COUNSEL_ASSIGNEE}" ${
+      selectedValue === LEAD_COUNSEL_ASSIGNEE ? "selected" : ""
+    }>Lead Counsel</option>`,
+  ];
   userOptions.forEach((user) => {
     const label = user.name ? `${user.name} (${user.email})` : user.email;
     options.push(
@@ -384,7 +396,7 @@ const renderEntryRow = (entry = {}) => {
     <td>
       <div class="assignment-stack">
         <select class="lit-input" data-field="assignedToUserId">${buildUserOptions(
-          entry.assignedToUserId || ""
+          getAssignedToSelectValue(entry)
         )}</select>
         <button class="ghost-button collaborator-toggle" type="button">${
           collaboratorIds.length ? `Edit Collaborators (${collaboratorIds.length})` : "Add Collaborators"
@@ -490,7 +502,14 @@ const readEntryRows = (tbody) =>
   Array.from(tbody.querySelectorAll("tr")).map((row) => ({
     id: row.dataset.actionId || null,
     action: row.querySelector('[data-field="action"]').value.trim(),
-    assignedToUserId: row.querySelector('[data-field="assignedToUserId"]').value || null,
+    assignedToUserId:
+      row.querySelector('[data-field="assignedToUserId"]').value === LEAD_COUNSEL_ASSIGNEE
+        ? null
+        : row.querySelector('[data-field="assignedToUserId"]').value || null,
+    assignedToLabel:
+      row.querySelector('[data-field="assignedToUserId"]').value === LEAD_COUNSEL_ASSIGNEE
+        ? "Lead Counsel"
+        : null,
     collaboratorUserIds: Array.from(
       row.querySelector('[data-field="collaboratorUserIds"]').selectedOptions || []
     ).map((option) => option.value),
@@ -626,7 +645,7 @@ const renderHiddenActionRow = (entry = {}) => {
     ? assignedUser.name
       ? `${assignedUser.name} (${assignedUser.email})`
       : assignedUser.email
-    : "—";
+    : entry.assignedToLabel || "—";
   const completedLabel = entry.isCompleted
     ? `${formatDateTime(entry.completedAt)}${entry.completedBy ? ` by ${entry.completedBy}` : ""}`
     : "No";

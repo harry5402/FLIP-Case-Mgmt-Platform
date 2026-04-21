@@ -608,6 +608,15 @@ tbody td {
   padding: 20px 22px 0;
 }
 
+.weekly-task-section-header {
+  align-items: flex-start;
+}
+
+.weekly-task-section-title {
+  display: grid;
+  gap: 4px;
+}
+
 .litigation-case {
   margin: 0;
 }

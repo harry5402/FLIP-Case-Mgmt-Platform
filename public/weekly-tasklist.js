@@ -2,6 +2,7 @@ const weeklyTaskGroups = document.getElementById("weekly-task-groups");
 const weeklyTasklistSubtitle = document.getElementById("weekly-tasklist-subtitle");
 
 const weekdayLabels = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+const collapsedWeeklyBuckets = new Set();
 
 const getTaskTargetUrl = (task) =>
   task.targetType === "group"
@@ -72,10 +73,11 @@ const createTaskCard = (task) => {
   const currentUser = getUser();
   const isAssignedToCurrentUser =
     Boolean(currentUser?.id) && currentUser.id === task.assignedToUserId;
+  const canComplete = !task.assignedToUserId || isAssignedToCurrentUser;
   const isComplete = task.status === "Complete";
   const assigneeLabel = task.assignedToName
     ? `${task.assignedToName}${task.assignedToEmail ? ` (${task.assignedToEmail})` : ""}`
-    : task.assignedToEmail || "Unassigned";
+    : task.assignedToEmail || task.assignedToLabel || "Unassigned";
   const row = document.createElement("div");
   row.className = "card row";
   row.innerHTML = `
@@ -92,11 +94,11 @@ const createTaskCard = (task) => {
     </div>
     <div class="row-right task-actions">
       <button class="ghost-button complete-task" type="button" ${
-        isAssignedToCurrentUser && !isComplete ? "" : "disabled"
+        canComplete && !isComplete ? "" : "disabled"
       }>${
         isComplete
           ? "Completed"
-          : isAssignedToCurrentUser
+          : canComplete
           ? task.taskRole === "collaborator"
             ? "Mark My Part Complete"
             : "Task Complete"
@@ -105,7 +107,7 @@ const createTaskCard = (task) => {
     </div>
   `;
   row.querySelector(".complete-task").addEventListener("click", async () => {
-    if (!isAssignedToCurrentUser || isComplete) return;
+    if (!canComplete || isComplete) return;
     const result = await completeTask(task.id);
     if (!result?.error) {
       const tasks = await loadAllTasks();
@@ -118,14 +120,25 @@ const createTaskCard = (task) => {
 const createBucketSection = (label, tasks) => {
   const section = document.createElement("section");
   section.className = "table-card weekly-task-section";
+  const isCollapsed = collapsedWeeklyBuckets.has(label);
   section.innerHTML = `
-    <div class="info-card-header">
-      <h3>${label}</h3>
-      <div class="muted">${tasks.length} task${tasks.length === 1 ? "" : "s"}</div>
+    <div class="info-card-header weekly-task-section-header">
+      <div class="weekly-task-section-title">
+        <h3>${label}</h3>
+        <div class="muted">${tasks.length} task${tasks.length === 1 ? "" : "s"}</div>
+      </div>
+      <button class="ghost-button weekly-bucket-toggle" type="button" aria-expanded="${String(
+        !isCollapsed
+      )}">
+        ${isCollapsed ? "Expand" : "Collapse"}
+      </button>
     </div>
   `;
   const list = document.createElement("div");
   list.className = "list compact-list";
+  if (isCollapsed) {
+    list.classList.add("hidden");
+  }
   if (!tasks.length) {
     const empty = document.createElement("div");
     empty.className = "empty-state";
@@ -134,6 +147,18 @@ const createBucketSection = (label, tasks) => {
   } else {
     tasks.forEach((task) => list.appendChild(createTaskCard(task)));
   }
+  section.querySelector(".weekly-bucket-toggle").addEventListener("click", () => {
+    const nextCollapsed = !list.classList.contains("hidden");
+    list.classList.toggle("hidden", nextCollapsed);
+    if (nextCollapsed) {
+      collapsedWeeklyBuckets.add(label);
+    } else {
+      collapsedWeeklyBuckets.delete(label);
+    }
+    const toggle = section.querySelector(".weekly-bucket-toggle");
+    toggle.textContent = nextCollapsed ? "Expand" : "Collapse";
+    toggle.setAttribute("aria-expanded", String(!nextCollapsed));
+  });
   section.appendChild(list);
   return section;
 };

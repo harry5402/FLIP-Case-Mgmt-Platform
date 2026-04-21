@@ -203,6 +203,7 @@ CREATE TABLE IF NOT EXISTS litigation_actions (
   final_due_date DATE,
   notes TEXT,
   assigned_to_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  assigned_to_label TEXT,
   is_completed BOOLEAN NOT NULL DEFAULT FALSE,
   is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
   completed_at TIMESTAMPTZ,
