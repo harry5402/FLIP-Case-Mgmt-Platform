@@ -1004,8 +1004,9 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
           item.caseName || "Case"
         )}</a>`;
     const collapsedCaseIds = getCollapsedCaseIds(tab);
-    const shouldStartCollapsed =
-      focusCaseId && item.id === focusCaseId ? false : collapsedCaseIds.has(item.id) || !focusCaseId;
+    const shouldStartCollapsed = focusCaseId
+      ? item.id !== focusCaseId
+      : collapsedCaseIds.has(item.id) || !focusCaseId;
     card.innerHTML = `
       <div class="litigation-case-header">
         <div class="litigation-case-topline">
