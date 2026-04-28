@@ -74,7 +74,10 @@ const createTaskCard = (task) => {
   const isAssignedToCurrentUser =
     Boolean(currentUser?.id) && currentUser.id === task.assignedToUserId;
   const canToggleProgress = !task.assignedToUserId || isAssignedToCurrentUser;
-  const canComplete = !task.assignedToUserId || isAssignedToCurrentUser;
+  const canComplete =
+    typeof task.canComplete === "boolean"
+      ? task.canComplete
+      : !task.assignedToUserId || isAssignedToCurrentUser;
   const isComplete = task.status === "Complete";
   const isInProgress = task.status === "In Progress" || task.isInProgress;
   const assigneeLabel = task.assignedToName

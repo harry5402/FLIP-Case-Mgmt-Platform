@@ -23,6 +23,11 @@ const renderUsers = (users) => {
       <td>${user.name || "—"}</td>
       <td>${user.email}</td>
       <td>${user.role}</td>
+      <td>
+        <button class="ghost-button weekly-cleanup-toggle" type="button" data-user-id="${user.id}">
+          ${user.allow_weekly_task_cleanup ? "On" : "Off"}
+        </button>
+      </td>
       <td>${formatDate(user.created_at)}</td>
       <td>
         <button class="ghost-button logout-all-user" type="button" data-user-id="${user.id}" ${
@@ -32,6 +37,23 @@ const renderUsers = (users) => {
         </button>
       </td>
     `;
+    const cleanupButton = row.querySelector(".weekly-cleanup-toggle");
+    cleanupButton.addEventListener("click", async () => {
+      usersError.textContent = "";
+      const response = await authFetch(`/api/users/${user.id}/weekly-task-cleanup`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          allowWeeklyTaskCleanup: !user.allow_weekly_task_cleanup,
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        usersError.textContent = payload?.error || "Unable to update weekly cleanup setting.";
+        return;
+      }
+      await loadUsers();
+    });
     const logoutButton = row.querySelector(".logout-all-user");
     logoutButton.addEventListener("click", async () => {
       const confirmed = window.confirm(
@@ -70,6 +92,7 @@ userForm.addEventListener("submit", async (event) => {
     name: formData.get("name").trim(),
     email: formData.get("email").trim(),
     password: formData.get("password"),
+    allowWeeklyTaskCleanup: formData.get("allowWeeklyTaskCleanup") === "on",
   };
 
   const response = await authFetch("/api/users", {

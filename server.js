@@ -335,6 +335,13 @@ const ensureAuditLogTable = async () => {
   );
 };
 
+const ensureUserPermissionsColumns = async () => {
+  await query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS allow_weekly_task_cleanup BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+};
+
 const ensureCaseUpdatedAtTimestamp = async () => {
   await query(`
     ALTER TABLE cases
@@ -705,6 +712,18 @@ const syncLitigationTasks = async (caseId, entries, session) => {
   }
 };
 
+const loadWeeklyCleanupPermission = async (userId) => {
+  if (!userId) return false;
+  const result = await query(
+    `SELECT allow_weekly_task_cleanup
+     FROM users
+     WHERE id = $1
+     LIMIT 1`,
+    [userId]
+  );
+  return Boolean(result.rows[0]?.allow_weekly_task_cleanup);
+};
+
 const ensureAdminUser = async () => {
   const passwordHash = hashPassword(ADMIN_PASSWORD);
   await query(
@@ -868,22 +887,24 @@ app.post("/api/auth/change-password", requireSession, async (req, res) => {
 
 app.get("/api/users", requireSession, requireAdmin, async (req, res) => {
   const result = await query(
-    "SELECT id, name, email, role, created_at FROM users ORDER BY created_at DESC"
+    `SELECT id, name, email, role, allow_weekly_task_cleanup, created_at
+     FROM users
+     ORDER BY created_at DESC`
   );
   res.json(result.rows);
 });
 
 app.post("/api/users", requireSession, requireAdmin, async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, allowWeeklyTaskCleanup } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "Email and password are required." });
   }
   const passwordHash = hashPassword(password);
   const result = await query(
-    `INSERT INTO users (name, email, password_hash, role)
-     VALUES ($1, $2, $3, 'user')
-     RETURNING id, name, email, role, created_at`,
-    [name || "", email.trim(), passwordHash]
+    `INSERT INTO users (name, email, password_hash, role, allow_weekly_task_cleanup)
+     VALUES ($1, $2, $3, 'user', $4)
+     RETURNING id, name, email, role, allow_weekly_task_cleanup, created_at`,
+    [name || "", email.trim(), passwordHash, Boolean(allowWeeklyTaskCleanup)]
   );
   await writeAuditLog(req, {
     action: "users.create",
@@ -893,6 +914,43 @@ app.post("/api/users", requireSession, requireAdmin, async (req, res) => {
     after: result.rows[0],
   });
   res.status(201).json(result.rows[0]);
+});
+
+app.put("/api/users/:id/weekly-task-cleanup", requireSession, requireAdmin, async (req, res) => {
+  const allowWeeklyTaskCleanup = Boolean(req.body?.allowWeeklyTaskCleanup);
+  const existing = await query(
+    `SELECT id, email, allow_weekly_task_cleanup
+     FROM users
+     WHERE id = $1`,
+    [req.params.id]
+  );
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "User not found." });
+  }
+
+  const result = await query(
+    `UPDATE users
+     SET allow_weekly_task_cleanup = $2
+     WHERE id = $1
+     RETURNING id, name, email, role, allow_weekly_task_cleanup, created_at`,
+    [req.params.id, allowWeeklyTaskCleanup]
+  );
+
+  await writeAuditLog(req, {
+    action: "users.weekly_task_cleanup",
+    entityType: "user",
+    entityId: req.params.id,
+    before: {
+      allowWeeklyTaskCleanup: existing.rows[0].allow_weekly_task_cleanup,
+      email: existing.rows[0].email,
+    },
+    after: {
+      allowWeeklyTaskCleanup: result.rows[0].allow_weekly_task_cleanup,
+      email: result.rows[0].email,
+    },
+  });
+
+  res.json(result.rows[0]);
 });
 
 app.post("/api/users/:id/logout-all", requireSession, requireAdmin, async (req, res) => {
@@ -2004,6 +2062,7 @@ app.put("/api/litigation/cases/:id/archive", async (req, res) => {
 });
 
 app.get("/api/tasks/my", async (req, res) => {
+  const canCleanupWeeklyTasks = await loadWeeklyCleanupPermission(req.session.userId);
   const result = await query(
     `SELECT t.*,
             c.case_name,
@@ -2044,6 +2103,10 @@ app.get("/api/tasks/my", async (req, res) => {
       assignedToEmail: row.assigned_user_email || "",
       assignedToLabel: row.source_action_assigned_to_label || "",
       isInProgress: row.status === "In Progress" || Boolean(row.is_in_progress),
+      canComplete:
+        !row.assigned_to_user_id ||
+        row.assigned_to_user_id === req.session.userId ||
+        canCleanupWeeklyTasks,
       sourceLitigationActionId: row.source_litigation_action_id || null,
       taskRole: row.task_role || "owner",
       targetType: row.group_id
@@ -2064,7 +2127,8 @@ app.get("/api/tasks/my", async (req, res) => {
   );
 });
 
-app.get("/api/tasks", async (_req, res) => {
+app.get("/api/tasks", async (req, res) => {
+  const canCleanupWeeklyTasks = await loadWeeklyCleanupPermission(req.session.userId);
   const result = await query(
     `SELECT t.*,
             c.case_name,
@@ -2102,6 +2166,10 @@ app.get("/api/tasks", async (_req, res) => {
       assignedToEmail: row.assigned_user_email || "",
       assignedToLabel: row.source_action_assigned_to_label || "",
       isInProgress: row.status === "In Progress" || Boolean(row.is_in_progress),
+      canComplete:
+        !row.assigned_to_user_id ||
+        row.assigned_to_user_id === req.session.userId ||
+        canCleanupWeeklyTasks,
       sourceLitigationActionId: row.source_litigation_action_id || null,
       taskRole: row.task_role || "owner",
       targetType: row.group_id
@@ -2186,13 +2254,18 @@ app.post("/api/groups/:id/tasks", async (req, res) => {
 });
 
 app.put("/api/tasks/:id/complete", async (req, res) => {
+  const canCleanupWeeklyTasks = await loadWeeklyCleanupPermission(req.session.userId);
   const existing = await query(
     `SELECT id, case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status,
             source_litigation_action_id, task_role
      FROM tasks
      WHERE id = $1
-       AND (assigned_to_user_id = $2 OR assigned_to_user_id IS NULL)`,
-    [req.params.id, req.session.userId]
+       AND (
+         assigned_to_user_id = $2
+         OR assigned_to_user_id IS NULL
+         OR $3::boolean = TRUE
+       )`,
+    [req.params.id, req.session.userId, canCleanupWeeklyTasks]
   );
 
   if (!existing.rows.length) {
@@ -2203,9 +2276,13 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
     `UPDATE tasks
      SET status = 'Complete'
      WHERE id = $1
-       AND (assigned_to_user_id = $2 OR assigned_to_user_id IS NULL)
+       AND (
+         assigned_to_user_id = $2
+         OR assigned_to_user_id IS NULL
+         OR $3::boolean = TRUE
+       )
      RETURNING id`,
-    [req.params.id, req.session.userId]
+    [req.params.id, req.session.userId, canCleanupWeeklyTasks]
   );
 
   const currentTask = existing.rows[0];
@@ -4098,6 +4175,7 @@ app.use((err, req, res, next) => {
 
 const start = async () => {
   await ensureAuditLogTable();
+  await ensureUserPermissionsColumns();
   await ensureCaseUpdatedAtTimestamp();
   await ensureCaseDocketOnlyColumn();
   await ensureLitigationTables();
