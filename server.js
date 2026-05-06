@@ -63,6 +63,7 @@ const DOCKETBIRD_COURT_ID_BY_JURISDICTION = {
   MDFL: "flmd",
   WDPA: "pawd",
   EDWI: "wied",
+  EDMO: "moed",
 };
 
 const toDateOnly = (value) => {
@@ -3048,7 +3049,7 @@ app.post(
       [req.params.id]
     );
     const maxDoe = existing.rows.reduce((max, row) => {
-      const match = String(row.doe_number || "").match(/\\d+/);
+      const match = String(row.doe_number || "").match(/\d+/);
       const num = match ? Number(match[0]) : 0;
       return Math.max(max, num);
     }, 0);
