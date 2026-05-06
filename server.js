@@ -144,7 +144,7 @@ app.use(
     origin(origin, callback) {
       // Allow same-origin and server-to-server requests with no Origin header.
       if (!origin) return callback(null, true);
-      if (allowedOriginSet.size === 0) return callback(null, true);
+      if (allowedOriginSet.size === 0) return callback(new Error("Blocked by CORS policy"));
       if (allowedOriginSet.has(origin)) return callback(null, true);
       return callback(new Error("Blocked by CORS policy"));
     },
@@ -190,13 +190,13 @@ const upload = multer({
 const sessions = new Map();
 const loginAttempts = new Map();
 
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "hlesak@fleneriplaw.com";
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Flener224!!";
-if (isProduction && (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD)) {
+if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {
   throw new Error(
-    "Set ADMIN_EMAIL and ADMIN_PASSWORD in production environment variables."
+    "ADMIN_EMAIL and ADMIN_PASSWORD must be set in environment variables."
   );
 }
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 setInterval(() => {
   const now = Date.now();
@@ -730,10 +730,7 @@ const ensureAdminUser = async () => {
   await query(
     `INSERT INTO users (name, email, password_hash, role)
      VALUES ($1, $2, $3, 'admin')
-     ON CONFLICT (email)
-     DO UPDATE SET
-       password_hash = EXCLUDED.password_hash,
-       role = 'admin'`,
+     ON CONFLICT (email) DO NOTHING`,
     ["Harry Lesak", ADMIN_EMAIL, passwordHash]
   );
 };
