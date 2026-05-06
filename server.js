@@ -210,7 +210,7 @@ setInterval(() => {
     }
   }
   for (const [key, attempt] of loginAttempts.entries()) {
-    if (now > attempt.windowStart + LOGIN_WINDOW_MS * 2) {
+    if (now > attempt.windowStart + LOGIN_WINDOW_MS) {
       loginAttempts.delete(key);
     }
   }
@@ -903,6 +903,9 @@ app.post("/api/users", requireSession, requireAdmin, async (req, res) => {
   const { name, email, password, allowWeeklyTaskCleanup } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "Email and password are required." });
+  }
+  if (String(password).length < 8) {
+    return res.status(400).json({ error: "Password must be at least 8 characters." });
   }
   const passwordHash = hashPassword(password);
   const result = await query(
@@ -2008,28 +2011,30 @@ app.put("/api/litigation/cases/:id/collections", async (req, res) => {
     return res.status(400).json({ error: "rows array is required." });
   }
 
-  await query("DELETE FROM litigation_collections WHERE case_id = $1", [req.params.id]);
-  for (let i = 0; i < rows.length; i += 1) {
-    const row = rows[i] || {};
-    await query(
-      `INSERT INTO litigation_collections
-        (case_id, platform, sent_to_platform, acknowledged, breakdown, all_def_accounted_for, money_received, sent_to_plaintiff, notes, sort_order, updated_at, updated_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),$11)`,
-      [
-        req.params.id,
-        row.platform || null,
-        row.sentToPlatform || null,
-        row.acknowledged || null,
-        row.breakdown || null,
-        row.allDefAccountedFor || null,
-        row.moneyReceived || null,
-        row.sentToPlaintiff || null,
-        row.notes || null,
-        i,
-        req.session?.name || req.session?.email || null,
-      ]
-    );
-  }
+  await withTransaction(async (client) => {
+    await client.query("DELETE FROM litigation_collections WHERE case_id = $1", [req.params.id]);
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[i] || {};
+      await client.query(
+        `INSERT INTO litigation_collections
+          (case_id, platform, sent_to_platform, acknowledged, breakdown, all_def_accounted_for, money_received, sent_to_plaintiff, notes, sort_order, updated_at, updated_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),$11)`,
+        [
+          req.params.id,
+          row.platform || null,
+          row.sentToPlatform || null,
+          row.acknowledged || null,
+          row.breakdown || null,
+          row.allDefAccountedFor || null,
+          row.moneyReceived || null,
+          row.sentToPlaintiff || null,
+          row.notes || null,
+          i,
+          req.session?.name || req.session?.email || null,
+        ]
+      );
+    }
+  });
 
   await writeAuditLog(req, {
     action: "litigation.collections.save",
@@ -2691,6 +2696,9 @@ app.post("/api/cases", async (req, res) => {
   if (!caseName || !clientName) {
     return res.status(400).json({ error: "caseName and clientName are required" });
   }
+  if (jurisdiction && !LITIGATION_TABS.includes(String(jurisdiction).toUpperCase())) {
+    return res.status(400).json({ error: "Invalid jurisdiction." });
+  }
 
   const now = new Date().toISOString();
   const result = await query(
@@ -2778,39 +2786,41 @@ app.put("/api/cases/:id", async (req, res) => {
     return res.status(404).json({ error: "Case not found" });
   }
 
+  const e = existing.rows[0];
+  const resolve = (val, col) => (val !== undefined ? (val || null) : col);
   const result = await query(
     `UPDATE cases SET
-      case_name = COALESCE($1, case_name),
-      client_name = COALESCE($2, client_name),
-      plaintiff = COALESCE($3, plaintiff),
-      brand_name = COALESCE($4, brand_name),
-      ip_claims_summary = COALESCE($5, ip_claims_summary),
-      plaintiff_profit_per_unit = COALESCE($6, plaintiff_profit_per_unit),
-      jurisdiction = COALESCE($7, jurisdiction),
-      case_number = COALESCE($8, case_number),
-      filed_date = COALESCE($9, filed_date),
-      judge = COALESCE($10, judge),
-      status = COALESCE($11, status),
-      updated_by = COALESCE($12, updated_by),
+      case_name = $1,
+      client_name = $2,
+      plaintiff = $3,
+      brand_name = $4,
+      ip_claims_summary = $5,
+      plaintiff_profit_per_unit = $6,
+      jurisdiction = $7,
+      case_number = $8,
+      filed_date = $9,
+      judge = $10,
+      status = $11,
+      updated_by = $12,
       updated_at = NOW(),
-      court = COALESCE($7, court),
-      notes = COALESCE($13, notes)
+      court = $7,
+      notes = $13
      WHERE id = $14
      RETURNING *`,
     [
-      caseName,
-      clientName,
-      plaintiff,
-      brandName,
-      ipClaimsSummary,
-      plaintiffProfitPerUnit,
-      jurisdiction,
-      caseNumber,
-      filedDate,
-      judge,
-      status,
-      actor,
-      notes,
+      caseName !== undefined ? caseName || e.case_name : e.case_name,
+      clientName !== undefined ? clientName || e.client_name : e.client_name,
+      resolve(plaintiff, e.plaintiff),
+      resolve(brandName, e.brand_name),
+      resolve(ipClaimsSummary, e.ip_claims_summary),
+      plaintiffProfitPerUnit !== undefined ? plaintiffProfitPerUnit : e.plaintiff_profit_per_unit,
+      resolve(jurisdiction, e.jurisdiction),
+      resolve(caseNumber, e.case_number),
+      resolve(filedDate, e.filed_date),
+      resolve(judge, e.judge),
+      status !== undefined ? status || e.status : e.status,
+      actor || e.updated_by,
+      resolve(notes, e.notes),
       req.params.id,
     ]
   );

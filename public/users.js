@@ -54,8 +54,8 @@ const renderUsers = (users) => {
       }
       await loadUsers();
     });
-    const logoutButton = row.querySelector(".logout-all-user");
-    logoutButton.addEventListener("click", async () => {
+    const logoutAllButton = row.querySelector(".logout-all-user");
+    logoutAllButton.addEventListener("click", async () => {
       const confirmed = window.confirm(
         `Log out all sessions for ${user.email}?`
       );

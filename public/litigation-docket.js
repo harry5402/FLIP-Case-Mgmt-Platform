@@ -598,7 +598,7 @@ const populateEntriesTable = (tbody, entries) => {
   } catch (error) {
     const fallbackRow = document.createElement("tr");
     fallbackRow.innerHTML =
-      '<td colspan="6" class="empty-state">Unable to render one or more actions for this case.</td>';
+      '<td colspan="7" class="empty-state">Unable to render one or more actions for this case.</td>';
     tbody.appendChild(fallbackRow);
   }
 };
@@ -977,6 +977,12 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
   if (renderId !== latestTabRenderId) return;
   casesContainer.innerHTML = "";
 
+  const validCaseIds = new Set(cases.map((c) => c.id));
+  const tabCollapsed = getCollapsedCaseIds(tab);
+  for (const id of tabCollapsed) {
+    if (!validCaseIds.has(id)) tabCollapsed.delete(id);
+  }
+
   if (!cases.length) {
     casesContainer.innerHTML = `<div class="empty-state">No cases in this tab.</div>`;
     return;
@@ -1001,7 +1007,7 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
     const collapsedCaseIds = getCollapsedCaseIds(tab);
     const shouldStartCollapsed = focusCaseId
       ? item.id !== focusCaseId
-      : collapsedCaseIds.has(item.id) || !focusCaseId;
+      : collapsedCaseIds.has(item.id) || true;
     card.innerHTML = `
       <div class="litigation-case-header">
         <div class="litigation-case-topline">

@@ -63,7 +63,7 @@ const getTaskBucket = (task, week) => {
   if (due < week.monday) {
     return task.status === "Complete" ? null : "OVERDUE";
   }
-  if (due < week.monday || due > week.friday) return null;
+  if (due > week.friday) return null;
   const day = due.getDay();
   if (day === 0 || day === 6) return null;
   return weekdayLabels[day - 1];
