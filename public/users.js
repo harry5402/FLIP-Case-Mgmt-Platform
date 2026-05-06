@@ -20,9 +20,9 @@ const renderUsers = (users) => {
     const row = document.createElement("tr");
     const disableSelf = currentUser?.id === user.id;
     row.innerHTML = `
-      <td>${user.name || "—"}</td>
-      <td>${user.email}</td>
-      <td>${user.role}</td>
+      <td>${escapeHtml(user.name || "—")}</td>
+      <td>${escapeHtml(user.email)}</td>
+      <td>${escapeHtml(user.role)}</td>
       <td>
         <button class="ghost-button weekly-cleanup-toggle" type="button" data-user-id="${user.id}">
           ${user.allow_weekly_task_cleanup ? "On" : "Off"}

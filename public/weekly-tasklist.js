@@ -23,12 +23,12 @@ const getTaskTargetUrl = (task) =>
 
 const getTaskContextLabel = (task) =>
   task.targetType === "group"
-    ? task.groupName || "Group"
+    ? escapeHtml(task.groupName || "Group")
     : task.targetType === "docket"
       ? "Docket Entry"
       : task.targetType === "case"
         ? "Case Reminder"
-        : task.defendantName || "Defendant";
+        : escapeHtml(task.defendantName || "Defendant");
 
 const startOfDay = (date) => {
   const next = new Date(date);
@@ -87,11 +87,11 @@ const createTaskCard = (task) => {
   row.className = `card row${isInProgress ? " is-in-progress" : ""}`;
   row.innerHTML = `
     <div class="row-left">
-      <a class="card-title task-link" href="${getTaskTargetUrl(task)}">${task.taskType}</a>
+      <a class="card-title task-link" href="${getTaskTargetUrl(task)}">${escapeHtml(task.taskType)}</a>
       <div class="card-meta">
-        <span>${task.caseName || "Case"}</span>
+        <span>${escapeHtml(task.caseName || "Case")}</span>
         <span>${getTaskContextLabel(task)}</span>
-        <span>Assigned to ${assigneeLabel}</span>
+        <span>Assigned to ${escapeHtml(assigneeLabel)}</span>
         ${task.taskRole === "collaborator" ? "<span>Support Task</span>" : ""}
         <span>Due ${formatDate(task.dueDate)}</span>
         ${isInProgress && !isComplete ? "<span>In Progress</span>" : ""}

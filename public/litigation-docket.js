@@ -411,10 +411,12 @@ const attachEntryDragBehavior = (row) => {
   });
 };
 
-const setEntryRowCompletionState = (row, isCompleted) => {
+const setEntryRowCompletionState = (row, isCompleted, isInProgress = false) => {
   row.classList.toggle("is-completed", Boolean(isCompleted));
   if (isCompleted) {
     row.classList.remove("is-in-progress");
+  } else {
+    setEntryRowInProgressState(row, Boolean(isInProgress));
   }
   const progressButton = row.querySelector(".progress-action");
   if (progressButton) {
@@ -499,8 +501,7 @@ const renderEntryRow = (entry = {}) => {
   row.querySelectorAll('input[type="date"]').forEach((input) => {
     input.addEventListener("change", () => refreshEntryRowDueHighlight(row));
   });
-  setEntryRowInProgressState(row, Boolean(entry.isInProgress));
-  setEntryRowCompletionState(row, Boolean(entry.isCompleted));
+  setEntryRowCompletionState(row, Boolean(entry.isCompleted), Boolean(entry.isInProgress));
   refreshEntryRowDueHighlight(row);
   const actionValue = String(entry.action || "").trim().toLowerCase();
   const matchesFocusedAction =
@@ -1158,8 +1159,7 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
             tbody.appendChild(renderEntryRow({}));
           }
         } else {
-          setEntryRowInProgressState(row, Boolean(result?.action?.isInProgress));
-          setEntryRowCompletionState(row, Boolean(result?.action?.isCompleted));
+          setEntryRowCompletionState(row, Boolean(result?.action?.isCompleted), Boolean(result?.action?.isInProgress));
           refreshEntryRowDueHighlight(row);
         }
         markEntriesSaved(card);

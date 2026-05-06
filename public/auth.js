@@ -1,4 +1,12 @@
 const AUTH_KEY = "flipAuth";
+
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 const DEFAULT_IDLE_TIMEOUT_MINUTES = 60;
 const WARNING_BUFFER_MS = 2 * 60 * 1000;
 let lastClientActivityAt = Date.now();

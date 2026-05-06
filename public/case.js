@@ -133,7 +133,7 @@ const renderCaseInfo = (currentCase) => {
       return `
         <div class="info-row">
           <span>${label}</span>
-          <span><input name="${name}" type="${inputType}" value="${value}" ${
+          <span><input name="${name}" type="${inputType}" value="${escapeHtml(value)}" ${
             disabled ? "disabled" : ""
           } /></span>
         </div>
@@ -165,14 +165,14 @@ const renderClaimsTable = (claims) => {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${claim.id ?? "—"}</td>
-      <td>${claim.brandName || "—"}</td>
-      <td>${claim.type || "—"}</td>
-      <td>${claim.subType || "—"}</td>
+      <td>${escapeHtml(claim.brandName || "—")}</td>
+      <td>${escapeHtml(claim.type || "—")}</td>
+      <td>${escapeHtml(claim.subType || "—")}</td>
       <td>${formatDate(claim.applicationDate)}</td>
       <td>${formatDate(claim.registrationDate)}</td>
-      <td>${claim.serialNumber || "—"}</td>
-      <td>${claim.registrationNumber || "—"}</td>
-      <td>${claim.specimenFolder || "—"}</td>
+      <td>${escapeHtml(claim.serialNumber || "—")}</td>
+      <td>${escapeHtml(claim.registrationNumber || "—")}</td>
+      <td>${escapeHtml(claim.specimenFolder || "—")}</td>
       <td>${claim.listingsCount ?? "—"}</td>
       <td>${claim.defendantCount ?? "—"}</td>
       <td><button class="ghost-button claim-edit" type="button" data-claim-id="${claim.id}">Edit</button></td>
@@ -201,15 +201,15 @@ const renderDefendantsTable = (currentCase) => {
       : "—";
     row.innerHTML = `
       <td>${doeLink}</td>
-      <td>${def.groupName || "—"}</td>
-      <td>${def.platform || "—"}</td>
-      <td>${def.merchantId || "—"}</td>
+      <td>${escapeHtml(def.groupName || "—")}</td>
+      <td>${escapeHtml(def.platform || "—")}</td>
+      <td>${escapeHtml(def.merchantId || "—")}</td>
       <td><a href="defendant.html?caseId=${encodeURIComponent(
         currentCase.id
-      )}&defendantId=${encodeURIComponent(def.id)}">${def.name || "—"}</a></td>
-      <td>${def.email || "—"}</td>
-      <td>${def.status || "—"}</td>
-      <td>${def.defendantRepEmail || "—"}</td>
+      )}&defendantId=${encodeURIComponent(def.id)}">${escapeHtml(def.name || "—")}</a></td>
+      <td>${escapeHtml(def.email || "—")}</td>
+      <td>${escapeHtml(def.status || "—")}</td>
+      <td>${escapeHtml(def.defendantRepEmail || "—")}</td>
       <td>${def.listingsCount ?? def.listings?.length ?? "—"}</td>
     `;
     defendantsTableBody.appendChild(row);
@@ -238,11 +238,11 @@ const renderGroupsTable = (defendants) => {
   Array.from(grouped.values()).forEach((group) => {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td>${group.groupName}</td>
+      <td>${escapeHtml(group.groupName)}</td>
       <td>${group.count}</td>
-      <td>${group.plaintiffRepName}</td>
-      <td>${group.defRepEmail}</td>
-      <td>${group.status}</td>
+      <td>${escapeHtml(group.plaintiffRepName)}</td>
+      <td>${escapeHtml(group.defRepEmail)}</td>
+      <td>${escapeHtml(group.status)}</td>
     `;
     groupsTableBody.appendChild(row);
   });
@@ -253,11 +253,11 @@ const renderGroupsFromApi = (groups) => {
   groups.forEach((group) => {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td><a href="group.html?groupId=${encodeURIComponent(group.id)}">${group.groupName || "—"}</a></td>
+      <td><a href="group.html?groupId=${encodeURIComponent(group.id)}">${escapeHtml(group.groupName || "—")}</a></td>
       <td>${group.defendantCount ?? 0}</td>
-      <td>${group.plaintiffRepName || "—"}</td>
-      <td>${group.defendantRepEmail || "—"}</td>
-      <td>${group.status || "—"}</td>
+      <td>${escapeHtml(group.plaintiffRepName || "—")}</td>
+      <td>${escapeHtml(group.defendantRepEmail || "—")}</td>
+      <td>${escapeHtml(group.status || "—")}</td>
     `;
     groupsTableBody.appendChild(row);
   });
@@ -271,9 +271,9 @@ const openGroupModal = (defendants) => {
     const item = document.createElement("label");
     item.className = "checkbox-item";
     item.innerHTML = `
-      <input type="checkbox" value="${def.id}" />
-      <span>${def.doeNumber || "Doe"} • ${def.name || "Unnamed"} ${
-        def.groupName ? `(Group: ${def.groupName})` : ""
+      <input type="checkbox" value="${escapeHtml(def.id)}" />
+      <span>${escapeHtml(def.doeNumber || "Doe")} • ${escapeHtml(def.name || "Unnamed")} ${
+        def.groupName ? `(Group: ${escapeHtml(def.groupName)})` : ""
       }</span>
     `;
     groupDefendants.appendChild(item);

@@ -106,17 +106,17 @@ const renderTasks = (tasks) => {
           )}&defendantId=${encodeURIComponent(task.defendantId)}`;
     row.innerHTML = `
       <div class="row-left">
-        <a class="card-title task-link" href="${targetUrl}">${task.taskType}</a>
+        <a class="card-title task-link" href="${targetUrl}">${escapeHtml(task.taskType)}</a>
         <div class="card-meta">
-          <span>${task.caseName || "Case"}</span>
+          <span>${escapeHtml(task.caseName || "Case")}</span>
           <span>${
             task.targetType === "group"
-              ? task.groupName || "Group"
+              ? escapeHtml(task.groupName || "Group")
               : task.targetType === "docket"
                 ? "Docket Entry"
               : task.targetType === "case"
                 ? "Case Reminder"
-                : task.defendantName || "Defendant"
+                : escapeHtml(task.defendantName || "Defendant")
           }</span>
           ${
             task.taskRole === "collaborator"
