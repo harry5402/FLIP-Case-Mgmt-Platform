@@ -211,13 +211,7 @@ const createLitigationCase = (payload) =>
     body: JSON.stringify(payload),
   });
 
-const escapeHtml = (value) =>
-  String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+
 
 const getAssignedToSelectValue = (entry = {}) => {
   if (entry.assignedToUserId) return entry.assignedToUserId;
