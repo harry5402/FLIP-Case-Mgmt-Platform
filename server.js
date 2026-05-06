@@ -2336,6 +2336,19 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
              AND status <> 'Complete'`,
           [currentTask.source_litigation_action_id, currentTask.id]
         );
+        await query(
+          `UPDATE litigation_action_collaborators
+           SET is_complete = TRUE,
+               is_in_progress = FALSE,
+               completed_at = NOW(),
+               completed_by = $2
+           WHERE action_id = $1
+             AND is_complete = FALSE`,
+          [
+            currentTask.source_litigation_action_id,
+            req.session?.name || req.session?.email || null,
+          ]
+        );
       }
     } else {
       currentTask.syncedDocketAction = false;
