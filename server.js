@@ -344,6 +344,11 @@ const ensureUserPermissionsColumns = async () => {
 };
 
 const ensureCaseUpdatedAtTimestamp = async () => {
+  const { rows } = await query(`
+    SELECT data_type FROM information_schema.columns
+    WHERE table_name = 'cases' AND column_name = 'updated_at'
+  `);
+  if (rows[0]?.data_type === 'timestamp with time zone') return;
   await query(`
     ALTER TABLE cases
     ALTER COLUMN updated_at TYPE TIMESTAMPTZ
