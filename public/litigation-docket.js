@@ -411,6 +411,14 @@ const attachEntryDragBehavior = (row) => {
   });
 };
 
+const setEntryRowInProgressState = (row, isInProgress) => {
+  row.classList.toggle("is-in-progress", Boolean(isInProgress) && !row.classList.contains("is-completed"));
+  const progressButton = row.querySelector(".progress-action");
+  if (progressButton) {
+    progressButton.textContent = isInProgress ? "Clear Progress" : "In Progress";
+  }
+};
+
 const setEntryRowCompletionState = (row, isCompleted, isInProgress = false) => {
   row.classList.toggle("is-completed", Boolean(isCompleted));
   if (isCompleted) {
@@ -425,14 +433,6 @@ const setEntryRowCompletionState = (row, isCompleted, isInProgress = false) => {
   const completeButton = row.querySelector(".complete-action");
   if (completeButton) {
     completeButton.textContent = isCompleted ? "Incomplete" : "Complete";
-  }
-};
-
-const setEntryRowInProgressState = (row, isInProgress) => {
-  row.classList.toggle("is-in-progress", Boolean(isInProgress) && !row.classList.contains("is-completed"));
-  const progressButton = row.querySelector(".progress-action");
-  if (progressButton) {
-    progressButton.textContent = isInProgress ? "Clear Progress" : "In Progress";
   }
 };
 
