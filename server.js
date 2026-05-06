@@ -6,7 +6,7 @@ const multer = require("multer");
 const crypto = require("crypto");
 const fs = require("fs");
 const { parse } = require("csv-parse/sync");
-const { query } = require("./db");
+const { query, withTransaction } = require("./db");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -657,60 +657,62 @@ const syncLitigationActionCollaborators = async (
 };
 
 const syncLitigationTasks = async (caseId, entries, session) => {
-  await query(
-    `DELETE FROM tasks
-     WHERE case_id = $1
-       AND defendant_id IS NULL
-       AND group_id IS NULL
-       AND task_type LIKE 'Docket:%'`,
-    [caseId]
-  );
-
-  for (const entry of entries) {
-    const action = String(entry.action || "").trim();
-    const assignedToUserId = entry.assignedToUserId || null;
-    const dueDate = entry.internalDueDate || entry.finalDueDate || null;
-    if (!action || entry.isHidden) continue;
-
-    await query(
-      `INSERT INTO tasks
-        (case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status, created_by_user_id, source_litigation_action_id, task_role)
-       VALUES ($1, NULL, NULL, $2, $3, $4, $5, $6, $7, 'owner')`,
-      [
-        caseId,
-        `Docket: ${action}`,
-        assignedToUserId,
-        dueDate,
-        entry.isCompleted ? "Complete" : entry.isInProgress ? "In Progress" : "Open",
-        session?.userId || null,
-        entry.id || null,
-      ]
+  await withTransaction(async (client) => {
+    await client.query(
+      `DELETE FROM tasks
+       WHERE case_id = $1
+         AND defendant_id IS NULL
+         AND group_id IS NULL
+         AND task_type LIKE 'Docket:%'`,
+      [caseId]
     );
 
-    const collaborators = Array.isArray(entry.collaborators) ? entry.collaborators : [];
-    for (const collaborator of collaborators) {
-      const collaboratorUserId = String(collaborator?.userId || "").trim();
-      if (!collaboratorUserId) continue;
-      await query(
+    for (const entry of entries) {
+      const action = String(entry.action || "").trim();
+      const assignedToUserId = entry.assignedToUserId || null;
+      const dueDate = entry.internalDueDate || entry.finalDueDate || null;
+      if (!action || entry.isHidden) continue;
+
+      await client.query(
         `INSERT INTO tasks
           (case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status, created_by_user_id, source_litigation_action_id, task_role)
-         VALUES ($1, NULL, NULL, $2, $3, $4, $5, $6, $7, 'collaborator')`,
+         VALUES ($1, NULL, NULL, $2, $3, $4, $5, $6, $7, 'owner')`,
         [
           caseId,
           `Docket: ${action}`,
-          collaboratorUserId,
+          assignedToUserId,
           dueDate,
-          entry.isCompleted || collaborator?.isComplete
-            ? "Complete"
-            : collaborator?.isInProgress
-              ? "In Progress"
-              : "Open",
+          entry.isCompleted ? "Complete" : entry.isInProgress ? "In Progress" : "Open",
           session?.userId || null,
           entry.id || null,
         ]
       );
+
+      const collaborators = Array.isArray(entry.collaborators) ? entry.collaborators : [];
+      for (const collaborator of collaborators) {
+        const collaboratorUserId = String(collaborator?.userId || "").trim();
+        if (!collaboratorUserId) continue;
+        await client.query(
+          `INSERT INTO tasks
+            (case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status, created_by_user_id, source_litigation_action_id, task_role)
+           VALUES ($1, NULL, NULL, $2, $3, $4, $5, $6, $7, 'collaborator')`,
+          [
+            caseId,
+            `Docket: ${action}`,
+            collaboratorUserId,
+            dueDate,
+            entry.isCompleted || collaborator?.isComplete
+              ? "Complete"
+              : collaborator?.isInProgress
+                ? "In Progress"
+                : "Open",
+            session?.userId || null,
+            entry.id || null,
+          ]
+        );
+      }
     }
-  }
+  });
 };
 
 const loadWeeklyCleanupPermission = async (userId) => {

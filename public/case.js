@@ -42,8 +42,9 @@ let editingClaimId = null;
 const docketStatusOptions = [
   "",
   "Case Filed",
-  "Default Requested",
-  "Default Granted",
+  "Default Entered",
+  "Default Judgement Requested",
+  "Default Judgement Granted",
   "TRO Requested",
   "Negotiating",
   "TRO Signed",
@@ -547,14 +548,19 @@ const init = async () => {
       caseTitle.textContent = currentCase.caseName || currentCase.title;
       renderCaseMeta();
       renderCaseInfo(currentCase);
+      caseInfoSave.textContent = "Saved";
+      toast.textContent = "Saved ✓";
+      toast.style.background = "";
+    } else {
+      toast.textContent = `Error: ${updatedCase?.error || "Save failed"}`;
+      toast.style.background = "#dc2626";
     }
-    caseInfoSave.textContent = "Saved";
-    toast.textContent = "Saved ✓";
     toast.classList.remove("hidden");
     setTimeout(() => {
       caseInfoSave.textContent = "Save";
       toast.classList.add("hidden");
-    }, 1200);
+      toast.style.background = "";
+    }, 2500);
   });
 };
 
