@@ -1408,7 +1408,7 @@ const init = async () => {
       const formData = new FormData(newCaseForm);
       const payload = {
         caseName: String(formData.get("caseName") || "").trim(),
-        clientName: String(formData.get("judge") || "").trim() || "Docket Case",
+        clientName: "Docket Case",
         caseNumber: String(formData.get("caseNumber") || "").trim() || null,
         jurisdiction: String(formData.get("jurisdiction") || "").trim(),
         judge: String(formData.get("judge") || "").trim() || null,
