@@ -89,34 +89,41 @@ const renderTasks = (tasks) => {
     const isInProgress = task.status === "In Progress" || task.isInProgress;
     row.className = `card row${isInProgress ? " is-in-progress" : ""}`;
     const targetUrl =
-      task.targetType === "group"
-        ? `group.html?groupId=${encodeURIComponent(task.groupId)}`
-        : task.targetType === "docket"
-        ? `litigation-docket.html?tab=${encodeURIComponent(
-              task.jurisdiction || "NDIL"
-            )}&caseId=${encodeURIComponent(task.caseId)}${
-              task.sourceLitigationActionId
-                ? `&actionId=${encodeURIComponent(task.sourceLitigationActionId)}`
-                : `&action=${encodeURIComponent(String(task.taskType || "").replace(/^Docket:\s*/, ""))}`
-            }`
-        : task.targetType === "case"
-          ? `case.html?caseId=${encodeURIComponent(task.caseId)}`
-        : `defendant.html?caseId=${encodeURIComponent(
-            task.caseId
-          )}&defendantId=${encodeURIComponent(task.defendantId)}`;
+      task.targetType === "general"
+        ? null
+        : task.targetType === "group"
+          ? `group.html?groupId=${encodeURIComponent(task.groupId)}`
+          : task.targetType === "docket"
+            ? `litigation-docket.html?tab=${encodeURIComponent(
+                task.jurisdiction || "NDIL"
+              )}&caseId=${encodeURIComponent(task.caseId)}${
+                task.sourceLitigationActionId
+                  ? `&actionId=${encodeURIComponent(task.sourceLitigationActionId)}`
+                  : `&action=${encodeURIComponent(String(task.taskType || "").replace(/^Docket:\s*/, ""))}`
+              }`
+            : task.targetType === "case"
+              ? `case.html?caseId=${encodeURIComponent(task.caseId)}`
+              : `defendant.html?caseId=${encodeURIComponent(
+                  task.caseId
+                )}&defendantId=${encodeURIComponent(task.defendantId)}`;
+    const titleHtml = targetUrl
+      ? `<a class="card-title task-link" href="${targetUrl}">${escapeHtml(task.taskType)}</a>`
+      : `<span class="card-title">${escapeHtml(task.taskType)}</span>`;
     row.innerHTML = `
       <div class="row-left">
-        <a class="card-title task-link" href="${targetUrl}">${escapeHtml(task.taskType)}</a>
+        ${titleHtml}
         <div class="card-meta">
-          <span>${escapeHtml(task.caseName || "Case")}</span>
+          ${task.targetType !== "general" ? `<span>${escapeHtml(task.caseName || "Case")}</span>` : ""}
           <span>${
-            task.targetType === "group"
-              ? escapeHtml(task.groupName || "Group")
-              : task.targetType === "docket"
-                ? "Docket Entry"
-              : task.targetType === "case"
-                ? "Case Reminder"
-                : escapeHtml(task.defendantName || "Defendant")
+            task.targetType === "general"
+              ? "General Task"
+              : task.targetType === "group"
+                ? escapeHtml(task.groupName || "Group")
+                : task.targetType === "docket"
+                  ? "Docket Entry"
+                  : task.targetType === "case"
+                    ? "Case Reminder"
+                    : escapeHtml(task.defendantName || "Defendant")
           }</span>
           ${
             task.taskRole === "collaborator"

@@ -2084,7 +2084,7 @@ app.get("/api/tasks/my", async (req, res) => {
             docket_action.final_due_date AS fallback_final_due_date,
             docket_action.assigned_to_label AS source_action_assigned_to_label
      FROM tasks t
-     JOIN cases c ON c.id = t.case_id
+     LEFT JOIN cases c ON c.id = t.case_id
      LEFT JOIN defendants d ON d.id = t.defendant_id
      LEFT JOIN groups g ON g.id = t.group_id
      LEFT JOIN users u ON u.id = t.assigned_to_user_id
@@ -2125,7 +2125,9 @@ app.get("/api/tasks/my", async (req, res) => {
           ? "defendant"
           : String(row.task_type || "").startsWith("Docket:")
             ? "docket"
-            : "case",
+            : row.case_id
+              ? "case"
+              : "general",
       taskType: row.task_type,
       dueDate: row.due_date || row.fallback_final_due_date,
       status: row.status,
