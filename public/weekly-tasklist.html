@@ -28,13 +28,13 @@
           </div>
         </div>
 
-        <div id="new-general-task-modal" class="modal-overlay hidden">
-          <div class="modal">
-            <div class="modal-header">
+        <div id="new-general-task-modal" class="modal hidden">
+          <div class="modal-card">
+            <div class="info-card-header">
               <h3>New General Task</h3>
-              <button class="ghost-button modal-close" type="button">✕</button>
+              <button class="ghost-button modal-close" type="button">Close</button>
             </div>
-            <form id="new-general-task-form" class="modal-body form-stack">
+            <form id="new-general-task-form" class="form-grid">
               <label class="form-field">
                 <span>Task Name</span>
                 <input id="general-task-name" name="taskType" type="text" required placeholder="What needs to be done?" />
@@ -49,10 +49,9 @@
                 <span>Due Date</span>
                 <input id="general-task-due" name="dueDate" type="date" required />
               </label>
-              <div id="general-task-error" class="form-error"></div>
             </form>
             <div class="form-actions">
-              <button class="ghost-button modal-close" type="button">Cancel</button>
+              <div id="general-task-error" class="form-error"></div>
               <button id="save-general-task" class="ghost-button" type="submit" form="new-general-task-form">Create Task</button>
             </div>
           </div>
