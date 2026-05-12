@@ -22,6 +22,39 @@
               <h2>Weekly Tasklist</h2>
               <div id="weekly-tasklist-subtitle" class="muted">Current work week</div>
             </div>
+            <div class="panel-header-actions">
+              <button id="new-general-task-btn" class="ghost-button" type="button">+ New Task</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="new-general-task-modal" class="modal-overlay hidden">
+          <div class="modal">
+            <div class="modal-header">
+              <h3>New General Task</h3>
+              <button class="ghost-button modal-close" type="button">✕</button>
+            </div>
+            <form id="new-general-task-form" class="modal-body form-stack">
+              <label class="form-field">
+                <span>Task Name</span>
+                <input id="general-task-name" name="taskType" type="text" required placeholder="What needs to be done?" />
+              </label>
+              <label class="form-field">
+                <span>Assign To</span>
+                <select id="general-task-assignee" name="assignedToUserId">
+                  <option value="">Unassigned</option>
+                </select>
+              </label>
+              <label class="form-field">
+                <span>Due Date</span>
+                <input id="general-task-due" name="dueDate" type="date" required />
+              </label>
+              <div id="general-task-error" class="form-error"></div>
+            </form>
+            <div class="form-actions">
+              <button class="ghost-button modal-close" type="button">Cancel</button>
+              <button id="save-general-task" class="ghost-button" type="submit" form="new-general-task-form">Create Task</button>
+            </div>
           </div>
         </div>
         <div id="weekly-task-groups" class="group-stack"></div>

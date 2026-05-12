@@ -2151,7 +2151,7 @@ app.get("/api/tasks", async (req, res) => {
             COALESCE(docket_action.is_hidden, FALSE) AS source_action_is_hidden,
             docket_action.assigned_to_label AS source_action_assigned_to_label
      FROM tasks t
-     JOIN cases c ON c.id = t.case_id
+     LEFT JOIN cases c ON c.id = t.case_id
      LEFT JOIN defendants d ON d.id = t.defendant_id
      LEFT JOIN groups g ON g.id = t.group_id
      LEFT JOIN users u ON u.id = t.assigned_to_user_id
@@ -2188,7 +2188,9 @@ app.get("/api/tasks", async (req, res) => {
           ? "defendant"
           : String(row.task_type || "").startsWith("Docket:")
             ? "docket"
-            : "case",
+            : row.case_id
+              ? "case"
+              : "general",
       taskType: row.task_type,
       dueDate: row.due_date || row.fallback_final_due_date,
       status: row.status,
@@ -2203,8 +2205,8 @@ app.get("/api/tasks", async (req, res) => {
 
 app.post("/api/tasks", async (req, res) => {
   const { caseId, defendantId, taskType, assignedToUserId, dueDate } = req.body;
-  if (!caseId || !defendantId || !taskType || !assignedToUserId || !dueDate) {
-    return res.status(400).json({ error: "Missing required task fields." });
+  if (!taskType || !dueDate) {
+    return res.status(400).json({ error: "taskType and dueDate are required." });
   }
 
   const result = await query(
@@ -2213,10 +2215,10 @@ app.post("/api/tasks", async (req, res) => {
      VALUES ($1,$2,$3,$4,$5,'Open',$6)
      RETURNING *`,
     [
-      caseId,
-      defendantId,
+      caseId || null,
+      defendantId || null,
       taskType,
-      assignedToUserId,
+      assignedToUserId || null,
       dueDate,
       req.session.userId,
     ]

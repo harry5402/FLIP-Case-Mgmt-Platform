@@ -5,30 +5,34 @@ const weekdayLabels = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 const collapsedWeeklyBuckets = new Set();
 
 const getTaskTargetUrl = (task) =>
-  task.targetType === "group"
-    ? `group.html?groupId=${encodeURIComponent(task.groupId)}`
-    : task.targetType === "docket"
-      ? `litigation-docket.html?tab=${encodeURIComponent(
-          task.jurisdiction || "NDIL"
-        )}&caseId=${encodeURIComponent(task.caseId)}${
-          task.sourceLitigationActionId
-            ? `&actionId=${encodeURIComponent(task.sourceLitigationActionId)}`
-            : `&action=${encodeURIComponent(String(task.taskType || "").replace(/^Docket:\s*/, ""))}`
-        }`
-      : task.targetType === "case"
-        ? `case.html?caseId=${encodeURIComponent(task.caseId)}`
-        : `defendant.html?caseId=${encodeURIComponent(
-            task.caseId
-          )}&defendantId=${encodeURIComponent(task.defendantId)}`;
+  task.targetType === "general"
+    ? null
+    : task.targetType === "group"
+      ? `group.html?groupId=${encodeURIComponent(task.groupId)}`
+      : task.targetType === "docket"
+        ? `litigation-docket.html?tab=${encodeURIComponent(
+            task.jurisdiction || "NDIL"
+          )}&caseId=${encodeURIComponent(task.caseId)}${
+            task.sourceLitigationActionId
+              ? `&actionId=${encodeURIComponent(task.sourceLitigationActionId)}`
+              : `&action=${encodeURIComponent(String(task.taskType || "").replace(/^Docket:\s*/, ""))}`
+          }`
+        : task.targetType === "case"
+          ? `case.html?caseId=${encodeURIComponent(task.caseId)}`
+          : `defendant.html?caseId=${encodeURIComponent(
+              task.caseId
+            )}&defendantId=${encodeURIComponent(task.defendantId)}`;
 
 const getTaskContextLabel = (task) =>
-  task.targetType === "group"
-    ? escapeHtml(task.groupName || "Group")
-    : task.targetType === "docket"
-      ? "Docket Entry"
-      : task.targetType === "case"
-        ? "Case Reminder"
-        : escapeHtml(task.defendantName || "Defendant");
+  task.targetType === "general"
+    ? "General Task"
+    : task.targetType === "group"
+      ? escapeHtml(task.groupName || "Group")
+      : task.targetType === "docket"
+        ? "Docket Entry"
+        : task.targetType === "case"
+          ? "Case Reminder"
+          : escapeHtml(task.defendantName || "Defendant");
 
 const startOfDay = (date) => {
   const next = new Date(date);
@@ -85,11 +89,15 @@ const createTaskCard = (task) => {
     : task.assignedToEmail || task.assignedToLabel || "Unassigned";
   const row = document.createElement("div");
   row.className = `card row${isInProgress ? " is-in-progress" : ""}`;
+  const targetUrl = getTaskTargetUrl(task);
+  const titleHtml = targetUrl
+    ? `<a class="card-title task-link" href="${targetUrl}">${escapeHtml(task.taskType)}</a>`
+    : `<span class="card-title">${escapeHtml(task.taskType)}</span>`;
   row.innerHTML = `
     <div class="row-left">
-      <a class="card-title task-link" href="${getTaskTargetUrl(task)}">${escapeHtml(task.taskType)}</a>
+      ${titleHtml}
       <div class="card-meta">
-        <span>${escapeHtml(task.caseName || "Case")}</span>
+        ${task.targetType !== "general" ? `<span>${escapeHtml(task.caseName || "Case")}</span>` : ""}
         <span>${getTaskContextLabel(task)}</span>
         <span>Assigned to ${escapeHtml(assigneeLabel)}</span>
         ${task.taskRole === "collaborator" ? "<span>Support Task</span>" : ""}
@@ -219,6 +227,57 @@ const renderWeeklyTasks = (tasks) => {
 const init = async () => {
   const tasks = await loadAllTasks();
   renderWeeklyTasks(tasks);
+
+  const modal = document.getElementById("new-general-task-modal");
+  const openBtn = document.getElementById("new-general-task-btn");
+  const form = document.getElementById("new-general-task-form");
+  const errorEl = document.getElementById("general-task-error");
+  const assigneeSelect = document.getElementById("general-task-assignee");
+
+  const openModal = () => {
+    form.reset();
+    errorEl.textContent = "";
+    modal.classList.remove("hidden");
+  };
+  const closeModal = () => modal.classList.add("hidden");
+
+  openBtn.addEventListener("click", openModal);
+  modal.querySelectorAll(".modal-close").forEach((btn) => btn.addEventListener("click", closeModal));
+  modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
+
+  try {
+    const response = await authFetch("/api/users");
+    const users = await response.json();
+    users.forEach((u) => {
+      const opt = document.createElement("option");
+      opt.value = u.id;
+      opt.textContent = u.name || u.email;
+      assigneeSelect.appendChild(opt);
+    });
+  } catch (_) {}
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    errorEl.textContent = "";
+    const data = new FormData(form);
+    const payload = {
+      taskType: String(data.get("taskType") || "").trim(),
+      assignedToUserId: data.get("assignedToUserId") || null,
+      dueDate: data.get("dueDate"),
+    };
+    if (!payload.taskType || !payload.dueDate) {
+      errorEl.textContent = "Task name and due date are required.";
+      return;
+    }
+    const result = await createTask(payload);
+    if (result?.error) {
+      errorEl.textContent = result.error;
+      return;
+    }
+    closeModal();
+    const refreshed = await loadAllTasks();
+    renderWeeklyTasks(refreshed);
+  });
 };
 
 init();
