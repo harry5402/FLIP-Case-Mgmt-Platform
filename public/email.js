@@ -183,13 +183,22 @@ async function renderSidebar() {
     container.appendChild(block);
   }
 
-  // Connect buttons
-  document.getElementById("connect-personal-btn")?.addEventListener("click", () => {
-    window.location.href = "/auth/microsoft/connect";
-  });
-  document.getElementById("connect-shared-btn")?.addEventListener("click", () => {
-    window.location.href = "/auth/microsoft/connect?shared=1";
-  });
+  // Connect buttons — fetch auth URL first (needs auth header), then redirect
+  const startOAuth = async (shared = false) => {
+    const res = await apiFetch("/api/email/oauth/start", {
+      method: "POST",
+      body: { shared },
+    });
+    if (!res.ok) {
+      showToast("Failed to start Microsoft login. Please try again.", "error");
+      return;
+    }
+    const { authUrl } = await res.json();
+    window.location.href = authUrl;
+  };
+
+  document.getElementById("connect-personal-btn")?.addEventListener("click", () => startOAuth(false));
+  document.getElementById("connect-shared-btn")?.addEventListener("click", () => startOAuth(true));
 
   // Triage nav button
   document.getElementById("triage-nav-btn")?.addEventListener("click", () => {

@@ -272,12 +272,13 @@ Has legal representation: ${hasRepresentation ? "Yes" : "No"}`,
 // ---------------------------------------------------------------------------
 module.exports = function registerEmailRoutes(app, { requireSession, query, withTransaction, writeAuditLog }) {
   // -------------------------------------------------------------------------
-  // OAuth — Start
-  // GET /auth/microsoft/connect?shared=1
+  // OAuth — Start (API endpoint — returns auth URL to frontend)
+  // POST /api/email/oauth/start  { shared: true|false }
+  // Frontend calls this with fetch (auth header included), then redirects to URL
   // -------------------------------------------------------------------------
-  app.get("/auth/microsoft/connect", requireSession, async (req, res) => {
+  app.post("/api/email/oauth/start", requireSession, async (req, res) => {
     try {
-      const isShared = req.query.shared === "1";
+      const isShared = req.body?.shared === true;
       const state = Buffer.from(
         JSON.stringify({ userId: req.session.userId, isShared })
       ).toString("base64");
@@ -289,10 +290,10 @@ module.exports = function registerEmailRoutes(app, { requireSession, query, with
         prompt: "select_account",
       });
 
-      res.redirect(authUrl);
+      res.json({ authUrl });
     } catch (err) {
-      console.error("[OAuth] Connect error:", err);
-      res.redirect("/email.html?error=oauth_start_failed");
+      console.error("[OAuth] Start error:", err);
+      res.status(500).json({ error: "Failed to generate Microsoft login URL." });
     }
   });
 
