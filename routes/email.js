@@ -12,8 +12,6 @@ const MS_SCOPES = [
   "Mail.ReadWrite",
   "Mail.Send",
   "User.Read",
-  "Chat.Create",
-  "ChatMessage.Send",
   "offline_access",
 ];
 
