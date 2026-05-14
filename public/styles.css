@@ -467,6 +467,13 @@ tbody td {
   overflow: auto;
 }
 
+#collections-modal thead th {
+  position: sticky;
+  top: 0;
+  background: #fffdf9;
+  z-index: 1;
+}
+
 #collections-modal .form-actions,
 #hidden-mbfd-modal .form-actions,
 #hidden-actions-modal .form-actions {

@@ -69,6 +69,7 @@ const docketStatusOptions = [
 
 const docketCaseTabs = ["NDIL", "GAND", "NDIN", "MDFL", "WDPA", "EDWI", "EDMO", "UNFILED"];
 const LEAD_COUNSEL_ASSIGNEE = "__lead_counsel__";
+const DEFENDANT_ASSIGNEE = "__defendant__";
 const jurisdictionDisplayLabels = {
   NDIL: "ILND",
   GAND: "GAND",
@@ -215,7 +216,9 @@ const createLitigationCase = (payload) =>
 
 const getAssignedToSelectValue = (entry = {}) => {
   if (entry.assignedToUserId) return entry.assignedToUserId;
-  return entry.assignedToLabel === "Lead Counsel" ? LEAD_COUNSEL_ASSIGNEE : "";
+  if (entry.assignedToLabel === "Lead Counsel") return LEAD_COUNSEL_ASSIGNEE;
+  if (entry.assignedToLabel === "Defendant") return DEFENDANT_ASSIGNEE;
+  return "";
 };
 
 const buildUserOptions = (selectedValue) => {
@@ -224,6 +227,9 @@ const buildUserOptions = (selectedValue) => {
     `<option value="${LEAD_COUNSEL_ASSIGNEE}" ${
       selectedValue === LEAD_COUNSEL_ASSIGNEE ? "selected" : ""
     }>Lead Counsel</option>`,
+    `<option value="${DEFENDANT_ASSIGNEE}" ${
+      selectedValue === DEFENDANT_ASSIGNEE ? "selected" : ""
+    }>Defendant</option>`,
   ];
   userOptions.forEach((user) => {
     const label = user.name ? `${user.name} (${user.email})` : user.email;
@@ -569,14 +575,17 @@ const readEntryRows = (tbody) =>
   Array.from(tbody.querySelectorAll("tr")).map((row) => ({
     id: row.dataset.actionId || null,
     action: row.querySelector('[data-field="action"]').value.trim(),
-    assignedToUserId:
-      row.querySelector('[data-field="assignedToUserId"]').value === LEAD_COUNSEL_ASSIGNEE
+    assignedToUserId: [LEAD_COUNSEL_ASSIGNEE, DEFENDANT_ASSIGNEE].includes(
+        row.querySelector('[data-field="assignedToUserId"]').value
+      )
         ? null
         : row.querySelector('[data-field="assignedToUserId"]').value || null,
     assignedToLabel:
       row.querySelector('[data-field="assignedToUserId"]').value === LEAD_COUNSEL_ASSIGNEE
         ? "Lead Counsel"
-        : null,
+        : row.querySelector('[data-field="assignedToUserId"]').value === DEFENDANT_ASSIGNEE
+          ? "Defendant"
+          : null,
     collaboratorUserIds: Array.from(
       row.querySelector('[data-field="collaboratorUserIds"]').selectedOptions || []
     ).map((option) => option.value),
