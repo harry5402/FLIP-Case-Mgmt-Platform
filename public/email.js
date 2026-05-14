@@ -215,26 +215,54 @@ async function renderSidebar() {
 
 function renderFolderTree(nodes, container, accountId, depth = 0) {
   for (const node of nodes) {
+    const hasChildren = node.children?.length > 0;
+    const wrapper = document.createElement("div");
+
     const item = document.createElement("div");
     item.className = "folder-item";
     item.style.paddingLeft = `${10 + depth * 12}px`;
     item.innerHTML = `
+      ${hasChildren
+        ? `<span class="folder-chevron" style="font-size:9px;opacity:0.5;width:12px;flex-shrink:0;transition:transform 0.15s;">▶</span>`
+        : `<span style="width:12px;flex-shrink:0;"></span>`}
       <span class="folder-icon">📁</span>
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(node.name)}</span>
       ${node.unreadItemCount > 0 ? `<span class="folder-unread">${node.unreadItemCount}</span>` : ""}
     `;
+
+    let childContainer = null;
+    if (hasChildren) {
+      childContainer = document.createElement("div");
+      childContainer.className = "hidden";
+      renderFolderTree(node.children, childContainer, accountId, depth + 1);
+
+      // Clicking the chevron toggles children without navigating
+      const chevron = item.querySelector(".folder-chevron");
+      chevron.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const collapsed = childContainer.classList.contains("hidden");
+        childContainer.classList.toggle("hidden", !collapsed);
+        chevron.style.transform = collapsed ? "rotate(90deg)" : "";
+      });
+    }
+
     item.addEventListener("click", () => {
       document.querySelectorAll(".folder-item.active, .triage-btn.active")
         .forEach((el) => el.classList.remove("active"));
       item.classList.add("active");
       activeView = { type: "folder", accountId, folderId: node.id, folderName: node.name };
       loadMessages(accountId, node.id, node.name);
-    });
-    container.appendChild(item);
 
-    if (node.children?.length) {
-      renderFolderTree(node.children, container, accountId, depth + 1);
-    }
+      // Auto-expand children on click if collapsed
+      if (hasChildren && childContainer.classList.contains("hidden")) {
+        childContainer.classList.remove("hidden");
+        item.querySelector(".folder-chevron").style.transform = "rotate(90deg)";
+      }
+    });
+
+    wrapper.appendChild(item);
+    if (childContainer) wrapper.appendChild(childContainer);
+    container.appendChild(wrapper);
   }
 }
 
