@@ -22,6 +22,23 @@ const formatDateTime = (value) => {
   });
 };
 
+const downloadReport = async (reportId, weekStart) => {
+  const response = await authFetch(`/api/weekly-reports/${encodeURIComponent(reportId)}/download`);
+  if (!response.ok) {
+    reportsError.textContent = "Unable to download report.";
+    return;
+  }
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `weekly-report-${String(weekStart).slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 const renderReports = (reports) => {
   reportsList.innerHTML = "";
   if (!reports.length) {
@@ -42,9 +59,12 @@ const renderReports = (reports) => {
         </div>
       </div>
       <div class="row-right">
-        <a class="ghost-button" href="/api/weekly-reports/${encodeURIComponent(report.id)}/download">Download CSV</a>
+        <button class="ghost-button download-btn" type="button" data-id="${escapeHtml(report.id)}" data-week="${escapeHtml(String(report.week_start))}">Download CSV</button>
       </div>
     `;
+    row.querySelector(".download-btn").addEventListener("click", () => {
+      downloadReport(report.id, report.week_start);
+    });
     reportsList.appendChild(row);
   });
 };

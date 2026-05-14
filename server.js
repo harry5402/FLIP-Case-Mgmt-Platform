@@ -287,13 +287,18 @@ const requireAdmin = (req, res, next) => {
 };
 
 const requireWeeklyReportAccess = async (req, res, next) => {
-  if (req.session.role === 'admin') return next();
-  const result = await query(
-    'SELECT allow_weekly_report FROM users WHERE id = $1 LIMIT 1',
-    [req.session.userId]
-  );
-  if (result.rows[0]?.allow_weekly_report) return next();
-  return res.status(403).json({ error: 'Access denied.' });
+  try {
+    if (req.session.role === 'admin') return next();
+    const result = await query(
+      'SELECT allow_weekly_report FROM users WHERE id = $1 LIMIT 1',
+      [req.session.userId]
+    );
+    if (result.rows[0]?.allow_weekly_report) return next();
+    return res.status(403).json({ error: 'Access denied.' });
+  } catch (err) {
+    console.error('[requireWeeklyReportAccess]', err);
+    return res.status(500).json({ error: 'Internal server error.' });
+  }
 };
 
 const safeJson = (value) => {
