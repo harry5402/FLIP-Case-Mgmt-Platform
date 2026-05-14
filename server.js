@@ -4419,18 +4419,6 @@ app.post("/api/weekly-reports/generate", requireSession, requireAdmin, async (re
   res.json({ ok: true, reportId: result?.id });
 });
 
-app.use("/api", (req, res) => {
-  res.status(404).json({ error: "Not found" });
-});
-
-app.use((err, req, res, next) => {
-  if (err && err.message === "Blocked by CORS policy") {
-    return res.status(403).json({ error: "Origin not allowed." });
-  }
-  console.error(err);
-  return res.status(500).json({ error: "Internal server error" });
-});
-
 // ---------------------------------------------------------------------------
 // Email integration — DB migrations
 // ---------------------------------------------------------------------------
@@ -4509,6 +4497,19 @@ const ensureEmailTables = async () => {
 // ---------------------------------------------------------------------------
 const registerEmailRoutes = require("./routes/email");
 registerEmailRoutes(app, { requireSession, query, withTransaction, writeAuditLog });
+
+// Catch-all and error handler must stay after all route registrations
+app.use("/api", (req, res) => {
+  res.status(404).json({ error: "Not found" });
+});
+
+app.use((err, req, res, next) => {
+  if (err && err.message === "Blocked by CORS policy") {
+    return res.status(403).json({ error: "Origin not allowed." });
+  }
+  console.error(err);
+  return res.status(500).json({ error: "Internal server error" });
+});
 
 const start = async () => {
   await ensureAuditLogTable();
