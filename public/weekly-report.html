@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Weekly Reports</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <a class="pill" href="index.html">Back to Dashboard</a>
+      <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
+      <button id="logout-button" class="ghost-button" type="button">Logout</button>
+    </header>
+
+    <main class="layout single">
+      <section class="panel">
+        <div class="panel-header">
+          <div class="panel-header-row">
+            <div>
+              <h2>Weekly Reports</h2>
+              <div class="muted">Task completion by user, generated every Saturday</div>
+            </div>
+            <div id="admin-actions" class="tab-switch hidden">
+              <button id="generate-button" class="ghost-button" type="button">Generate Now</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="reports-error" class="form-error"></div>
+        <div id="reports-list" class="list"></div>
+        <div id="reports-empty" class="muted hidden" style="padding: 1rem;">No reports generated yet.</div>
+      </section>
+    </main>
+
+    <script src="auth.js"></script>
+    <script>
+      requireAuth();
+    </script>
+    <script src="weekly-report.js"></script>
+  </body>
+</html>

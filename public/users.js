@@ -28,6 +28,11 @@ const renderUsers = (users) => {
           ${user.allow_weekly_task_cleanup ? "On" : "Off"}
         </button>
       </td>
+      <td>
+        <button class="ghost-button weekly-report-toggle" type="button" data-user-id="${user.id}">
+          ${user.allow_weekly_report ? "On" : "Off"}
+        </button>
+      </td>
       <td>${formatDate(user.created_at)}</td>
       <td>
         <button class="ghost-button logout-all-user" type="button" data-user-id="${user.id}" ${
@@ -50,6 +55,21 @@ const renderUsers = (users) => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         usersError.textContent = payload?.error || "Unable to update weekly cleanup setting.";
+        return;
+      }
+      await loadUsers();
+    });
+    const reportButton = row.querySelector(".weekly-report-toggle");
+    reportButton.addEventListener("click", async () => {
+      usersError.textContent = "";
+      const response = await authFetch(`/api/users/${user.id}/weekly-report-access`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowWeeklyReport: !user.allow_weekly_report }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        usersError.textContent = payload?.error || "Unable to update weekly report setting.";
         return;
       }
       await loadUsers();

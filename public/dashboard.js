@@ -1,5 +1,6 @@
 const caseGroups = document.getElementById("case-groups");
 const usersLink = document.getElementById("users-link");
+const weeklyReportLink = document.getElementById("weekly-report-link");
 const logoutButton = document.getElementById("logout-button");
 const logoutAllButton = document.getElementById("logout-all-button");
 const changePasswordButton = document.getElementById("change-password-button");
@@ -212,6 +213,9 @@ const init = async () => {
     usersLink.classList.remove("hidden");
   } else {
     changePasswordButton.classList.remove("hidden");
+  }
+  if (isAdmin() || getUser()?.allowWeeklyReport) {
+    weeklyReportLink.classList.remove("hidden");
   }
   logoutButton.addEventListener("click", signOut);
   logoutAllButton.addEventListener("click", async () => {

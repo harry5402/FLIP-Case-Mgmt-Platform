@@ -286,6 +286,16 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+const requireWeeklyReportAccess = async (req, res, next) => {
+  if (req.session.role === 'admin') return next();
+  const result = await query(
+    'SELECT allow_weekly_report FROM users WHERE id = $1 LIMIT 1',
+    [req.session.userId]
+  );
+  if (result.rows[0]?.allow_weekly_report) return next();
+  return res.status(403).json({ error: 'Access denied.' });
+};
+
 const safeJson = (value) => {
   try {
     return JSON.stringify(value ?? null);
@@ -341,6 +351,28 @@ const ensureUserPermissionsColumns = async () => {
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS allow_weekly_task_cleanup BOOLEAN NOT NULL DEFAULT FALSE
   `);
+  await query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS allow_weekly_report BOOLEAN NOT NULL DEFAULT FALSE
+  `);
+};
+
+const ensureTaskCompletedAt = async () => {
+  await query(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`);
+};
+
+const ensureWeeklyReportTable = async () => {
+  await query(`
+    CREATE TABLE IF NOT EXISTS weekly_reports (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      week_start DATE NOT NULL,
+      week_end DATE NOT NULL,
+      generated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      csv_data TEXT NOT NULL,
+      generated_by TEXT
+    )
+  `);
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS weekly_reports_week_start_idx ON weekly_reports (week_start)`);
 };
 
 const ensureCaseUpdatedAtTimestamp = async () => {
@@ -732,6 +764,137 @@ const loadWeeklyCleanupPermission = async (userId) => {
   return Boolean(result.rows[0]?.allow_weekly_task_cleanup);
 };
 
+const getWeekBounds = (refDate) => {
+  const d = new Date(refDate);
+  const day = d.getDay(); // 0=Sun, 6=Sat
+  const daysToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(d);
+  monday.setDate(d.getDate() + daysToMonday);
+  monday.setHours(0, 0, 0, 0);
+  const friday = new Date(monday);
+  friday.setDate(monday.getDate() + 4);
+  friday.setHours(23, 59, 59, 999);
+  return { weekStart: monday, weekEnd: friday };
+};
+
+const toDateString = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+const escapeCsvField = (value) => {
+  const s = String(value ?? '');
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+};
+
+const generateWeeklyReport = async (weekStart, weekEnd, generatedBy) => {
+  const weekStartStr = toDateString(weekStart);
+  const weekEndStr = toDateString(weekEnd);
+
+  const { rows } = await query(
+    `SELECT
+       u.name AS user_name,
+       u.email AS user_email,
+       t.task_type,
+       t.due_date,
+       t.status,
+       COALESCE(t.completed_at, la.completed_at) AS effective_completed_at,
+       c.case_name,
+       d.name AS defendant_name,
+       g.group_name
+     FROM tasks t
+     JOIN users u ON u.id = t.assigned_to_user_id
+     LEFT JOIN cases c ON c.id = t.case_id
+     LEFT JOIN defendants d ON d.id = t.defendant_id
+     LEFT JOIN groups g ON g.id = t.group_id
+     LEFT JOIN litigation_actions la ON la.id = t.source_litigation_action_id
+     WHERE t.assigned_to_user_id IS NOT NULL
+       AND (
+         (t.due_date >= $1 AND t.due_date <= $2)
+         OR (t.due_date < $1 AND t.status <> 'Complete')
+       )
+     ORDER BY u.name, t.due_date NULLS LAST`,
+    [weekStartStr, weekEndStr]
+  );
+
+  const classifyTask = (row) => {
+    if (row.status === 'Complete') {
+      const completedAt = row.effective_completed_at ? new Date(row.effective_completed_at) : null;
+      if (!completedAt) return 'Completed (date unknown)';
+      const dueEnd = new Date(row.due_date);
+      dueEnd.setHours(23, 59, 59, 999);
+      return completedAt <= dueEnd ? 'Completed On Time' : 'Completed Late';
+    }
+    return 'Overdue';
+  };
+
+  const taskContext = (row) => {
+    if (row.group_name) return row.group_name;
+    if (row.defendant_name) return row.defendant_name;
+    if (row.case_name) return row.case_name;
+    return '—';
+  };
+
+  const lines = [];
+  lines.push(`Week: ${weekStartStr} to ${weekEndStr}`);
+  lines.push(`Generated: ${new Date().toISOString()}`);
+  lines.push('');
+  lines.push('TASK DETAIL');
+  lines.push(['User Name', 'User Email', 'Task', 'Context', 'Due Date', 'Completed At', 'Result'].map(escapeCsvField).join(','));
+
+  const userSummary = {};
+
+  for (const row of rows) {
+    const result = classifyTask(row);
+    const completedAtStr = row.effective_completed_at
+      ? new Date(row.effective_completed_at).toISOString().replace('T', ' ').slice(0, 19)
+      : '';
+    const dueDateStr = row.due_date ? String(row.due_date).slice(0, 10) : '';
+
+    lines.push([
+      row.user_name || row.user_email,
+      row.user_email,
+      row.task_type,
+      taskContext(row),
+      dueDateStr,
+      completedAtStr,
+      result,
+    ].map(escapeCsvField).join(','));
+
+    const key = row.user_email;
+    if (!userSummary[key]) {
+      userSummary[key] = { name: row.user_name || row.user_email, email: row.user_email, onTime: 0, late: 0, overdue: 0 };
+    }
+    if (result === 'Completed On Time') userSummary[key].onTime++;
+    else if (result === 'Completed Late') userSummary[key].late++;
+    else if (result === 'Overdue') userSummary[key].overdue++;
+  }
+
+  lines.push('');
+  lines.push('USER SUMMARY');
+  lines.push(['User Name', 'User Email', 'Completed On Time', 'Completed Late', 'Still Overdue', 'Total Tasks'].map(escapeCsvField).join(','));
+  for (const s of Object.values(userSummary)) {
+    const total = s.onTime + s.late + s.overdue;
+    lines.push([s.name, s.email, s.onTime, s.late, s.overdue, total].map(escapeCsvField).join(','));
+  }
+
+  const csvData = lines.join('\n');
+  const result = await query(
+    `INSERT INTO weekly_reports (week_start, week_end, csv_data, generated_by)
+     VALUES ($1, $2, $3, $4)
+     ON CONFLICT (week_start) DO UPDATE SET csv_data = EXCLUDED.csv_data, generated_at = NOW(), generated_by = EXCLUDED.generated_by
+     RETURNING id`,
+    [weekStartStr, weekEndStr, csvData, generatedBy || 'system']
+  );
+  console.log(`[weekly-report] Generated report for week ${weekStartStr}: id=${result.rows[0]?.id}`);
+  return result.rows[0];
+};
+
 const ensureAdminUser = async () => {
   const passwordHash = hashPassword(ADMIN_PASSWORD);
   await query(
@@ -803,6 +966,7 @@ app.post("/api/auth/login", async (req, res) => {
       name: user.name || "",
       email: user.email,
       role: user.role,
+      allowWeeklyReport: Boolean(user.allow_weekly_report),
     },
     session: {
       idleTimeoutMinutes: IDLE_TIMEOUT_MINUTES,
@@ -892,7 +1056,7 @@ app.post("/api/auth/change-password", requireSession, async (req, res) => {
 
 app.get("/api/users", requireSession, requireAdmin, async (req, res) => {
   const result = await query(
-    `SELECT id, name, email, role, allow_weekly_task_cleanup, created_at
+    `SELECT id, name, email, role, allow_weekly_task_cleanup, allow_weekly_report, created_at
      FROM users
      ORDER BY created_at DESC`
   );
@@ -958,6 +1122,25 @@ app.put("/api/users/:id/weekly-task-cleanup", requireSession, requireAdmin, asyn
     },
   });
 
+  res.json(result.rows[0]);
+});
+
+app.put("/api/users/:id/weekly-report-access", requireSession, requireAdmin, async (req, res) => {
+  const allow = Boolean(req.body?.allowWeeklyReport);
+  const existing = await query('SELECT id, email FROM users WHERE id = $1', [req.params.id]);
+  if (!existing.rows.length) return res.status(404).json({ error: 'User not found.' });
+  const result = await query(
+    `UPDATE users SET allow_weekly_report = $2 WHERE id = $1
+     RETURNING id, name, email, role, allow_weekly_task_cleanup, allow_weekly_report, created_at`,
+    [req.params.id, allow]
+  );
+  await writeAuditLog(req, {
+    action: 'users.weekly_report_access',
+    entityType: 'user',
+    entityId: req.params.id,
+    before: { allowWeeklyReport: !allow, email: existing.rows[0].email },
+    after: { allowWeeklyReport: allow, email: existing.rows[0].email },
+  });
   res.json(result.rows[0]);
 });
 
@@ -2288,7 +2471,7 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
 
   const result = await query(
     `UPDATE tasks
-     SET status = 'Complete'
+     SET status = 'Complete', completed_at = NOW()
      WHERE id = $1
        AND (
          assigned_to_user_id = $2
@@ -2344,7 +2527,7 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
       if (currentTask.syncedDocketAction) {
         await query(
           `UPDATE tasks
-           SET status = 'Complete'
+           SET status = 'Complete', completed_at = NOW()
            WHERE source_litigation_action_id = $1
              AND id <> $2
              AND status <> 'Complete'`,
@@ -4193,6 +4376,44 @@ app.put("/api/defendants/:id/bookkeeping", async (req, res) => {
   res.json({ ok: true });
 });
 
+app.get("/api/weekly-reports", requireWeeklyReportAccess, async (req, res) => {
+  const { rows } = await query(
+    `SELECT id, week_start, week_end, generated_at, generated_by
+     FROM weekly_reports
+     ORDER BY week_start DESC`
+  );
+  res.json(rows);
+});
+
+app.get("/api/weekly-reports/:id/download", requireWeeklyReportAccess, async (req, res) => {
+  const { rows } = await query(
+    'SELECT week_start, week_end, csv_data FROM weekly_reports WHERE id = $1',
+    [req.params.id]
+  );
+  if (!rows.length) return res.status(404).json({ error: 'Report not found.' });
+  const row = rows[0];
+  const filename = `weekly-report-${String(row.week_start).slice(0, 10)}.csv`;
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(row.csv_data);
+});
+
+app.post("/api/weekly-reports/generate", requireSession, requireAdmin, async (req, res) => {
+  const { weekStart: weekStartArg } = req.body || {};
+  let weekStart, weekEnd;
+  if (weekStartArg) {
+    weekStart = new Date(weekStartArg + 'T00:00:00');
+    weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 4);
+    weekEnd.setHours(23, 59, 59, 999);
+  } else {
+    ({ weekStart, weekEnd } = getWeekBounds(new Date()));
+  }
+  const actor = req.session?.name || req.session?.email || 'admin';
+  const result = await generateWeeklyReport(weekStart, weekEnd, actor);
+  res.json({ ok: true, reportId: result?.id });
+});
+
 app.use("/api", (req, res) => {
   res.status(404).json({ error: "Not found" });
 });
@@ -4208,10 +4429,30 @@ app.use((err, req, res, next) => {
 const start = async () => {
   await ensureAuditLogTable();
   await ensureUserPermissionsColumns();
+  await ensureTaskCompletedAt();
+  await ensureWeeklyReportTable();
   await ensureCaseUpdatedAtTimestamp();
   await ensureCaseDocketOnlyColumn();
   await ensureLitigationTables();
   await ensureAdminUser();
+  setInterval(async () => {
+    try {
+      const now = new Date();
+      if (now.getDay() !== 6) return; // not Saturday
+      if (now.getHours() !== 12) return; // not noon (server local time)
+      if (now.getMinutes() > 2) return; // outside 12:00–12:02 window
+      const { weekStart, weekEnd } = getWeekBounds(now);
+      const weekStartStr = toDateString(weekStart);
+      const existing = await query(
+        'SELECT id FROM weekly_reports WHERE week_start = $1',
+        [weekStartStr]
+      );
+      if (existing.rows.length) return;
+      await generateWeeklyReport(weekStart, weekEnd, 'scheduler');
+    } catch (err) {
+      console.error('[weekly-report] Scheduler error:', err);
+    }
+  }, 60_000);
   app.listen(PORT, () => {
     console.log(`API running on http://localhost:${PORT}`);
   });
