@@ -7,7 +7,6 @@ const Anthropic = require("@anthropic-ai/sdk");
 // Config
 // ---------------------------------------------------------------------------
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
-const REDIRECT_URI = `${process.env.APP_URL}/auth/microsoft/callback`;
 const MS_SCOPES = [
   "Mail.Read",
   "Mail.ReadWrite",
@@ -18,17 +17,34 @@ const MS_SCOPES = [
   "offline_access",
 ];
 
-const msalClient = new msal.ConfidentialClientApplication({
-  auth: {
-    clientId: process.env.MS_CLIENT_ID,
-    clientSecret: process.env.MS_CLIENT_SECRET,
-    authority: `https://login.microsoftonline.com/${process.env.MS_TENANT_ID}`,
-  },
-});
+// Lazy-initialize so missing env vars don't crash the server at startup
+let _msalClient = null;
+const getMsalClient = () => {
+  if (!_msalClient) {
+    if (!process.env.MS_CLIENT_ID || !process.env.MS_CLIENT_SECRET || !process.env.MS_TENANT_ID) {
+      throw new Error("MS_CLIENT_ID, MS_CLIENT_SECRET, and MS_TENANT_ID must be set in environment variables.");
+    }
+    _msalClient = new msal.ConfidentialClientApplication({
+      auth: {
+        clientId: process.env.MS_CLIENT_ID,
+        clientSecret: process.env.MS_CLIENT_SECRET,
+        authority: `https://login.microsoftonline.com/${process.env.MS_TENANT_ID}`,
+      },
+    });
+  }
+  return _msalClient;
+};
 
-const anthropic = new Anthropic.default({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+let _anthropic = null;
+const getAnthropic = () => {
+  if (!_anthropic) {
+    if (!process.env.ANTHROPIC_API_KEY) throw new Error("ANTHROPIC_API_KEY must be set.");
+    _anthropic = new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _anthropic;
+};
+
+const getRedirectUri = () => `${process.env.APP_URL}/auth/microsoft/callback`;
 
 // ---------------------------------------------------------------------------
 // Graph API helpers
@@ -71,7 +87,7 @@ async function getValidToken(accountId, db) {
 
   // Refresh
   try {
-    const tokenResponse = await msalClient.acquireTokenByRefreshToken({
+    const tokenResponse = await getMsalClient().acquireTokenByRefreshToken({
       refreshToken: account.refresh_token,
       scopes: MS_SCOPES,
     });
@@ -186,7 +202,7 @@ async function suggestFolder(subject, folders) {
     .map((f) => `- "${f.path}" (id: ${f.folder_id})`)
     .join("\n");
 
-  const response = await anthropic.messages.create({
+  const response = await getAnthropic().messages.create({
     model: "claude-opus-4-5",
     max_tokens: 256,
     messages: [
@@ -228,7 +244,7 @@ async function draftSettlementReply(context) {
     ? "professional lawyer-to-lawyer tone, addressed to opposing counsel"
     : "professional but direct tone, addressed to the defendant directly";
 
-  const response = await anthropic.messages.create({
+  const response = await getAnthropic().messages.create({
     model: "claude-opus-4-5",
     max_tokens: 1024,
     messages: [
@@ -266,9 +282,9 @@ module.exports = function registerEmailRoutes(app, { requireSession, query, with
         JSON.stringify({ userId: req.session.userId, isShared })
       ).toString("base64");
 
-      const authUrl = await msalClient.getAuthCodeUrl({
+      const authUrl = await getMsalClient().getAuthCodeUrl({
         scopes: MS_SCOPES,
-        redirectUri: REDIRECT_URI,
+        redirectUri: getRedirectUri(),
         state,
         prompt: "select_account",
       });
@@ -295,10 +311,10 @@ module.exports = function registerEmailRoutes(app, { requireSession, query, with
     try {
       const { userId, isShared } = JSON.parse(Buffer.from(state, "base64").toString());
 
-      const tokenResponse = await msalClient.acquireTokenByCode({
+      const tokenResponse = await getMsalClient().acquireTokenByCode({
         code,
         scopes: MS_SCOPES,
-        redirectUri: REDIRECT_URI,
+        redirectUri: getRedirectUri(),
       });
 
       // Get MS user profile
