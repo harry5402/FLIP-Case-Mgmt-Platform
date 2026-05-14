@@ -190,7 +190,8 @@ async function renderSidebar() {
       body: { shared },
     });
     if (!res.ok) {
-      showToast("Failed to start Microsoft login. Please try again.", "error");
+      const err = await res.json().catch(() => ({}));
+      showToast(`Microsoft login failed: ${err.error || res.status}`, "error");
       return;
     }
     const { authUrl } = await res.json();
