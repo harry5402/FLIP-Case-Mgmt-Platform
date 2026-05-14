@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Email Portal — FLIP</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      /* ── Layout ──────────────────────────────────────────────── */
+      .email-layout {
+        display: grid;
+        grid-template-columns: 260px 1fr;
+        gap: 0;
+        height: calc(100vh - 108px);
+        overflow: hidden;
+      }
+
+      /* ── Sidebar ─────────────────────────────────────────────── */
+      .email-sidebar {
+        background: rgba(255,255,255,0.06);
+        border-right: 1px solid rgba(255,255,255,0.1);
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        padding: 16px 0 24px;
+      }
+      .email-sidebar-section {
+        padding: 0 12px;
+        margin-bottom: 8px;
+      }
+      .email-sidebar-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: rgba(255,255,255,0.4);
+        padding: 10px 8px 4px;
+      }
+      .account-block {
+        margin-bottom: 4px;
+      }
+      .account-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        color: rgba(255,255,255,0.85);
+        font-size: 13px;
+        font-weight: 600;
+        user-select: none;
+        transition: background 0.12s;
+      }
+      .account-header:hover { background: rgba(255,255,255,0.08); }
+      .account-header .chevron {
+        margin-left: auto;
+        font-size: 10px;
+        opacity: 0.5;
+        transition: transform 0.15s;
+      }
+      .account-header.expanded .chevron { transform: rotate(90deg); }
+      .account-badge {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--accent); flex-shrink: 0;
+      }
+      .account-badge.shared { background: #4a9eff; }
+      .folder-tree { padding-left: 8px; }
+      .folder-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        border-radius: 6px;
+        cursor: pointer;
+        color: rgba(255,255,255,0.7);
+        font-size: 12.5px;
+        transition: background 0.1s;
+        position: relative;
+      }
+      .folder-item:hover { background: rgba(255,255,255,0.07); color: #fff; }
+      .folder-item.active { background: rgba(255,255,255,0.12); color: #fff; font-weight: 600; }
+      .folder-item .folder-icon { opacity: 0.5; font-size: 12px; }
+      .folder-unread {
+        margin-left: auto;
+        background: var(--accent);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 1px 5px;
+        border-radius: 99px;
+      }
+      .folder-children { padding-left: 14px; }
+
+      /* ── Triage badge ────────────────────────────────────────── */
+      .triage-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+        color: rgba(255,255,255,0.85);
+        font-size: 13px;
+        font-weight: 600;
+        background: none;
+        border: none;
+        width: 100%;
+        text-align: left;
+        transition: background 0.12s;
+      }
+      .triage-btn:hover { background: rgba(255,255,255,0.08); }
+      .triage-btn.active { background: rgba(255,255,255,0.12); }
+      .triage-count {
+        margin-left: auto;
+        background: #e0a800;
+        color: #1a1a1a;
+        font-size: 10px;
+        font-weight: 700;
+        padding: 2px 7px;
+        border-radius: 99px;
+        min-width: 20px;
+        text-align: center;
+      }
+
+      /* ── Connect button ──────────────────────────────────────── */
+      .connect-btn {
+        display: block;
+        width: calc(100% - 24px);
+        margin: 8px 12px 0;
+        padding: 8px 12px;
+        background: rgba(255,255,255,0.08);
+        border: 1px dashed rgba(255,255,255,0.2);
+        border-radius: 8px;
+        color: rgba(255,255,255,0.6);
+        font-size: 12px;
+        cursor: pointer;
+        text-align: center;
+        transition: all 0.12s;
+      }
+      .connect-btn:hover {
+        background: rgba(255,255,255,0.12);
+        color: #fff;
+        border-color: rgba(255,255,255,0.35);
+      }
+
+      /* ── Main content ────────────────────────────────────────── */
+      .email-main {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: #fff;
+      }
+      .email-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--border);
+        flex-shrink: 0;
+        background: #fafafa;
+      }
+      .email-toolbar h3 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 700;
+        color: var(--ink);
+        flex: 1;
+      }
+      .email-list {
+        flex: 1;
+        overflow-y: auto;
+      }
+      .email-row {
+        display: grid;
+        grid-template-columns: 200px 1fr 160px;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--border);
+        cursor: pointer;
+        transition: background 0.1s;
+      }
+      .email-row:hover { background: #f6f3f0; }
+      .email-row.unread .email-subject { font-weight: 700; }
+      .email-sender { font-size: 13px; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .email-subject { font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .email-preview { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .email-date { font-size: 11px; color: var(--muted); text-align: right; white-space: nowrap; }
+      .email-subject-preview { overflow: hidden; }
+      .load-more-btn {
+        display: block;
+        width: 100%;
+        padding: 14px;
+        background: none;
+        border: none;
+        border-top: 1px solid var(--border);
+        color: var(--accent);
+        font-size: 13px;
+        cursor: pointer;
+        font-family: inherit;
+        font-weight: 600;
+      }
+      .load-more-btn:hover { background: #f6f3f0; }
+      .empty-state {
+        padding: 60px 20px;
+        text-align: center;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      /* ── Triage view ─────────────────────────────────────────── */
+      .triage-view { padding: 20px; overflow-y: auto; flex: 1; }
+      .triage-header { margin-bottom: 16px; }
+      .triage-header h3 { margin: 0 0 4px; font-size: 16px; }
+      .triage-header p { margin: 0; font-size: 13px; color: var(--muted); }
+      .scan-btn {
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: inherit;
+      }
+      .scan-btn:hover { opacity: 0.88; }
+      .scan-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+      .triage-card {
+        background: #fff;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 16px 18px;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+      }
+      .triage-card-header { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 10px; }
+      .triage-subject { font-size: 14px; font-weight: 700; color: var(--ink); flex: 1; }
+      .triage-meta { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+      .triage-suggestion {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 8px;
+        background: #f4f5f7;
+        font-size: 13px;
+        margin-bottom: 12px;
+      }
+      .confidence-dot {
+        width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      }
+      .confidence-high { background: #27ae60; }
+      .confidence-medium { background: #e0a800; }
+      .confidence-low { background: #e74c3c; }
+      .triage-suggestion-text { flex: 1; color: var(--ink); }
+      .triage-reasoning { font-size: 11px; color: var(--muted); font-style: italic; }
+      .triage-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+      .triage-approve-btn {
+        background: #27ae60; color: #fff; border: none; border-radius: 7px;
+        padding: 7px 14px; font-size: 12px; font-weight: 600; cursor: pointer;
+        font-family: inherit;
+      }
+      .triage-approve-btn:hover { opacity: 0.88; }
+      .triage-reassign-btn {
+        background: none; color: var(--accent); border: 1px solid var(--accent);
+        border-radius: 7px; padding: 7px 14px; font-size: 12px; font-weight: 600;
+        cursor: pointer; font-family: inherit;
+      }
+      .triage-reassign-btn:hover { background: rgba(183,75,53,0.07); }
+      .triage-skip-btn {
+        background: none; color: var(--muted); border: 1px solid var(--border);
+        border-radius: 7px; padding: 7px 14px; font-size: 12px; cursor: pointer;
+        font-family: inherit;
+      }
+      .triage-skip-btn:hover { background: #f4f5f7; }
+      .no-suggestion-badge {
+        display: inline-block;
+        padding: 3px 8px;
+        background: #ffe9e6;
+        color: #c0392b;
+        border-radius: 5px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+
+      /* ── Message detail panel ────────────────────────────────── */
+      .message-panel {
+        position: fixed;
+        top: 0; right: 0; bottom: 0;
+        width: 560px;
+        background: #fff;
+        box-shadow: -4px 0 24px rgba(0,0,0,0.14);
+        z-index: 200;
+        display: flex;
+        flex-direction: column;
+        transform: translateX(100%);
+        transition: transform 0.2s ease;
+      }
+      .message-panel.open { transform: translateX(0); }
+      .message-panel-header {
+        padding: 18px 20px 14px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        flex-shrink: 0;
+      }
+      .message-panel-header h4 { margin: 0 0 4px; font-size: 15px; flex: 1; }
+      .message-panel-close {
+        background: none; border: none; font-size: 20px; cursor: pointer;
+        color: var(--muted); line-height: 1; padding: 0;
+      }
+      .message-panel-meta { font-size: 12px; color: var(--muted); }
+      .message-panel-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 20px;
+        font-size: 13px;
+        color: var(--ink);
+        line-height: 1.6;
+      }
+      .message-panel-footer {
+        padding: 14px 20px;
+        border-top: 1px solid var(--border);
+        display: flex;
+        gap: 8px;
+        flex-shrink: 0;
+      }
+
+      /* ── Reassign modal ──────────────────────────────────────── */
+      .folder-select {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        font-family: inherit;
+        font-size: 13px;
+        margin-bottom: 12px;
+      }
+      .spinner {
+        display: inline-block;
+        width: 14px; height: 14px;
+        border: 2px solid rgba(0,0,0,0.15);
+        border-top-color: var(--accent);
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        vertical-align: middle;
+        margin-right: 6px;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="tab-switch">
+        <a class="ghost-button" href="index.html">Dashboard</a>
+      </div>
+      <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
+      <div class="tab-switch">
+        <a class="ghost-button" href="litigation-docket.html">Docket</a>
+        <a class="ghost-button" href="weekly-tasklist.html">Weekly Tasklist</a>
+        <button id="logout-button" class="ghost-button" type="button">Logout</button>
+      </div>
+    </header>
+
+    <main style="height: calc(100vh - 108px); overflow: hidden; padding: 0;">
+      <div class="email-layout">
+
+        <!-- Sidebar -->
+        <aside class="email-sidebar">
+          <div class="email-sidebar-label" style="padding: 4px 20px 8px;">Email Portal</div>
+
+          <!-- Triage button -->
+          <div class="email-sidebar-section">
+            <button class="triage-btn" id="triage-nav-btn" data-view="triage">
+              <span>⚡</span>
+              Pending Triage
+              <span class="triage-count hidden" id="triage-badge">0</span>
+            </button>
+          </div>
+
+          <div class="email-sidebar-label" style="padding: 12px 20px 4px;">Accounts</div>
+
+          <!-- Accounts will be rendered here -->
+          <div id="accounts-sidebar"></div>
+
+          <!-- Connect buttons -->
+          <div id="connect-section" style="margin-top: 8px;">
+            <button class="connect-btn" id="connect-personal-btn">+ Connect my inbox</button>
+            <button class="connect-btn" id="connect-shared-btn" style="margin-top: 4px;">+ Connect shared account</button>
+          </div>
+        </aside>
+
+        <!-- Main content area -->
+        <div class="email-main" id="email-main">
+          <div class="empty-state" style="display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;background:#f9f7f5;">
+            <div style="font-size:40px;margin-bottom:12px;">✉️</div>
+            <div style="font-size:16px;font-weight:700;color:var(--ink);margin-bottom:6px;">Email Portal</div>
+            <div style="color:var(--muted);font-size:13px;">Select an account or folder from the sidebar to get started.</div>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- Message detail panel -->
+    <div class="message-panel" id="message-panel">
+      <div class="message-panel-header">
+        <div style="flex:1;">
+          <h4 id="msg-subject">—</h4>
+          <div class="message-panel-meta" id="msg-meta"></div>
+        </div>
+        <button class="message-panel-close" id="msg-close">×</button>
+      </div>
+      <div class="message-panel-body" id="msg-body"></div>
+      <div class="message-panel-footer">
+        <button class="ghost-button" id="msg-reply-btn" type="button">Reply</button>
+      </div>
+    </div>
+
+    <!-- Reassign modal -->
+    <div id="reassign-modal" class="modal hidden">
+      <div class="modal-card" style="max-width:420px;">
+        <div class="panel-header-row" style="margin-bottom:14px;">
+          <h3 style="margin:0;font-size:16px;">Move to Folder</h3>
+          <button class="ghost-button" id="reassign-close">Cancel</button>
+        </div>
+        <p style="font-size:13px;color:var(--muted);margin:0 0 12px;">Select the correct folder for this email.</p>
+        <select class="folder-select" id="reassign-folder-select">
+          <option value="">— Select a folder —</option>
+        </select>
+        <div style="display:flex;justify-content:flex-end;">
+          <button class="pill" id="reassign-confirm-btn">Move Email</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reply modal -->
+    <div id="reply-modal" class="modal hidden">
+      <div class="modal-card" style="max-width:560px;width:90vw;">
+        <div class="panel-header-row" style="margin-bottom:14px;">
+          <h3 style="margin:0;font-size:16px;" id="reply-modal-title">Reply</h3>
+          <button class="ghost-button" id="reply-close">Cancel</button>
+        </div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:10px;" id="reply-thread-info"></div>
+        <textarea id="reply-body" rows="10"
+          style="width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;font-family:inherit;font-size:13px;resize:vertical;margin-bottom:12px;"
+          placeholder="Write your reply..."></textarea>
+        <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;">
+          <span id="reply-status" style="font-size:12px;color:var(--muted);"></span>
+          <button class="ghost-button" id="draft-settlement-btn" type="button">Generate Settlement Draft</button>
+          <button class="pill" id="reply-send-btn">Send Reply</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="email.js"></script>
+  </body>
+</html>

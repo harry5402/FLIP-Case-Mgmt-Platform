@@ -4431,6 +4431,85 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ error: "Internal server error" });
 });
 
+// ---------------------------------------------------------------------------
+// Email integration — DB migrations
+// ---------------------------------------------------------------------------
+const ensureEmailTables = async () => {
+  await query(`
+    CREATE TABLE IF NOT EXISTS ms_connected_accounts (
+      id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      connected_by_user_id  UUID REFERENCES users(id) ON DELETE SET NULL,
+      ms_user_id            TEXT,
+      ms_email              TEXT NOT NULL UNIQUE,
+      display_name          TEXT,
+      is_shared             BOOLEAN NOT NULL DEFAULT FALSE,
+      access_token          TEXT,
+      refresh_token         TEXT,
+      token_expires_at      TIMESTAMPTZ,
+      created_at            TIMESTAMPTZ DEFAULT NOW(),
+      updated_at            TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS email_folder_mappings (
+      id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      ms_account_id    UUID REFERENCES ms_connected_accounts(id) ON DELETE CASCADE,
+      folder_id        TEXT NOT NULL,
+      folder_name      TEXT NOT NULL,
+      parent_folder_id TEXT,
+      case_id          UUID REFERENCES cases(id) ON DELETE SET NULL,
+      matter_label     TEXT,
+      created_at       TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(ms_account_id, folder_id)
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS email_triage_queue (
+      id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      ms_account_id         UUID REFERENCES ms_connected_accounts(id) ON DELETE CASCADE,
+      message_id            TEXT NOT NULL,
+      subject               TEXT,
+      sender_email          TEXT,
+      sender_name           TEXT,
+      received_at           TIMESTAMPTZ,
+      suggested_folder_id   TEXT,
+      suggested_folder_name TEXT,
+      suggested_case_id     UUID REFERENCES cases(id) ON DELETE SET NULL,
+      confidence            TEXT,
+      claude_reasoning      TEXT,
+      status                TEXT NOT NULL DEFAULT 'pending',
+      reviewed_by           UUID REFERENCES users(id) ON DELETE SET NULL,
+      reviewed_at           TIMESTAMPTZ,
+      final_folder_id       TEXT,
+      created_at            TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(ms_account_id, message_id)
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS email_thread_defendants (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      ms_account_id   UUID REFERENCES ms_connected_accounts(id) ON DELETE CASCADE,
+      conversation_id TEXT NOT NULL,
+      defendant_id    UUID REFERENCES defendants(id) ON DELETE CASCADE,
+      case_id         UUID REFERENCES cases(id) ON DELETE CASCADE,
+      is_primary      BOOLEAN NOT NULL DEFAULT TRUE,
+      thread_label    TEXT,
+      linked_by       UUID REFERENCES users(id) ON DELETE SET NULL,
+      linked_at       TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(ms_account_id, conversation_id, defendant_id)
+    )
+  `);
+};
+
+// ---------------------------------------------------------------------------
+// Register email routes
+// ---------------------------------------------------------------------------
+const registerEmailRoutes = require("./routes/email");
+registerEmailRoutes(app, { requireSession, query, withTransaction, writeAuditLog });
+
 const start = async () => {
   await ensureAuditLogTable();
   await ensureUserPermissionsColumns();
@@ -4439,6 +4518,7 @@ const start = async () => {
   await ensureCaseUpdatedAtTimestamp();
   await ensureCaseDocketOnlyColumn();
   await ensureLitigationTables();
+  await ensureEmailTables();
   await ensureAdminUser();
   setInterval(async () => {
     try {

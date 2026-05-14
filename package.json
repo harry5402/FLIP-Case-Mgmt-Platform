@@ -8,6 +8,8 @@
     "dev": "node server.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.96.0",
+    "@azure/msal-node": "^5.2.1",
     "cors": "^2.8.5",
     "csv-parse": "^5.5.6",
     "dotenv": "^16.4.5",

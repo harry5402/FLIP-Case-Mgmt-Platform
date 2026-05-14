@@ -1,0 +1,984 @@
+"use strict";
+
+const msal = require("@azure/msal-node");
+const Anthropic = require("@anthropic-ai/sdk");
+
+// ---------------------------------------------------------------------------
+// Config
+// ---------------------------------------------------------------------------
+const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
+const REDIRECT_URI = `${process.env.APP_URL}/auth/microsoft/callback`;
+const MS_SCOPES = [
+  "Mail.Read",
+  "Mail.ReadWrite",
+  "Mail.Send",
+  "User.Read",
+  "Chat.Create",
+  "ChatMessage.Send",
+  "offline_access",
+];
+
+const msalClient = new msal.ConfidentialClientApplication({
+  auth: {
+    clientId: process.env.MS_CLIENT_ID,
+    clientSecret: process.env.MS_CLIENT_SECRET,
+    authority: `https://login.microsoftonline.com/${process.env.MS_TENANT_ID}`,
+  },
+});
+
+const anthropic = new Anthropic.default({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+// ---------------------------------------------------------------------------
+// Graph API helpers
+// ---------------------------------------------------------------------------
+async function graphRequest(token, endpoint, options = {}) {
+  const url = endpoint.startsWith("http") ? endpoint : `${GRAPH_BASE}${endpoint}`;
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+    body: options.body ? JSON.stringify(options.body) : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Graph API ${res.status}: ${text}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Token management
+// ---------------------------------------------------------------------------
+async function getValidToken(accountId, db) {
+  const { rows } = await db(
+    "SELECT id, access_token, refresh_token, token_expires_at FROM ms_connected_accounts WHERE id = $1",
+    [accountId]
+  );
+  if (!rows.length) throw new Error("MS account not found");
+  const account = rows[0];
+
+  const expiresAt = account.token_expires_at ? new Date(account.token_expires_at) : new Date(0);
+  const bufferMs = 5 * 60 * 1000; // refresh 5 min before expiry
+  if (Date.now() < expiresAt.getTime() - bufferMs) {
+    return account.access_token;
+  }
+
+  // Refresh
+  try {
+    const tokenResponse = await msalClient.acquireTokenByRefreshToken({
+      refreshToken: account.refresh_token,
+      scopes: MS_SCOPES,
+    });
+    const newExpiry = new Date(tokenResponse.expiresOn);
+    await db(
+      `UPDATE ms_connected_accounts
+       SET access_token = $1, refresh_token = $2, token_expires_at = $3, updated_at = NOW()
+       WHERE id = $4`,
+      [
+        tokenResponse.accessToken,
+        tokenResponse.refreshToken || account.refresh_token,
+        newExpiry,
+        accountId,
+      ]
+    );
+    return tokenResponse.accessToken;
+  } catch (err) {
+    throw new Error(`Token refresh failed — account may need to be reconnected: ${err.message}`);
+  }
+}
+
+// Returns accessible accounts for the current FLIP user.
+// Shared accounts are visible to everyone; personal accounts only to their owner.
+async function getAccessibleAccounts(userId, db) {
+  const { rows } = await db(
+    `SELECT id, ms_email, display_name, is_shared, connected_by_user_id, ms_user_id
+     FROM ms_connected_accounts
+     WHERE is_shared = TRUE OR connected_by_user_id = $1
+     ORDER BY is_shared DESC, display_name`,
+    [userId]
+  );
+  return rows;
+}
+
+// ---------------------------------------------------------------------------
+// Folder tree helper  (recursive up to 3 levels)
+// ---------------------------------------------------------------------------
+async function fetchFolderTree(token, folderId = null) {
+  const endpoint = folderId
+    ? `/me/mailFolders/${folderId}/childFolders?$top=100`
+    : `/me/mailFolders?$top=100`;
+  const data = await graphRequest(token, endpoint);
+  const folders = data.value || [];
+  const result = [];
+  for (const f of folders) {
+    const node = {
+      id: f.id,
+      name: f.displayName,
+      totalItemCount: f.totalItemCount,
+      unreadItemCount: f.unreadItemCount,
+      children: [],
+    };
+    if (f.childFolderCount > 0) {
+      node.children = await fetchFolderTree(token, f.id);
+    }
+    result.push(node);
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// Teams notification helper
+// ---------------------------------------------------------------------------
+async function sendTeamsNotification(sharedAccountId, recipientMsUserId, message, db) {
+  if (!sharedAccountId || !recipientMsUserId) return;
+  try {
+    const token = await getValidToken(sharedAccountId, db);
+
+    // Get sender's ms_user_id
+    const { rows } = await db(
+      "SELECT ms_user_id FROM ms_connected_accounts WHERE id = $1",
+      [sharedAccountId]
+    );
+    const senderMsUserId = rows[0]?.ms_user_id;
+    if (!senderMsUserId) return;
+
+    // Find or create 1:1 chat
+    const chat = await graphRequest(token, "/chats", {
+      method: "POST",
+      body: {
+        chatType: "oneOnOne",
+        members: [
+          {
+            "@odata.type": "#microsoft.graph.aadUserConversationMember",
+            roles: ["owner"],
+            "user@odata.bind": `https://graph.microsoft.com/v1.0/users/${senderMsUserId}`,
+          },
+          {
+            "@odata.type": "#microsoft.graph.aadUserConversationMember",
+            roles: ["owner"],
+            "user@odata.bind": `https://graph.microsoft.com/v1.0/users/${recipientMsUserId}`,
+          },
+        ],
+      },
+    });
+
+    await graphRequest(token, `/chats/${chat.id}/messages`, {
+      method: "POST",
+      body: { body: { content: message } },
+    });
+  } catch (err) {
+    // Non-fatal — Teams notification failure should never block a task operation
+    console.error("[Teams] Notification failed:", err.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Claude triage helper
+// ---------------------------------------------------------------------------
+async function suggestFolder(subject, folders) {
+  const folderList = folders
+    .map((f) => `- "${f.path}" (id: ${f.folder_id})`)
+    .join("\n");
+
+  const response = await anthropic.messages.create({
+    model: "claude-opus-4-5",
+    max_tokens: 256,
+    messages: [
+      {
+        role: "user",
+        content: `You are an assistant for a law firm that organizes emails into matter folders.
+
+Given this email subject line, suggest the best matching folder from the list below.
+Reply with ONLY valid JSON: { "folder_id": "...", "folder_name": "...", "confidence": "high|medium|low", "reasoning": "one sentence" }
+
+Email subject: "${subject}"
+
+Available folders:
+${folderList}
+
+If no folder is a reasonable match, use folder_id "UNMATCHED" and folder_name "No match found".`,
+      },
+    ],
+  });
+
+  try {
+    const text = response.content[0].text.trim();
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No JSON in response");
+    return JSON.parse(jsonMatch[0]);
+  } catch {
+    return { folder_id: "UNMATCHED", folder_name: "No match found", confidence: "low", reasoning: "Could not parse suggestion" };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Claude settlement draft helper
+// ---------------------------------------------------------------------------
+async function draftSettlementReply(context) {
+  const { caseNumber, caseName, jurisdiction, docketStatus, defendantName,
+    platform, threadSubject, hasRepresentation } = context;
+
+  const tone = hasRepresentation
+    ? "professional lawyer-to-lawyer tone, addressed to opposing counsel"
+    : "professional but direct tone, addressed to the defendant directly";
+
+  const response = await anthropic.messages.create({
+    model: "claude-opus-4-5",
+    max_tokens: 1024,
+    messages: [
+      {
+        role: "user",
+        content: `Draft a settlement agreement email for the following case. Use a ${tone}.
+Do not include a subject line. Write only the email body, starting with the salutation.
+Leave placeholders like [SETTLEMENT AMOUNT] and [DEADLINE DATE] where specific terms need to be filled in.
+
+Case: ${caseName} (${caseNumber})
+Jurisdiction: ${jurisdiction}
+Docket Status: ${docketStatus}
+Defendant/Seller: ${defendantName} on ${platform}
+Thread subject: ${threadSubject}
+Has legal representation: ${hasRepresentation ? "Yes" : "No"}`,
+      },
+    ],
+  });
+
+  return response.content[0].text.trim();
+}
+
+// ---------------------------------------------------------------------------
+// Route registration
+// ---------------------------------------------------------------------------
+module.exports = function registerEmailRoutes(app, { requireSession, query, withTransaction, writeAuditLog }) {
+  // -------------------------------------------------------------------------
+  // OAuth — Start
+  // GET /auth/microsoft/connect?shared=1
+  // -------------------------------------------------------------------------
+  app.get("/auth/microsoft/connect", requireSession, async (req, res) => {
+    try {
+      const isShared = req.query.shared === "1";
+      const state = Buffer.from(
+        JSON.stringify({ userId: req.session.userId, isShared })
+      ).toString("base64");
+
+      const authUrl = await msalClient.getAuthCodeUrl({
+        scopes: MS_SCOPES,
+        redirectUri: REDIRECT_URI,
+        state,
+        prompt: "select_account",
+      });
+
+      res.redirect(authUrl);
+    } catch (err) {
+      console.error("[OAuth] Connect error:", err);
+      res.redirect("/email.html?error=oauth_start_failed");
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // OAuth — Callback
+  // GET /auth/microsoft/callback
+  // -------------------------------------------------------------------------
+  app.get("/auth/microsoft/callback", async (req, res) => {
+    const { code, state, error } = req.query;
+
+    if (error) {
+      console.error("[OAuth] Callback error:", error);
+      return res.redirect("/email.html?error=oauth_denied");
+    }
+
+    try {
+      const { userId, isShared } = JSON.parse(Buffer.from(state, "base64").toString());
+
+      const tokenResponse = await msalClient.acquireTokenByCode({
+        code,
+        scopes: MS_SCOPES,
+        redirectUri: REDIRECT_URI,
+      });
+
+      // Get MS user profile
+      const profile = await graphRequest(tokenResponse.accessToken, "/me?$select=id,mail,displayName");
+      const msEmail = profile.mail || tokenResponse.account?.username || "";
+      const displayName = profile.displayName || msEmail;
+      const msUserId = profile.id;
+      const expiresAt = new Date(tokenResponse.expiresOn);
+
+      await query(
+        `INSERT INTO ms_connected_accounts
+          (connected_by_user_id, ms_user_id, ms_email, display_name, is_shared,
+           access_token, refresh_token, token_expires_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (ms_email) DO UPDATE SET
+           connected_by_user_id = EXCLUDED.connected_by_user_id,
+           ms_user_id           = EXCLUDED.ms_user_id,
+           display_name         = EXCLUDED.display_name,
+           is_shared            = EXCLUDED.is_shared,
+           access_token         = EXCLUDED.access_token,
+           refresh_token        = EXCLUDED.refresh_token,
+           token_expires_at     = EXCLUDED.token_expires_at,
+           updated_at           = NOW()`,
+        [
+          userId,
+          msUserId,
+          msEmail,
+          displayName,
+          isShared,
+          tokenResponse.accessToken,
+          tokenResponse.refreshToken,
+          expiresAt,
+        ]
+      );
+
+      res.redirect("/email.html?connected=1");
+    } catch (err) {
+      console.error("[OAuth] Callback processing error:", err);
+      res.redirect("/email.html?error=oauth_callback_failed");
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/email/accounts
+  // List MS accounts accessible to the current user
+  // -------------------------------------------------------------------------
+  app.get("/api/email/accounts", requireSession, async (req, res) => {
+    try {
+      const accounts = await getAccessibleAccounts(req.session.userId, query);
+      res.json(accounts.map((a) => ({
+        id: a.id,
+        msEmail: a.ms_email,
+        displayName: a.display_name,
+        isShared: a.is_shared,
+        isOwner: a.connected_by_user_id === req.session.userId,
+      })));
+    } catch (err) {
+      console.error("[email/accounts]", err);
+      res.status(500).json({ error: "Failed to load accounts" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // DELETE /api/email/accounts/:id
+  // Disconnect an MS account (admin or owner only)
+  // -------------------------------------------------------------------------
+  app.delete("/api/email/accounts/:id", requireSession, async (req, res) => {
+    try {
+      const { rows } = await query(
+        "SELECT connected_by_user_id FROM ms_connected_accounts WHERE id = $1",
+        [req.params.id]
+      );
+      if (!rows.length) return res.status(404).json({ error: "Account not found" });
+      if (rows[0].connected_by_user_id !== req.session.userId && req.session.role !== "admin") {
+        return res.status(403).json({ error: "Not authorized to disconnect this account" });
+      }
+      await query("DELETE FROM ms_connected_accounts WHERE id = $1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[email/accounts DELETE]", err);
+      res.status(500).json({ error: "Failed to disconnect account" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/email/accounts/:id/folders
+  // Fetch full folder tree for an account
+  // -------------------------------------------------------------------------
+  app.get("/api/email/accounts/:id/folders", requireSession, async (req, res) => {
+    try {
+      const token = await getValidToken(req.params.id, query);
+      const tree = await fetchFolderTree(token);
+      res.json(tree);
+    } catch (err) {
+      console.error("[email/folders]", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/email/folder-mappings?accountId=
+  // Return flat list of folder→case mappings for an account
+  // -------------------------------------------------------------------------
+  app.get("/api/email/folder-mappings", requireSession, async (req, res) => {
+    try {
+      const { accountId } = req.query;
+      if (!accountId) return res.status(400).json({ error: "accountId required" });
+      const { rows } = await query(
+        `SELECT fm.*, c.case_name, c.case_number
+         FROM email_folder_mappings fm
+         LEFT JOIN cases c ON c.id = fm.case_id
+         WHERE fm.ms_account_id = $1
+         ORDER BY fm.folder_name`,
+        [accountId]
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error("[email/folder-mappings GET]", err);
+      res.status(500).json({ error: "Failed to load folder mappings" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/email/folder-mappings
+  // Create or update a folder→case (or free-text label) mapping
+  // -------------------------------------------------------------------------
+  app.post("/api/email/folder-mappings", requireSession, async (req, res) => {
+    try {
+      const { accountId, folderId, folderName, parentFolderId, caseId, matterLabel } = req.body;
+      if (!accountId || !folderId || !folderName) {
+        return res.status(400).json({ error: "accountId, folderId, and folderName are required" });
+      }
+      const { rows } = await query(
+        `INSERT INTO email_folder_mappings
+          (ms_account_id, folder_id, folder_name, parent_folder_id, case_id, matter_label)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (ms_account_id, folder_id) DO UPDATE SET
+           folder_name      = EXCLUDED.folder_name,
+           parent_folder_id = EXCLUDED.parent_folder_id,
+           case_id          = EXCLUDED.case_id,
+           matter_label     = EXCLUDED.matter_label
+         RETURNING *`,
+        [accountId, folderId, folderName, parentFolderId || null, caseId || null, matterLabel || null]
+      );
+      res.status(201).json(rows[0]);
+    } catch (err) {
+      console.error("[email/folder-mappings POST]", err);
+      res.status(500).json({ error: "Failed to save folder mapping" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/email/accounts/:id/folders/:folderId/messages
+  // List messages in a folder (paginated, 30 per page)
+  // -------------------------------------------------------------------------
+  app.get("/api/email/accounts/:id/folders/:folderId/messages", requireSession, async (req, res) => {
+    try {
+      const token = await getValidToken(req.params.id, query);
+      const skip = parseInt(req.query.skip || "0", 10);
+      const endpoint =
+        `/me/mailFolders/${req.params.folderId}/messages` +
+        `?$top=30&$skip=${skip}` +
+        `&$select=id,subject,from,receivedDateTime,isRead,conversationId,bodyPreview,hasAttachments` +
+        `&$orderby=receivedDateTime desc`;
+
+      const data = await graphRequest(token, endpoint);
+      res.json({
+        messages: (data.value || []).map((m) => ({
+          id: m.id,
+          subject: m.subject,
+          from: m.from?.emailAddress,
+          receivedAt: m.receivedDateTime,
+          isRead: m.isRead,
+          conversationId: m.conversationId,
+          preview: m.bodyPreview,
+          hasAttachments: m.hasAttachments,
+        })),
+        nextSkip: data["@odata.nextLink"] ? skip + 30 : null,
+      });
+    } catch (err) {
+      console.error("[email/messages]", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/email/accounts/:id/messages/:messageId
+  // Fetch a single message with full body
+  // -------------------------------------------------------------------------
+  app.get("/api/email/accounts/:id/messages/:messageId", requireSession, async (req, res) => {
+    try {
+      const token = await getValidToken(req.params.id, query);
+      const msg = await graphRequest(
+        token,
+        `/me/messages/${req.params.messageId}?$select=id,subject,from,toRecipients,ccRecipients,receivedDateTime,body,conversationId,internetMessageId`
+      );
+      res.json({
+        id: msg.id,
+        subject: msg.subject,
+        from: msg.from?.emailAddress,
+        to: (msg.toRecipients || []).map((r) => r.emailAddress),
+        cc: (msg.ccRecipients || []).map((r) => r.emailAddress),
+        receivedAt: msg.receivedDateTime,
+        body: msg.body?.content,
+        bodyType: msg.body?.contentType,
+        conversationId: msg.conversationId,
+        internetMessageId: msg.internetMessageId,
+      });
+    } catch (err) {
+      console.error("[email/message detail]", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/email/accounts/:id/inbox/unsorted
+  // Fetch messages sitting directly in the Inbox (not in a sub-folder)
+  // that are not already in the triage queue
+  // -------------------------------------------------------------------------
+  app.get("/api/email/accounts/:id/inbox/unsorted", requireSession, async (req, res) => {
+    try {
+      const token = await getValidToken(req.params.id, query);
+
+      // Get the inbox folder ID
+      const inboxData = await graphRequest(token, "/me/mailFolders/inbox");
+      const inboxId = inboxData.id;
+
+      const data = await graphRequest(
+        token,
+        `/me/mailFolders/${inboxId}/messages` +
+          `?$top=50&$select=id,subject,from,receivedDateTime,conversationId` +
+          `&$orderby=receivedDateTime desc`
+      );
+
+      const messages = data.value || [];
+      if (!messages.length) return res.json([]);
+
+      // Filter out messages already queued
+      const messageIds = messages.map((m) => m.id);
+      const { rows: alreadyQueued } = await query(
+        `SELECT message_id FROM email_triage_queue
+         WHERE ms_account_id = $1 AND message_id = ANY($2::text[])`,
+        [req.params.id, messageIds]
+      );
+      const queuedSet = new Set(alreadyQueued.map((r) => r.message_id));
+
+      const unsorted = messages
+        .filter((m) => !queuedSet.has(m.id))
+        .map((m) => ({
+          id: m.id,
+          subject: m.subject,
+          from: m.from?.emailAddress,
+          receivedAt: m.receivedDateTime,
+          conversationId: m.conversationId,
+        }));
+
+      res.json(unsorted);
+    } catch (err) {
+      console.error("[email/inbox/unsorted]", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/email/triage/scan
+  // Run Claude on all unsorted inbox messages for an account, populate queue
+  // -------------------------------------------------------------------------
+  app.post("/api/email/triage/scan", requireSession, async (req, res) => {
+    try {
+      const { accountId } = req.body;
+      if (!accountId) return res.status(400).json({ error: "accountId required" });
+
+      const token = await getValidToken(accountId, query);
+
+      // Load all known folder mappings for this account (flat list)
+      const { rows: mappings } = await query(
+        `SELECT folder_id, folder_name, parent_folder_id, case_id, matter_label
+         FROM email_folder_mappings
+         WHERE ms_account_id = $1`,
+        [accountId]
+      );
+
+      // Build path-qualified folder names (e.g. "Edison / Illinois / 25-cv-01059 Wing Rails")
+      const folderMap = {};
+      for (const m of mappings) folderMap[m.folder_id] = m;
+
+      const foldersForClaude = mappings.map((m) => {
+        let path = m.folder_name;
+        if (m.parent_folder_id && folderMap[m.parent_folder_id]) {
+          const parent = folderMap[m.parent_folder_id];
+          path = `${parent.folder_name} / ${m.folder_name}`;
+        }
+        return { folder_id: m.folder_id, path };
+      });
+
+      // Get unsorted inbox messages
+      const inboxData = await graphRequest(token, "/me/mailFolders/inbox");
+      const inboxId = inboxData.id;
+      const data = await graphRequest(
+        token,
+        `/me/mailFolders/${inboxId}/messages?$top=50&$select=id,subject,from,receivedDateTime,conversationId&$orderby=receivedDateTime desc`
+      );
+      const messages = data.value || [];
+      if (!messages.length) return res.json({ scanned: 0, queued: 0 });
+
+      const messageIds = messages.map((m) => m.id);
+      const { rows: alreadyQueued } = await query(
+        `SELECT message_id FROM email_triage_queue
+         WHERE ms_account_id = $1 AND message_id = ANY($2::text[])`,
+        [accountId, messageIds]
+      );
+      const queuedSet = new Set(alreadyQueued.map((r) => r.message_id));
+      const toProcess = messages.filter((m) => !queuedSet.has(m.id));
+
+      let queued = 0;
+      for (const msg of toProcess) {
+        const suggestion = foldersForClaude.length
+          ? await suggestFolder(msg.subject || "(no subject)", foldersForClaude)
+          : { folder_id: "UNMATCHED", folder_name: "No match found", confidence: "low", reasoning: "No folders mapped yet" };
+
+        const suggestedMapping = suggestion.folder_id !== "UNMATCHED"
+          ? mappings.find((m) => m.folder_id === suggestion.folder_id)
+          : null;
+
+        await query(
+          `INSERT INTO email_triage_queue
+            (ms_account_id, message_id, subject, sender_email, sender_name, received_at,
+             suggested_folder_id, suggested_folder_name, suggested_case_id, confidence, claude_reasoning)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+           ON CONFLICT (ms_account_id, message_id) DO NOTHING`,
+          [
+            accountId,
+            msg.id,
+            msg.subject || "",
+            msg.from?.emailAddress?.address || "",
+            msg.from?.emailAddress?.name || "",
+            msg.receivedDateTime,
+            suggestion.folder_id !== "UNMATCHED" ? suggestion.folder_id : null,
+            suggestion.folder_name,
+            suggestedMapping?.case_id || null,
+            suggestion.confidence,
+            suggestion.reasoning,
+          ]
+        );
+        queued++;
+      }
+
+      res.json({ scanned: toProcess.length, queued });
+    } catch (err) {
+      console.error("[email/triage/scan]", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/email/triage/queue?accountId=
+  // Return pending triage items
+  // -------------------------------------------------------------------------
+  app.get("/api/email/triage/queue", requireSession, async (req, res) => {
+    try {
+      const { accountId } = req.query;
+      if (!accountId) return res.status(400).json({ error: "accountId required" });
+
+      const { rows } = await query(
+        `SELECT q.*, c.case_name, c.case_number
+         FROM email_triage_queue q
+         LEFT JOIN cases c ON c.id = q.suggested_case_id
+         WHERE q.ms_account_id = $1 AND q.status = 'pending'
+         ORDER BY q.received_at DESC`,
+        [accountId]
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error("[email/triage/queue]", err);
+      res.status(500).json({ error: "Failed to load triage queue" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/email/triage/:id/approve
+  // Approve Claude's suggestion — moves email to the suggested folder in Outlook
+  // -------------------------------------------------------------------------
+  app.post("/api/email/triage/:id/approve", requireSession, async (req, res) => {
+    try {
+      const { rows } = await query(
+        "SELECT * FROM email_triage_queue WHERE id = $1 AND status = 'pending'",
+        [req.params.id]
+      );
+      if (!rows.length) return res.status(404).json({ error: "Triage item not found or already actioned" });
+      const item = rows[0];
+
+      if (!item.suggested_folder_id) {
+        return res.status(400).json({ error: "No folder suggestion to approve — use reassign instead" });
+      }
+
+      const token = await getValidToken(item.ms_account_id, query);
+      await graphRequest(token, `/me/messages/${item.message_id}/move`, {
+        method: "POST",
+        body: { destinationId: item.suggested_folder_id },
+      });
+
+      await query(
+        `UPDATE email_triage_queue
+         SET status = 'approved', reviewed_by = $1, reviewed_at = NOW(), final_folder_id = $2
+         WHERE id = $3`,
+        [req.session.userId, item.suggested_folder_id, req.params.id]
+      );
+
+      await writeAuditLog(req, {
+        action: "email.triage.approve",
+        entityType: "email_triage",
+        entityId: req.params.id,
+        after: { messageId: item.message_id, folderId: item.suggested_folder_id },
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[email/triage/approve]", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/email/triage/:id/reassign
+  // Override Claude's suggestion and move to a different folder
+  // -------------------------------------------------------------------------
+  app.post("/api/email/triage/:id/reassign", requireSession, async (req, res) => {
+    try {
+      const { folderId, folderName } = req.body;
+      if (!folderId) return res.status(400).json({ error: "folderId required" });
+
+      const { rows } = await query(
+        "SELECT * FROM email_triage_queue WHERE id = $1 AND status = 'pending'",
+        [req.params.id]
+      );
+      if (!rows.length) return res.status(404).json({ error: "Triage item not found or already actioned" });
+      const item = rows[0];
+
+      const token = await getValidToken(item.ms_account_id, query);
+      await graphRequest(token, `/me/messages/${item.message_id}/move`, {
+        method: "POST",
+        body: { destinationId: folderId },
+      });
+
+      await query(
+        `UPDATE email_triage_queue
+         SET status = 'reassigned', reviewed_by = $1, reviewed_at = NOW(),
+             final_folder_id = $2
+         WHERE id = $3`,
+        [req.session.userId, folderId, req.params.id]
+      );
+
+      await writeAuditLog(req, {
+        action: "email.triage.reassign",
+        entityType: "email_triage",
+        entityId: req.params.id,
+        after: { messageId: item.message_id, folderId, folderName },
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[email/triage/reassign]", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/email/triage/:id/skip
+  // Leave the email in the inbox, mark as skipped
+  // -------------------------------------------------------------------------
+  app.post("/api/email/triage/:id/skip", requireSession, async (req, res) => {
+    try {
+      await query(
+        `UPDATE email_triage_queue
+         SET status = 'skipped', reviewed_by = $1, reviewed_at = NOW()
+         WHERE id = $2 AND status = 'pending'`,
+        [req.session.userId, req.params.id]
+      );
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[email/triage/skip]", err);
+      res.status(500).json({ error: "Failed to skip item" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // GET /api/email/defendants/:id/threads
+  // List email threads linked to a defendant
+  // -------------------------------------------------------------------------
+  app.get("/api/email/defendants/:id/threads", requireSession, async (req, res) => {
+    try {
+      const { rows } = await query(
+        `SELECT etd.*, a.ms_email AS account_email, a.display_name AS account_display_name
+         FROM email_thread_defendants etd
+         JOIN ms_connected_accounts a ON a.id = etd.ms_account_id
+         WHERE etd.defendant_id = $1
+         ORDER BY etd.is_primary DESC, etd.linked_at`,
+        [req.params.id]
+      );
+      res.json(rows);
+    } catch (err) {
+      console.error("[email/defendants/threads GET]", err);
+      res.status(500).json({ error: "Failed to load threads" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/email/defendants/:id/threads
+  // Link an email thread to a defendant
+  // -------------------------------------------------------------------------
+  app.post("/api/email/defendants/:id/threads", requireSession, async (req, res) => {
+    try {
+      const { accountId, conversationId, caseId, isPrimary, threadLabel } = req.body;
+      if (!accountId || !conversationId || !caseId) {
+        return res.status(400).json({ error: "accountId, conversationId, and caseId are required" });
+      }
+
+      // If marking as primary, demote existing primary
+      if (isPrimary) {
+        await query(
+          `UPDATE email_thread_defendants
+           SET is_primary = FALSE
+           WHERE defendant_id = $1`,
+          [req.params.id]
+        );
+      }
+
+      const { rows } = await query(
+        `INSERT INTO email_thread_defendants
+          (ms_account_id, conversation_id, defendant_id, case_id, is_primary, thread_label, linked_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)
+         ON CONFLICT (ms_account_id, conversation_id, defendant_id) DO UPDATE SET
+           is_primary   = EXCLUDED.is_primary,
+           thread_label = EXCLUDED.thread_label
+         RETURNING *`,
+        [
+          accountId,
+          conversationId,
+          req.params.id,
+          caseId,
+          isPrimary !== false,
+          threadLabel || null,
+          req.session.userId,
+        ]
+      );
+
+      await writeAuditLog(req, {
+        action: "email.thread.linked",
+        entityType: "defendant",
+        entityId: req.params.id,
+        after: rows[0],
+      });
+
+      res.status(201).json(rows[0]);
+    } catch (err) {
+      console.error("[email/defendants/threads POST]", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // DELETE /api/email/thread-defendants/:id
+  // Unlink a thread from a defendant
+  // -------------------------------------------------------------------------
+  app.delete("/api/email/thread-defendants/:id", requireSession, async (req, res) => {
+    try {
+      await query("DELETE FROM email_thread_defendants WHERE id = $1", [req.params.id]);
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[email/thread-defendants DELETE]", err);
+      res.status(500).json({ error: "Failed to unlink thread" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/email/draft/settlement
+  // Generate a Claude settlement draft using defendant/case context
+  // -------------------------------------------------------------------------
+  app.post("/api/email/draft/settlement", requireSession, async (req, res) => {
+    try {
+      const { defendantId, conversationId, accountId } = req.body;
+      if (!defendantId) return res.status(400).json({ error: "defendantId required" });
+
+      // Load defendant + case context from DB
+      const { rows: defRows } = await query(
+        `SELECT d.name, d.platform, d.defendant_rep_email,
+                c.case_name, c.case_number, c.jurisdiction,
+                lcs.docket_status
+         FROM defendants d
+         JOIN cases c ON c.id = d.case_id
+         LEFT JOIN litigation_case_state lcs ON lcs.case_id = c.id
+         WHERE d.id = $1`,
+        [defendantId]
+      );
+      if (!defRows.length) return res.status(404).json({ error: "Defendant not found" });
+      const def = defRows[0];
+
+      // Check for multiple threads (representation indicator)
+      const { rows: threadRows } = await query(
+        "SELECT COUNT(*) AS cnt FROM email_thread_defendants WHERE defendant_id = $1",
+        [defendantId]
+      );
+      const hasRepresentation = parseInt(threadRows[0].cnt, 10) > 1;
+
+      // Get subject from most recent message in thread (if conversationId provided)
+      let threadSubject = "Settlement Discussion";
+      if (conversationId && accountId) {
+        try {
+          const token = await getValidToken(accountId, query);
+          const threadData = await graphRequest(
+            token,
+            `/me/messages?$filter=conversationId eq '${conversationId}'&$top=1&$select=subject&$orderby=receivedDateTime desc`
+          );
+          if (threadData.value?.[0]?.subject) {
+            threadSubject = threadData.value[0].subject;
+          }
+        } catch {
+          // non-fatal, use default subject
+        }
+      }
+
+      const draft = await draftSettlementReply({
+        caseNumber: def.case_number,
+        caseName: def.case_name,
+        jurisdiction: def.jurisdiction,
+        docketStatus: def.docket_status,
+        defendantName: def.name,
+        platform: def.platform,
+        threadSubject,
+        hasRepresentation,
+      });
+
+      res.json({ draft, hasRepresentation, threadSubject });
+    } catch (err) {
+      console.error("[email/draft/settlement]", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // POST /api/email/send
+  // Send an email reply into an existing conversation thread
+  // -------------------------------------------------------------------------
+  app.post("/api/email/send", requireSession, async (req, res) => {
+    try {
+      const { accountId, messageId, body, subject } = req.body;
+      if (!accountId || !messageId || !body) {
+        return res.status(400).json({ error: "accountId, messageId, and body are required" });
+      }
+
+      const token = await getValidToken(accountId, query);
+
+      // Reply to the specific message (preserves thread)
+      await graphRequest(token, `/me/messages/${messageId}/reply`, {
+        method: "POST",
+        body: {
+          message: {
+            body: { contentType: "HTML", content: body.replace(/\n/g, "<br>") },
+          },
+          comment: "",
+        },
+      });
+
+      await writeAuditLog(req, {
+        action: "email.sent",
+        entityType: "email",
+        entityId: messageId,
+        after: { accountId, subject },
+      });
+
+      res.json({ ok: true });
+    } catch (err) {
+      console.error("[email/send]", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Export Teams notification helper for use in server.js task routes
+  // -------------------------------------------------------------------------
+  app.locals.sendTeamsNotification = (sharedAccountId, recipientMsUserId, message) =>
+    sendTeamsNotification(sharedAccountId, recipientMsUserId, message, query);
+};
