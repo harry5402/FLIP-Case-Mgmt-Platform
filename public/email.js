@@ -652,3 +652,199 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Folder mapping overlay
+// ---------------------------------------------------------------------------
+let flipCases = [];
+let bulkSelectedRows = new Set(); // folder IDs selected in bulk mode
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("open-mapping-btn")?.addEventListener("click", openMappingOverlay);
+  document.getElementById("close-mapping-btn")?.addEventListener("click", () => {
+    document.getElementById("mapping-overlay").classList.add("hidden");
+    bulkSelectedRows.clear();
+  });
+
+  document.getElementById("bulk-mode-check")?.addEventListener("change", (e) => {
+    const on = e.target.checked;
+    document.getElementById("bulk-controls").style.display = on ? "flex" : "none";
+    document.getElementById("normal-toolbar-hint").style.display = on ? "none" : "block";
+    bulkSelectedRows.clear();
+    document.querySelectorAll(".mapping-row.bulk-selected").forEach((r) => r.classList.remove("bulk-selected"));
+    document.getElementById("bulk-selected-count").textContent = "";
+  });
+
+  document.getElementById("bulk-apply-btn")?.addEventListener("click", applyBulkLabel);
+
+  document.getElementById("mapping-account-select")?.addEventListener("change", (e) => {
+    loadMappingRows(e.target.value);
+  });
+});
+
+async function openMappingOverlay() {
+  document.getElementById("mapping-overlay").classList.remove("hidden");
+  document.getElementById("bulk-mode-check").checked = false;
+  document.getElementById("bulk-controls").style.display = "none";
+  document.getElementById("normal-toolbar-hint").style.display = "block";
+  bulkSelectedRows.clear();
+
+  // Populate account selector
+  const select = document.getElementById("mapping-account-select");
+  select.innerHTML = accounts.map((a) =>
+    `<option value="${a.id}">${escapeHtml(a.displayName || a.msEmail)}${a.isShared ? " (shared)" : ""}</option>`
+  ).join("");
+
+  // Default to shared (litigation) account
+  const sharedAccount = accounts.find((a) => a.isShared) || accounts[0];
+  if (sharedAccount) {
+    select.value = sharedAccount.id;
+    await loadMappingRows(sharedAccount.id);
+  }
+}
+
+async function loadMappingRows(accountId) {
+  const container = document.getElementById("mapping-rows");
+  container.innerHTML = `<div class="empty-state"><span class="spinner"></span> Loading folders…</div>`;
+
+  // Load folder tree + existing mappings + FLIP cases in parallel
+  const [tree, mappingsRes, casesRes] = await Promise.all([
+    loadFolderTree(accountId),
+    apiFetch(`/api/email/folder-mappings?accountId=${accountId}`),
+    flipCases.length ? Promise.resolve(null) : apiFetch("/api/cases"),
+  ]);
+
+  if (casesRes) {
+    flipCases = casesRes.ok ? await casesRes.json() : [];
+  }
+
+  const existingMappings = mappingsRes.ok ? await mappingsRes.json() : [];
+  const mappingByFolderId = {};
+  for (const m of existingMappings) mappingByFolderId[m.folder_id] = m;
+
+  container.innerHTML = "";
+  renderMappingRows(tree, container, accountId, mappingByFolderId, 0, null);
+}
+
+function renderMappingRows(nodes, container, accountId, mappingByFolderId, depth, parentFolderId) {
+  for (const node of nodes) {
+    const existing = mappingByFolderId[node.id] || {};
+
+    const row = document.createElement("div");
+    row.className = "mapping-row";
+    row.dataset.folderId = node.id;
+    row.dataset.folderName = node.name;
+    row.dataset.parentFolderId = parentFolderId || "";
+
+    const indent = depth * 16;
+    const caseOptions = flipCases.map((c) =>
+      `<option value="${c.id}" ${existing.case_id === c.id ? "selected" : ""}>${escapeHtml(c.caseName || c.case_name || "")} ${c.caseNumber || c.case_number ? `(${c.caseNumber || c.case_number})` : ""}</option>`
+    ).join("");
+
+    row.innerHTML = `
+      <div class="mapping-folder-name" style="padding-left:${indent}px;">
+        <span style="opacity:0.4;font-size:11px;">📁</span>
+        <span>${escapeHtml(node.name)}</span>
+        ${node.unreadItemCount > 0 ? `<span class="folder-unread">${node.unreadItemCount}</span>` : ""}
+      </div>
+      <input class="mapping-input" type="text" placeholder="e.g. Edison / Georgia"
+        value="${escapeHtml(existing.matter_label || "")}" data-field="label">
+      <select class="mapping-select" data-field="case">
+        <option value="">— No FLIP case —</option>
+        ${caseOptions}
+      </select>
+      <button class="mapping-save-btn" data-folder-id="${node.id}">Save</button>
+    `;
+
+    // Save button
+    row.querySelector(".mapping-save-btn").addEventListener("click", async (e) => {
+      const btn = e.currentTarget;
+      const label = row.querySelector("[data-field='label']").value.trim();
+      const caseId = row.querySelector("[data-field='case']").value;
+      await saveMapping(accountId, node.id, node.name, parentFolderId, label, caseId, btn);
+    });
+
+    // Bulk mode — click row to select it
+    row.addEventListener("click", (e) => {
+      if (!document.getElementById("bulk-mode-check").checked) return;
+      if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "BUTTON") return;
+      if (bulkSelectedRows.has(node.id)) {
+        bulkSelectedRows.delete(node.id);
+        row.classList.remove("bulk-selected");
+      } else {
+        bulkSelectedRows.add(node.id);
+        row.classList.add("bulk-selected");
+      }
+      document.getElementById("bulk-selected-count").textContent =
+        bulkSelectedRows.size ? `${bulkSelectedRows.size} selected` : "";
+    });
+
+    container.appendChild(row);
+
+    if (node.children?.length) {
+      renderMappingRows(node.children, container, accountId, mappingByFolderId, depth + 1, node.id);
+    }
+  }
+}
+
+async function saveMapping(accountId, folderId, folderName, parentFolderId, label, caseId, btn) {
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+  const res = await apiFetch("/api/email/folder-mappings", {
+    method: "POST",
+    body: {
+      accountId,
+      folderId,
+      folderName,
+      parentFolderId: parentFolderId || null,
+      matterLabel: label || null,
+      caseId: caseId || null,
+    },
+  });
+  btn.disabled = false;
+  if (res.ok) {
+    btn.textContent = "Saved ✓";
+    btn.classList.add("saved");
+    setTimeout(() => { btn.textContent = "Save"; btn.classList.remove("saved"); }, 2000);
+  } else {
+    btn.textContent = "Save";
+    showToast("Failed to save mapping.", "error");
+  }
+}
+
+async function applyBulkLabel() {
+  const label = document.getElementById("bulk-label-input").value.trim();
+  if (!label) { showToast("Enter a label first.", "error"); return; }
+  if (!bulkSelectedRows.size) { showToast("Select at least one folder.", "error"); return; }
+
+  const accountId = document.getElementById("mapping-account-select").value;
+  const btn = document.getElementById("bulk-apply-btn");
+  btn.disabled = true;
+  btn.textContent = "Applying…";
+
+  let saved = 0;
+  for (const folderId of bulkSelectedRows) {
+    const row = document.querySelector(`.mapping-row[data-folder-id="${folderId}"]`);
+    if (!row) continue;
+    const folderName = row.dataset.folderName;
+    const parentFolderId = row.dataset.parentFolderId || null;
+    const caseId = row.querySelector("[data-field='case']").value;
+    // Update the label input visually
+    row.querySelector("[data-field='label']").value = label;
+    const res = await apiFetch("/api/email/folder-mappings", {
+      method: "POST",
+      body: { accountId, folderId, folderName, parentFolderId, matterLabel: label, caseId: caseId || null },
+    });
+    if (res.ok) saved++;
+  }
+
+  btn.disabled = false;
+  btn.textContent = "Apply to selected";
+  showToast(`Label "${label}" applied to ${saved} folder${saved !== 1 ? "s" : ""}.`, "success");
+
+  // Deselect all
+  bulkSelectedRows.clear();
+  document.querySelectorAll(".mapping-row.bulk-selected").forEach((r) => r.classList.remove("bulk-selected"));
+  document.getElementById("bulk-selected-count").textContent = "";
+  document.getElementById("bulk-label-input").value = "";
+}
