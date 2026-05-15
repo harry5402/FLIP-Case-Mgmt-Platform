@@ -729,6 +729,9 @@ async function loadMappingRows(accountId) {
 function renderMappingRows(nodes, container, accountId, mappingByFolderId, depth, parentFolderId) {
   for (const node of nodes) {
     const existing = mappingByFolderId[node.id] || {};
+    const hasChildren = node.children?.length > 0;
+
+    const wrapper = document.createElement("div");
 
     const row = document.createElement("div");
     row.className = "mapping-row";
@@ -743,6 +746,9 @@ function renderMappingRows(nodes, container, accountId, mappingByFolderId, depth
 
     row.innerHTML = `
       <div class="mapping-folder-name" style="padding-left:${indent}px;">
+        ${hasChildren
+          ? `<span class="map-chevron" style="font-size:9px;opacity:0.45;width:12px;flex-shrink:0;cursor:pointer;transition:transform 0.15s;">▶</span>`
+          : `<span style="width:12px;flex-shrink:0;display:inline-block;"></span>`}
         <span style="opacity:0.4;font-size:11px;">📁</span>
         <span>${escapeHtml(node.name)}</span>
         ${node.unreadItemCount > 0 ? `<span class="folder-unread">${node.unreadItemCount}</span>` : ""}
@@ -756,8 +762,28 @@ function renderMappingRows(nodes, container, accountId, mappingByFolderId, depth
       <button class="mapping-save-btn" data-folder-id="${node.id}">Save</button>
     `;
 
+    // Children container — collapsed by default if depth === 0 (top-level)
+    let childContainer = null;
+    if (hasChildren) {
+      childContainer = document.createElement("div");
+      childContainer.className = depth === 0 ? "hidden" : "";
+      renderMappingRows(node.children, childContainer, accountId, mappingByFolderId, depth + 1, node.id);
+
+      const chevron = row.querySelector(".map-chevron");
+      const toggleChildren = (e) => {
+        e.stopPropagation();
+        const collapsed = childContainer.classList.contains("hidden");
+        childContainer.classList.toggle("hidden", !collapsed);
+        chevron.style.transform = collapsed ? "rotate(90deg)" : "";
+      };
+      chevron.addEventListener("click", toggleChildren);
+      // Also toggle when clicking the folder name area (but not inputs/buttons)
+      row.querySelector(".mapping-folder-name").addEventListener("click", toggleChildren);
+    }
+
     // Save button
     row.querySelector(".mapping-save-btn").addEventListener("click", async (e) => {
+      e.stopPropagation();
       const btn = e.currentTarget;
       const label = row.querySelector("[data-field='label']").value.trim();
       const caseId = row.querySelector("[data-field='case']").value;
@@ -768,6 +794,7 @@ function renderMappingRows(nodes, container, accountId, mappingByFolderId, depth
     row.addEventListener("click", (e) => {
       if (!document.getElementById("bulk-mode-check").checked) return;
       if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "BUTTON") return;
+      if (e.target.classList.contains("mapping-folder-name") || e.target.closest(".mapping-folder-name")) return;
       if (bulkSelectedRows.has(node.id)) {
         bulkSelectedRows.delete(node.id);
         row.classList.remove("bulk-selected");
@@ -779,11 +806,9 @@ function renderMappingRows(nodes, container, accountId, mappingByFolderId, depth
         bulkSelectedRows.size ? `${bulkSelectedRows.size} selected` : "";
     });
 
-    container.appendChild(row);
-
-    if (node.children?.length) {
-      renderMappingRows(node.children, container, accountId, mappingByFolderId, depth + 1, node.id);
-    }
+    wrapper.appendChild(row);
+    if (childContainer) wrapper.appendChild(childContainer);
+    container.appendChild(wrapper);
   }
 }
 
