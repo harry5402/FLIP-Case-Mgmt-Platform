@@ -711,7 +711,7 @@ async function loadMappingRows(accountId) {
   const [tree, mappingsRes, casesRes] = await Promise.all([
     loadFolderTree(accountId),
     apiFetch(`/api/email/folder-mappings?accountId=${accountId}`),
-    flipCases.length ? Promise.resolve(null) : apiFetch("/api/cases"),
+    flipCases.length ? Promise.resolve(null) : apiFetch("/api/email/cases-for-mapping"),
   ]);
 
   if (casesRes) {
@@ -740,9 +740,16 @@ function renderMappingRows(nodes, container, accountId, mappingByFolderId, depth
     row.dataset.parentFolderId = parentFolderId || "";
 
     const indent = depth * 16;
-    const caseOptions = flipCases.map((c) =>
-      `<option value="${c.id}" ${existing.case_id === c.id ? "selected" : ""}>${escapeHtml(c.caseName || c.case_name || "")} ${c.caseNumber || c.case_number ? `(${c.caseNumber || c.case_number})` : ""}</option>`
-    ).join("");
+    const docketCases = flipCases.filter((c) => c.isDocketOnly);
+    const platformCases = flipCases.filter((c) => !c.isDocketOnly);
+    const caseOptionGroup = (cases) => cases.map((c) => {
+      const label = [c.caseName, c.caseNumber, c.jurisdiction].filter(Boolean).join(" · ");
+      return `<option value="${c.id}" ${existing.case_id === c.id ? "selected" : ""}>${escapeHtml(label)}</option>`;
+    }).join("");
+    const caseOptions = [
+      docketCases.length ? `<optgroup label="Docket Cases">${caseOptionGroup(docketCases)}</optgroup>` : "",
+      platformCases.length ? `<optgroup label="Platform Cases">${caseOptionGroup(platformCases)}</optgroup>` : "",
+    ].join("");
 
     row.innerHTML = `
       <div class="mapping-folder-name" style="padding-left:${indent}px;">

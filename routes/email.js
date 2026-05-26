@@ -270,6 +270,30 @@ Has legal representation: ${hasRepresentation ? "Yes" : "No"}`,
 // ---------------------------------------------------------------------------
 module.exports = function registerEmailRoutes(app, { requireSession, query, withTransaction, writeAuditLog }) {
   // -------------------------------------------------------------------------
+  // GET /api/email/cases-for-mapping
+  // All cases including docket-only — lightweight list for folder mapping dropdown
+  // -------------------------------------------------------------------------
+  app.get("/api/email/cases-for-mapping", requireSession, async (req, res) => {
+    try {
+      const { rows } = await query(
+        `SELECT c.id, c.case_name, c.case_number, c.jurisdiction, c.is_docket_only
+         FROM cases c
+         ORDER BY c.is_docket_only ASC, c.case_name ASC`
+      );
+      res.json(rows.map((r) => ({
+        id: r.id,
+        caseName: r.case_name,
+        caseNumber: r.case_number,
+        jurisdiction: r.jurisdiction,
+        isDocketOnly: r.is_docket_only,
+      })));
+    } catch (err) {
+      console.error("[email/cases-for-mapping]", err);
+      res.status(500).json({ error: "Failed to load cases" });
+    }
+  });
+
+  // -------------------------------------------------------------------------
   // OAuth — Start (API endpoint — returns auth URL to frontend)
   // POST /api/email/oauth/start  { shared: true|false }
   // Frontend calls this with fetch (auth header included), then redirects to URL
