@@ -2193,6 +2193,67 @@ app.get("/api/litigation/cases/:id/collections", async (req, res) => {
   );
 });
 
+app.get("/api/litigation/collections-summary", async (req, res) => {
+  const result = await query(
+    `SELECT
+        c.id AS case_id,
+        c.case_name,
+        c.case_number,
+        c.jurisdiction,
+        c.judge,
+        COALESCE(state.docket_defendant_count, defs.count, 0) AS defendant_count,
+        lc.id,
+        lc.platform,
+        lc.sent_to_platform,
+        lc.acknowledged,
+        lc.breakdown,
+        lc.all_def_accounted_for,
+        lc.money_received,
+        lc.sent_to_plaintiff,
+        lc.notes,
+        lc.sort_order
+     FROM litigation_collections lc
+     JOIN cases c ON c.id = lc.case_id
+     LEFT JOIN litigation_case_state state ON state.case_id = c.id
+     LEFT JOIN (
+       SELECT case_id, COUNT(*)::int AS count
+       FROM defendants
+       GROUP BY case_id
+     ) defs ON defs.case_id = c.id
+     WHERE COALESCE(state.archived, FALSE) = FALSE
+     ORDER BY c.case_number, lc.sort_order, lc.updated_at, lc.id`
+  );
+
+  const caseMap = new Map();
+  for (const row of result.rows) {
+    if (!caseMap.has(row.case_id)) {
+      caseMap.set(row.case_id, {
+        id: row.case_id,
+        caseName: row.case_name || "",
+        caseNumber: row.case_number || "",
+        jurisdiction: row.jurisdiction || "",
+        judge: row.judge || "",
+        defendantCount: row.defendant_count || 0,
+        collections: [],
+      });
+    }
+    caseMap.get(row.case_id).collections.push({
+      id: row.id,
+      platform: row.platform || "",
+      sentToPlatform: row.sent_to_platform || "",
+      acknowledged: row.acknowledged || "",
+      breakdown: row.breakdown || "",
+      allDefAccountedFor: row.all_def_accounted_for || "",
+      moneyReceived: row.money_received || "",
+      sentToPlaintiff: row.sent_to_plaintiff || "",
+      notes: row.notes || "",
+      sortOrder: row.sort_order,
+    });
+  }
+
+  res.json(Array.from(caseMap.values()));
+});
+
 app.put("/api/litigation/cases/:id/collections", async (req, res) => {
   const rows = Array.isArray(req.body?.rows) ? req.body.rows : null;
   if (!rows) {

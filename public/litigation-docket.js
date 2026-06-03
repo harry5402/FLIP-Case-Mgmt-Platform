@@ -379,9 +379,113 @@ const rerenderCasesPreservingScroll = async (caseId) => {
   window.scrollTo(scrollX, scrollY);
 };
 
+const renderCollectionsTab = async (renderId) => {
+  casesContainer.innerHTML = '<div class="empty-state">Loading collections…</div>';
+  let cases;
+  try {
+    cases = await fetchJson("/api/litigation/collections-summary");
+  } catch (err) {
+    if (renderId !== latestTabRenderId) return;
+    casesContainer.innerHTML = `<div class="empty-state">Unable to load collections: ${escapeHtml(err.message)}</div>`;
+    return;
+  }
+  if (renderId !== latestTabRenderId) return;
+
+  if (!cases.length) {
+    casesContainer.innerHTML = '<div class="empty-state">No cases with collections data.</div>';
+    return;
+  }
+
+  casesContainer.innerHTML = "";
+
+  for (const caseItem of cases) {
+    const card = document.createElement("div");
+    card.className = "table-card litigation-case";
+    card.dataset.caseId = caseItem.id;
+
+    const tbody = document.createElement("tbody");
+    caseItem.collections.forEach((row) => tbody.appendChild(renderCollectionRow(row)));
+
+    card.innerHTML = `
+      <div class="collections-tab-card-header">
+        <div class="litigation-case-header" style="flex:1;padding-bottom:0;">
+          <div class="litigation-case-title">${escapeHtml(caseItem.caseName)}</div>
+          <div class="litigation-case-meta">${escapeHtml(caseItem.caseNumber)}${caseItem.jurisdiction ? " · " + escapeHtml(caseItem.jurisdiction) : ""}${caseItem.defendantCount ? " · Defendants: " + caseItem.defendantCount : ""}${caseItem.judge ? " · " + escapeHtml(caseItem.judge) : ""}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+          <button class="ghost-button collections-tab-add-row" type="button">+ Add Row</button>
+          <button class="ghost-button collections-tab-save" type="button">Save</button>
+          <span class="collections-tab-save-state" style="font-size:12px;color:var(--muted);"></span>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Platform</th>
+              <th>Sent to Platform</th>
+              <th>Acknowledged</th>
+              <th>Breakdown</th>
+              <th>All Def. Accounted For</th>
+              <th>Money Received</th>
+              <th>Sent to Plaintiff</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+        </table>
+      </div>
+      <div class="collections-tab-error" style="color:var(--color-error,red);margin-top:4px;"></div>
+    `;
+
+    const tableWrap = card.querySelector(".table-wrap table");
+    tableWrap.appendChild(tbody);
+
+    card.querySelector(".collections-tab-add-row").addEventListener("click", () => {
+      tbody.appendChild(renderCollectionRow({}));
+    });
+
+    const saveBtn = card.querySelector(".collections-tab-save");
+    const saveState = card.querySelector(".collections-tab-save-state");
+    const errorEl = card.querySelector(".collections-tab-error");
+
+    saveBtn.addEventListener("click", async () => {
+      errorEl.textContent = "";
+      saveState.textContent = "Saving…";
+      const rows = Array.from(tbody.querySelectorAll("tr")).map((row) => ({
+        platform: row.querySelector('[data-field="platform"]').value.trim(),
+        sentToPlatform: toDateInputValue(row.querySelector('[data-field="sentToPlatform"]').value) || null,
+        acknowledged: row.querySelector('[data-field="acknowledged"]').value,
+        breakdown: row.querySelector('[data-field="breakdown"]').value,
+        allDefAccountedFor: row.querySelector('[data-field="allDefAccountedFor"]').value,
+        moneyReceived: row.querySelector('[data-field="moneyReceived"]').value,
+        sentToPlaintiff: row.querySelector('[data-field="sentToPlaintiff"]').value,
+        notes: row.querySelector('[data-field="notes"]').value.trim(),
+      }));
+      try {
+        await fetchJson(`/api/litigation/cases/${caseItem.id}/collections`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rows }),
+        });
+        saveState.textContent = "Saved ✓";
+        setTimeout(() => { saveState.textContent = ""; }, 2500);
+      } catch (err) {
+        saveState.textContent = "";
+        errorEl.textContent = err.message || "Unable to save collections.";
+      }
+    });
+
+    casesContainer.appendChild(card);
+  }
+};
+
 const renderActiveTab = async (renderId) => {
   if (activeTab === "MBFD") {
     await renderMbfdItems(renderId);
+    return;
+  }
+  if (activeTab === "COLLECTIONS") {
+    await renderCollectionsTab(renderId);
     return;
   }
   await renderCases(activeTab, renderId);
@@ -1303,7 +1407,9 @@ const setTab = async (tab) => {
     button.classList.toggle("active", button.dataset.tab === tab);
   });
   const isMbfdTab = tab === "MBFD";
+  const isCollectionsTab = tab === "COLLECTIONS";
   newCaseButton.textContent = isMbfdTab ? "New Money Back to Doe Item" : "New Case";
+  newCaseButton.classList.toggle("hidden", isCollectionsTab);
   viewHiddenMbfdButton.classList.toggle("hidden", !isMbfdTab);
   await renderActiveTab(renderId);
 };

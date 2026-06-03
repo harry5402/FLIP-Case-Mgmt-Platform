@@ -835,6 +835,14 @@ tr.is-completed td {
   border-color: #9cb59e;
 }
 
+.collections-tab-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+}
+
 .mbfd-form-grid {
   text-align: left;
 }
