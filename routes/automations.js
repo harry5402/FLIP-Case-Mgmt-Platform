@@ -331,4 +331,119 @@ function tryRequire(name) {
   try { return require(name); } catch (_) { return null; }
 }
 
+// ── Edison Cover Pages ─────────────────────────────────────────────────────
+
+// In-memory store for completed edison files: token -> { pdfBuffer, filename, createdAt }
+const edisonFiles = new Map();
+
+setInterval(() => {
+  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+  for (const [token, f] of edisonFiles.entries()) {
+    if (f.createdAt < cutoff) edisonFiles.delete(token);
+  }
+}, 10 * 60 * 1000);
+
+const edisonUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100MB total generosity
+});
+
+// POST /api/automations/edison/apply
+router.post("/edison/apply", edisonUpload.array("pdfs"), async (req, res) => {
+  const clientName = (req.body.clientName || "").trim();
+  if (!clientName) return res.status(400).json({ error: "clientName is required" });
+  if (!req.files || req.files.length === 0) return res.status(400).json({ error: "No PDF files uploaded" });
+
+  const { PDFDocument, rgb, StandardFonts } = require("pdf-lib");
+  const total = req.files.length;
+  const results = [];
+
+  for (let i = 0; i < req.files.length; i++) {
+    const file = req.files[i];
+    const partNum = i + 1;
+
+    try {
+      // Load the uploaded PDF
+      const srcDoc = await PDFDocument.load(file.buffer);
+
+      // Build cover page PDF in memory
+      const coverDoc = await PDFDocument.create();
+      const coverPage = coverDoc.addPage([612, 792]); // letter size
+      const { width, height } = coverPage.getSize();
+
+      const fontBold = await coverDoc.embedFont(StandardFonts.HelveticaBold);
+      const fontReg  = await coverDoc.embedFont(StandardFonts.Helvetica);
+
+      // "EXHIBIT 2"
+      const title = "EXHIBIT 2";
+      const titleSize = 36;
+      const titleWidth = fontBold.widthOfTextAtSize(title, titleSize);
+      coverPage.drawText(title, {
+        x: (width - titleWidth) / 2,
+        y: height / 2 + 60,
+        size: titleSize,
+        font: fontBold,
+        color: rgb(0, 0, 0),
+      });
+
+      // "TO DECLARATION OF [Client Name]"
+      const decLine = `TO DECLARATION OF ${clientName.toUpperCase()}`;
+      const decSize = 16;
+      const decWidth = fontReg.widthOfTextAtSize(decLine, decSize);
+      coverPage.drawText(decLine, {
+        x: (width - decWidth) / 2,
+        y: height / 2 + 10,
+        size: decSize,
+        font: fontReg,
+        color: rgb(0, 0, 0),
+      });
+
+      // "Part X of Y"
+      const partLine = `Part ${partNum} of ${total}`;
+      const partSize = 14;
+      const partWidth = fontReg.widthOfTextAtSize(partLine, partSize);
+      coverPage.drawText(partLine, {
+        x: (width - partWidth) / 2,
+        y: height / 2 - 24,
+        size: partSize,
+        font: fontReg,
+        color: rgb(0.3, 0.3, 0.3),
+      });
+
+      // Merge: cover + original pages
+      const mergedDoc = await PDFDocument.create();
+      const [copiedCover] = await mergedDoc.copyPages(coverDoc, [0]);
+      mergedDoc.addPage(copiedCover);
+      const srcPageIndices = srcDoc.getPageIndices();
+      const copiedPages = await mergedDoc.copyPages(srcDoc, srcPageIndices);
+      copiedPages.forEach(p => mergedDoc.addPage(p));
+
+      const pdfBytes = await mergedDoc.save();
+      const token = crypto.randomBytes(12).toString("hex");
+      const outName = file.originalname.replace(/\.pdf$/i, "") + `_Part${partNum}of${total}.pdf`;
+
+      edisonFiles.set(token, {
+        pdfBuffer: Buffer.from(pdfBytes),
+        filename: outName,
+        createdAt: Date.now(),
+      });
+
+      results.push({ name: outName, token });
+    } catch (err) {
+      results.push({ name: file.originalname, token: null, error: err.message });
+    }
+  }
+
+  res.json({ files: results });
+});
+
+// GET /api/automations/edison/download/:token
+router.get("/edison/download/:token", (req, res) => {
+  const entry = edisonFiles.get(req.params.token);
+  if (!entry) return res.status(404).json({ error: "File not found or expired" });
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${entry.filename}"`);
+  res.send(entry.pdfBuffer);
+});
+
 module.exports = router;

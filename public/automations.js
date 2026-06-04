@@ -185,3 +185,113 @@ async function downloadPdf() {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+// ── Edison Cover Pages ──────────────────────────────────────────────────────
+
+let edisonFiles = []; // ordered array of File objects
+
+const edisonDropZone = document.getElementById('edison-drop-zone');
+const edisonFileInput = document.getElementById('edison-file-input');
+const edisonFileList = document.getElementById('edison-file-list');
+const edisonRunBtn = document.getElementById('edison-run-btn');
+
+edisonDropZone.addEventListener('click', () => edisonFileInput.click());
+edisonDropZone.addEventListener('dragover', e => { e.preventDefault(); edisonDropZone.classList.add('drag-over'); });
+edisonDropZone.addEventListener('dragleave', () => edisonDropZone.classList.remove('drag-over'));
+edisonDropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  edisonDropZone.classList.remove('drag-over');
+  addEdisonFiles(Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf'));
+});
+edisonFileInput.addEventListener('change', () => {
+  addEdisonFiles(Array.from(edisonFileInput.files));
+  edisonFileInput.value = '';
+});
+
+function addEdisonFiles(files) {
+  edisonFiles = edisonFiles.concat(files);
+  renderEdisonFileList();
+}
+
+function renderEdisonFileList() {
+  edisonFileList.innerHTML = '';
+  edisonFiles.forEach((f, i) => {
+    const row = document.createElement('div');
+    row.className = 'edison-file-row';
+    row.innerHTML = `
+      <span class="part-label">Part ${i + 1}</span>
+      <span class="file-name" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
+      <button class="move-btn" data-dir="up" data-idx="${i}" title="Move up">▲</button>
+      <button class="move-btn" data-dir="down" data-idx="${i}" title="Move down">▼</button>
+      <button class="move-btn" data-dir="remove" data-idx="${i}" title="Remove">✕</button>
+    `;
+    edisonFileList.appendChild(row);
+  });
+  edisonFileList.querySelectorAll('.move-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.idx);
+      const dir = btn.dataset.dir;
+      if (dir === 'up' && idx > 0) {
+        [edisonFiles[idx - 1], edisonFiles[idx]] = [edisonFiles[idx], edisonFiles[idx - 1]];
+      } else if (dir === 'down' && idx < edisonFiles.length - 1) {
+        [edisonFiles[idx], edisonFiles[idx + 1]] = [edisonFiles[idx + 1], edisonFiles[idx]];
+      } else if (dir === 'remove') {
+        edisonFiles.splice(idx, 1);
+      }
+      renderEdisonFileList();
+      edisonRunBtn.disabled = edisonFiles.length === 0;
+    });
+  });
+  edisonRunBtn.disabled = edisonFiles.length === 0;
+}
+
+edisonRunBtn.addEventListener('click', async () => {
+  const clientName = document.getElementById('edison-client-name').value.trim();
+  if (!clientName) { alert('Please enter a client name.'); return; }
+  if (edisonFiles.length === 0) return;
+
+  edisonRunBtn.disabled = true;
+  edisonRunBtn.textContent = 'Processing…';
+
+  const formData = new FormData();
+  formData.append('clientName', clientName);
+  edisonFiles.forEach(f => formData.append('pdfs', f));
+
+  try {
+    const res = await authFetch('/api/automations/edison/apply', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+    showEdisonResults(data.files);
+  } catch (err) {
+    alert('Error: ' + err.message);
+  } finally {
+    edisonRunBtn.disabled = false;
+    edisonRunBtn.textContent = 'Apply Cover Pages';
+  }
+});
+
+function showEdisonResults(files) {
+  const results = document.getElementById('edison-results');
+  results.classList.remove('hidden');
+  results.innerHTML = `<h3>Done — ${files.length} PDF${files.length !== 1 ? 's' : ''} ready</h3><div class="edison-download-list"></div>`;
+  const list = results.querySelector('.edison-download-list');
+  files.forEach(f => {
+    const row = document.createElement('div');
+    row.className = 'edison-download-row';
+    row.innerHTML = `<span class="dl-name">${escapeHtml(f.name)}</span><button class="ghost-button" type="button">Download</button>`;
+    row.querySelector('button').addEventListener('click', () => downloadEdisonFile(f.token, f.name));
+    list.appendChild(row);
+  });
+}
+
+async function downloadEdisonFile(token, name) {
+  const res = await authFetch(`/api/automations/edison/download/${token}`);
+  if (!res.ok) { alert('Download failed'); return; }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(url);
+}

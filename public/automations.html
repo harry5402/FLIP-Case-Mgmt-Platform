@@ -244,6 +244,83 @@
         gap: 20px;
       }
       .job-summary span b { color: #1a1a1a; }
+      /* Edison tool */
+      .edison-text-input {
+        width: 100%;
+        max-width: 360px;
+        padding: 8px 10px;
+        font-size: 13px;
+        border: 1px solid #e3d9cf;
+        border-radius: 6px;
+        background: #fffdf9;
+        color: #1a1a1a;
+        box-sizing: border-box;
+      }
+      .edison-text-input:focus { outline: none; border-color: #b74b35; }
+      .edison-file-list {
+        margin-top: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .edison-file-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 12px;
+        background: #fff8f0;
+        border: 1px solid #e3d9cf;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      .edison-file-row .part-label {
+        font-size: 11px;
+        font-weight: 700;
+        color: #b74b35;
+        min-width: 54px;
+      }
+      .edison-file-row .file-name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #333;
+      }
+      .edison-file-row .move-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        color: #6a6a6a;
+        font-size: 14px;
+        padding: 2px 4px;
+        line-height: 1;
+      }
+      .edison-file-row .move-btn:hover { color: #b74b35; }
+      .edison-results {
+        margin-top: 28px;
+      }
+      .edison-results h3 {
+        font-size: 15px;
+        margin: 0 0 14px;
+        color: #1a1a1a;
+      }
+      .edison-download-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .edison-download-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        background: #f0fdf4;
+        border: 1px solid #bbf7d0;
+        border-radius: 6px;
+        font-size: 13px;
+        gap: 12px;
+      }
+      .edison-download-row .dl-name { flex: 1; color: #333; }
       .stub-notice {
         display: inline-block;
         margin-top: 8px;
@@ -348,12 +425,30 @@
         <div class="automation-panel" id="panel-edison">
           <div class="automation-title">Edison Cover Pages</div>
           <div class="automation-desc">
-            Apply a standardized cover page to individual Edison case PDFs. Upload your PDFs and
-            the tool will prepend the correct cover page to each one.
+            Upload your Edison PDFs. A cover page will be prepended to each one —
+            <strong>EXHIBIT 2 / TO DECLARATION OF [Client]</strong> — with Part numbers assigned automatically.
           </div>
-          <div class="stub-notice">
-            Backend coming soon — template pending.
+
+          <div class="form-section">
+            <label class="form-label">1. Client Name</label>
+            <input type="text" id="edison-client-name" class="edison-text-input" placeholder="e.g. John Doe" />
           </div>
+
+          <div class="form-section">
+            <label class="form-label">2. Upload PDFs <span style="font-weight:400;text-transform:none;letter-spacing:0">(order = Part numbering)</span></label>
+            <div class="csv-drop-zone" id="edison-drop-zone">
+              <div>Drop PDF files here, or <u>click to browse</u></div>
+              <div style="font-size:11px;margin-top:6px;">Select multiple — they will be numbered Part 1, Part 2… in the order shown below.</div>
+              <input type="file" id="edison-file-input" accept="application/pdf" multiple />
+            </div>
+            <div id="edison-file-list" class="edison-file-list"></div>
+          </div>
+
+          <div class="form-section">
+            <button id="edison-run-btn" class="ghost-button" type="button" disabled>Apply Cover Pages</button>
+          </div>
+
+          <div id="edison-results" class="edison-results hidden"></div>
         </div>
 
         <!-- Screenshot PDF Compiler Panel -->
