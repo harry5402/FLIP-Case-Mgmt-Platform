@@ -285,8 +285,13 @@ async function notifyTaskAssigned(recipientEmail, taskInfo, db) {
     if (!sender) return; // No connected accounts yet
 
     const token = await getValidToken(sender.id, db);
-    const recipient = await lookupMsUserByEmail(token, recipientEmail);
-    if (!recipient) return;
+
+    // Try to resolve the recipient's MS object ID.
+    // First attempt: direct lookup (requires User.ReadBasic.All).
+    // Fallback: pass email directly — Graph resolves it within the same tenant.
+    let recipientId = recipientEmail; // fallback: use email as identifier
+    const looked = await lookupMsUserByEmail(token, recipientEmail);
+    if (looked?.id) recipientId = looked.id;
 
     const due = taskInfo.dueDate
       ? new Date(taskInfo.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -302,7 +307,7 @@ async function notifyTaskAssigned(recipientEmail, taskInfo, db) {
       <p><a href="https://www.flipcasemgmt.com">Open FLIP →</a></p>
     `.trim();
 
-    await sendTeamsDM(sender, recipient.id, html, db);
+    await sendTeamsDM(sender, recipientId, html, db);
     console.log(`[Teams] Task notification sent to ${recipientEmail}`);
   } catch (err) {
     console.error("[Teams] notifyTaskAssigned failed:", err.message);
@@ -320,8 +325,8 @@ async function notifyOverdueSummary(recipientEmail, tasks, db) {
     if (!sender) return;
 
     const token = await getValidToken(sender.id, db);
-    const recipient = await lookupMsUserByEmail(token, recipientEmail);
-    if (!recipient) return;
+    const looked = await lookupMsUserByEmail(token, recipientEmail);
+    const recipientId = looked?.id || recipientEmail;
 
     const taskLines = tasks.map((t) => {
       const due = t.dueDate
@@ -337,7 +342,7 @@ async function notifyOverdueSummary(recipientEmail, tasks, db) {
       <p><a href="https://www.flipcasemgmt.com">Open FLIP →</a></p>
     `.trim();
 
-    await sendTeamsDM(sender, recipient.id, html, db);
+    await sendTeamsDM(sender, recipientId, html, db);
     console.log(`[Teams] Overdue summary sent to ${recipientEmail} (${tasks.length} tasks)`);
   } catch (err) {
     console.error("[Teams] notifyOverdueSummary failed:", err.message);
