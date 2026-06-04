@@ -2481,6 +2481,27 @@ app.post("/api/tasks", async (req, res) => {
     before: null,
     after: result.rows[0],
   });
+
+  // Teams notification — fire and forget, never blocks response
+  if (assignedToUserId && assignedToUserId !== req.session.userId) {
+    (async () => {
+      try {
+        const userRow = await query("SELECT email FROM users WHERE id = $1", [assignedToUserId]);
+        const caseName = caseId
+          ? (await query("SELECT name FROM cases WHERE id = $1", [caseId])).rows[0]?.name
+          : null;
+        if (userRow.rows[0]?.email) {
+          await notifyTaskAssigned(userRow.rows[0].email, {
+            taskType,
+            dueDate,
+            caseName: caseName || null,
+            assignedByName: req.session.name || req.session.email || null,
+          }, query);
+        }
+      } catch (e) { console.error("[notify] task create:", e.message); }
+    })();
+  }
+
   res.status(201).json(result.rows[0]);
 });
 
@@ -2512,6 +2533,26 @@ app.post("/api/groups/:id/tasks", async (req, res) => {
     before: null,
     after: result.rows[0],
   });
+
+  // Teams notification — fire and forget
+  if (assignedToUserId && assignedToUserId !== req.session.userId) {
+    (async () => {
+      try {
+        const userRow = await query("SELECT email FROM users WHERE id = $1", [assignedToUserId]);
+        const caseName = caseId
+          ? (await query("SELECT name FROM cases WHERE id = $1", [caseId])).rows[0]?.name
+          : null;
+        if (userRow.rows[0]?.email) {
+          await notifyTaskAssigned(userRow.rows[0].email, {
+            taskType,
+            dueDate,
+            caseName: caseName || null,
+            assignedByName: req.session.name || req.session.email || null,
+          }, query);
+        }
+      } catch (e) { console.error("[notify] group task create:", e.message); }
+    })();
+  }
 
   res.status(201).json(result.rows[0]);
 });
@@ -4554,10 +4595,11 @@ const ensureEmailTables = async () => {
 };
 
 // ---------------------------------------------------------------------------
-// Register email routes
+// Register email routes + pull out Teams notification helpers
 // ---------------------------------------------------------------------------
-const registerEmailRoutes = require("./routes/email");
-registerEmailRoutes(app, { requireSession, query, withTransaction, writeAuditLog });
+const emailModule = require("./routes/email");
+emailModule(app, { requireSession, query, withTransaction, writeAuditLog });
+const { notifyTaskAssigned, notifyOverdueSummary } = emailModule;
 
 // ---------------------------------------------------------------------------
 // Automations routes (Exhibit 2, etc.)
@@ -4578,6 +4620,8 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ error: "Internal server error" });
 });
 
+const cron = require("node-cron");
+
 const start = async () => {
   await ensureAuditLogTable();
   await ensureUserPermissionsColumns();
@@ -4588,6 +4632,44 @@ const start = async () => {
   await ensureLitigationTables();
   await ensureEmailTables();
   await ensureAdminUser();
+
+  // ---------------------------------------------------------------------------
+  // Friday 9 AM — overdue task reminder via Teams DM
+  // Runs at 9:00 AM Eastern (14:00 UTC) every Friday
+  // ---------------------------------------------------------------------------
+  cron.schedule("0 14 * * 5", async () => {
+    console.log("[cron] Running Friday overdue task reminders...");
+    try {
+      // Get all users with overdue open tasks
+      const { rows } = await query(`
+        SELECT
+          u.id,
+          u.email,
+          u.name,
+          json_agg(
+            json_build_object(
+              'taskType', t.task_type,
+              'dueDate',  t.due_date,
+              'caseName', c.name
+            ) ORDER BY t.due_date ASC
+          ) AS tasks
+        FROM tasks t
+        JOIN users u ON u.id = t.assigned_to_user_id
+        LEFT JOIN cases c ON c.id = t.case_id
+        WHERE t.status <> 'Complete'
+          AND t.due_date < CURRENT_DATE
+        GROUP BY u.id, u.email, u.name
+      `);
+
+      for (const row of rows) {
+        await notifyOverdueSummary(row.email, row.tasks, query);
+      }
+      console.log(`[cron] Overdue reminders sent to ${rows.length} user(s).`);
+    } catch (err) {
+      console.error("[cron] Friday reminder error:", err.message);
+    }
+  }, { timezone: "America/New_York" });
+
   setInterval(async () => {
     try {
       const now = new Date();

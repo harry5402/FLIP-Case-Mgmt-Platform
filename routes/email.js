@@ -12,6 +12,8 @@ const MS_SCOPES = [
   "Mail.ReadWrite",
   "Mail.Send",
   "User.Read",
+  "Chat.Create",
+  "ChatMessage.Send",
   "offline_access",
 ];
 
@@ -215,46 +217,130 @@ async function fetchFolderTree(token) {
 // ---------------------------------------------------------------------------
 // Teams notification helper
 // ---------------------------------------------------------------------------
-async function sendTeamsNotification(sharedAccountId, recipientMsUserId, message, db) {
-  if (!sharedAccountId || !recipientMsUserId) return;
+// ---------------------------------------------------------------------------
+// Teams notification helpers
+// ---------------------------------------------------------------------------
+
+/** Look up a user's Microsoft 365 object ID by their email address */
+async function lookupMsUserByEmail(token, email) {
   try {
-    const token = await getValidToken(sharedAccountId, db);
-
-    // Get sender's ms_user_id
-    const { rows } = await db(
-      "SELECT ms_user_id FROM ms_connected_accounts WHERE id = $1",
-      [sharedAccountId]
-    );
-    const senderMsUserId = rows[0]?.ms_user_id;
-    if (!senderMsUserId) return;
-
-    // Find or create 1:1 chat
-    const chat = await graphRequest(token, "/chats", {
-      method: "POST",
-      body: {
-        chatType: "oneOnOne",
-        members: [
-          {
-            "@odata.type": "#microsoft.graph.aadUserConversationMember",
-            roles: ["owner"],
-            "user@odata.bind": `https://graph.microsoft.com/v1.0/users/${senderMsUserId}`,
-          },
-          {
-            "@odata.type": "#microsoft.graph.aadUserConversationMember",
-            roles: ["owner"],
-            "user@odata.bind": `https://graph.microsoft.com/v1.0/users/${recipientMsUserId}`,
-          },
-        ],
-      },
-    });
-
-    await graphRequest(token, `/chats/${chat.id}/messages`, {
-      method: "POST",
-      body: { body: { content: message } },
-    });
+    const data = await graphRequest(token, `/users/${encodeURIComponent(email)}?$select=id,displayName`);
+    return data; // { id, displayName }
   } catch (err) {
-    // Non-fatal — Teams notification failure should never block a task operation
-    console.error("[Teams] Notification failed:", err.message);
+    console.error(`[Teams] Could not look up MS user for ${email}:`, err.message);
+    return null;
+  }
+}
+
+/** Get the first connected account (litigation account) to use as sender */
+async function getDefaultSendingAccount(db) {
+  const { rows } = await db(
+    `SELECT id, ms_user_id, email FROM ms_connected_accounts
+     ORDER BY created_at ASC LIMIT 1`
+  );
+  return rows[0] || null;
+}
+
+/** Core: send a Teams DM from the default account to a recipient MS user ID */
+async function sendTeamsDM(senderAccount, recipientMsUserId, htmlMessage, db) {
+  const token = await getValidToken(senderAccount.id, db);
+  const senderMsUserId = senderAccount.ms_user_id;
+  if (!senderMsUserId) throw new Error("Sender account has no ms_user_id stored");
+
+  // Create or retrieve 1:1 chat
+  const chat = await graphRequest(token, "/chats", {
+    method: "POST",
+    body: {
+      chatType: "oneOnOne",
+      members: [
+        {
+          "@odata.type": "#microsoft.graph.aadUserConversationMember",
+          roles: ["owner"],
+          "user@odata.bind": `https://graph.microsoft.com/v1.0/users/${senderMsUserId}`,
+        },
+        {
+          "@odata.type": "#microsoft.graph.aadUserConversationMember",
+          roles: ["owner"],
+          "user@odata.bind": `https://graph.microsoft.com/v1.0/users/${recipientMsUserId}`,
+        },
+      ],
+    },
+  });
+
+  await graphRequest(token, `/chats/${chat.id}/messages`, {
+    method: "POST",
+    body: { body: { contentType: "html", content: htmlMessage } },
+  });
+}
+
+/**
+ * High-level: notify a FLIP user by their firm email that a task was assigned to them.
+ * Non-fatal — a Teams failure never blocks the task operation.
+ *
+ * taskInfo: { taskType, dueDate, caseName, assignedByName }
+ */
+async function notifyTaskAssigned(recipientEmail, taskInfo, db) {
+  try {
+    const sender = await getDefaultSendingAccount(db);
+    if (!sender) return; // No connected accounts yet
+
+    const token = await getValidToken(sender.id, db);
+    const recipient = await lookupMsUserByEmail(token, recipientEmail);
+    if (!recipient) return;
+
+    const due = taskInfo.dueDate
+      ? new Date(taskInfo.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+      : "no due date";
+
+    const caseLabel = taskInfo.caseName ? ` on <b>${taskInfo.caseName}</b>` : "";
+    const byLabel = taskInfo.assignedByName ? ` by ${taskInfo.assignedByName}` : "";
+
+    const html = `
+      <p>📋 <b>New task assigned to you${byLabel} in FLIP</b></p>
+      <p><b>Task:</b> ${taskInfo.taskType}${caseLabel}</p>
+      <p><b>Due:</b> ${due}</p>
+      <p><a href="https://www.flipcasemgmt.com">Open FLIP →</a></p>
+    `.trim();
+
+    await sendTeamsDM(sender, recipient.id, html, db);
+    console.log(`[Teams] Task notification sent to ${recipientEmail}`);
+  } catch (err) {
+    console.error("[Teams] notifyTaskAssigned failed:", err.message);
+  }
+}
+
+/**
+ * High-level: send a Friday overdue task summary to a user.
+ * tasks: [{ taskType, caseName, dueDate }]
+ */
+async function notifyOverdueSummary(recipientEmail, tasks, db) {
+  if (!tasks || tasks.length === 0) return;
+  try {
+    const sender = await getDefaultSendingAccount(db);
+    if (!sender) return;
+
+    const token = await getValidToken(sender.id, db);
+    const recipient = await lookupMsUserByEmail(token, recipientEmail);
+    if (!recipient) return;
+
+    const taskLines = tasks.map((t) => {
+      const due = t.dueDate
+        ? new Date(t.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+        : "no date";
+      const caseLabel = t.caseName ? ` — ${t.caseName}` : "";
+      return `<li>${t.taskType}${caseLabel} <span style="color:#cc0000">(due ${due})</span></li>`;
+    }).join("");
+
+    const html = `
+      <p>⏰ <b>FLIP Weekly Reminder — You have ${tasks.length} overdue task${tasks.length === 1 ? "" : "s"}</b></p>
+      <ul>${taskLines}</ul>
+      <p><a href="https://www.flipcasemgmt.com">Open FLIP →</a></p>
+    `.trim();
+
+    await sendTeamsDM(sender, recipient.id, html, db);
+    console.log(`[Teams] Overdue summary sent to ${recipientEmail} (${tasks.length} tasks)`);
+  } catch (err) {
+    console.error("[Teams] notifyOverdueSummary failed:", err.message);
   }
 }
 
@@ -334,7 +420,7 @@ Has legal representation: ${hasRepresentation ? "Yes" : "No"}`,
 // ---------------------------------------------------------------------------
 // Route registration
 // ---------------------------------------------------------------------------
-module.exports = function registerEmailRoutes(app, { requireSession, query, withTransaction, writeAuditLog }) {
+function registerEmailRoutes(app, { requireSession, query, withTransaction, writeAuditLog }) {
   // -------------------------------------------------------------------------
   // GET /api/email/cases-for-mapping
   // All cases including docket-only — lightweight list for folder mapping dropdown
@@ -1090,9 +1176,11 @@ module.exports = function registerEmailRoutes(app, { requireSession, query, with
     }
   });
 
-  // -------------------------------------------------------------------------
-  // Export Teams notification helper for use in server.js task routes
-  // -------------------------------------------------------------------------
-  app.locals.sendTeamsNotification = (sharedAccountId, recipientMsUserId, message) =>
-    sendTeamsNotification(sharedAccountId, recipientMsUserId, message, query);
 };
+
+// ---------------------------------------------------------------------------
+// Exports
+// ---------------------------------------------------------------------------
+module.exports = registerEmailRoutes;
+module.exports.notifyTaskAssigned = notifyTaskAssigned;
+module.exports.notifyOverdueSummary = notifyOverdueSummary;
