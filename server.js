@@ -4620,8 +4620,6 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ error: "Internal server error" });
 });
 
-const cron = require("node-cron");
-
 const start = async () => {
   await ensureAuditLogTable();
   await ensureUserPermissionsColumns();
@@ -4637,7 +4635,14 @@ const start = async () => {
   // Friday 9 AM — overdue task reminder via Teams DM
   // Runs at 9:00 AM Eastern (14:00 UTC) every Friday
   // ---------------------------------------------------------------------------
-  cron.schedule("0 14 * * 5", async () => {
+  let cron;
+  try {
+    cron = require("node-cron");
+  } catch (e) {
+    console.warn("[cron] node-cron not available, Friday reminders disabled:", e.message);
+  }
+
+  if (cron) cron.schedule("0 14 * * 5", async () => {
     console.log("[cron] Running Friday overdue task reminders...");
     try {
       // Get all users with overdue open tasks
@@ -4670,7 +4675,7 @@ const start = async () => {
     }
   }, { timezone: "America/New_York" });
 
-  setInterval(async () => {
+  setInterval(async () => { // weekly report scheduler
     try {
       const now = new Date();
       if (now.getDay() !== 6) return; // not Saturday
