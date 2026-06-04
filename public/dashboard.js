@@ -1,4 +1,20 @@
 const caseGroups = document.getElementById("case-groups");
+
+// Hamburger menu
+const navHamburger = document.getElementById("nav-hamburger");
+const navDropdown = document.getElementById("nav-dropdown");
+navHamburger.addEventListener("click", e => {
+  e.stopPropagation();
+  const open = !navDropdown.classList.contains("hidden");
+  navDropdown.classList.toggle("hidden", open);
+  navHamburger.classList.toggle("open", !open);
+});
+document.addEventListener("click", e => {
+  if (!navDropdown.classList.contains("hidden") && !navDropdown.contains(e.target)) {
+    navDropdown.classList.add("hidden");
+    navHamburger.classList.remove("open");
+  }
+});
 const usersLink = document.getElementById("users-link");
 const weeklyReportLink = document.getElementById("weekly-report-link");
 const logoutButton = document.getElementById("logout-button");

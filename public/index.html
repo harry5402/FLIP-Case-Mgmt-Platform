@@ -11,20 +11,22 @@
     <header class="app-header">
       <div class="header-spacer"></div>
       <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
-      <div class="tab-switch">
-        <a class="ghost-button" href="email.html">Email Portal</a>
-        <a class="ghost-button" href="weekly-tasklist.html">Weekly Tasklist</a>
-        <a class="ghost-button" href="litigation-docket.html">Litigation Docket</a>
-        <a class="ghost-button" href="automations.html">Tools &amp; Automations</a>
-        <a id="users-link" class="ghost-button hidden" href="users.html">Users</a>
-        <a id="weekly-report-link" class="ghost-button hidden" href="weekly-report.html">Reports</a>
-        <button id="change-password-button" class="ghost-button hidden" type="button">
-          Change Password
+      <div class="nav-menu-wrap">
+        <button id="nav-hamburger" class="ghost-button nav-hamburger" type="button" aria-label="Menu">
+          <span></span><span></span><span></span>
         </button>
-        <button id="logout-all-button" class="ghost-button" type="button">
-          Log Out All Sessions
-        </button>
-        <button id="logout-button" class="ghost-button" type="button">Logout</button>
+        <div id="nav-dropdown" class="nav-dropdown hidden">
+          <a class="nav-dropdown-item" href="email.html">Email Portal</a>
+          <a class="nav-dropdown-item" href="weekly-tasklist.html">Weekly Tasklist</a>
+          <a class="nav-dropdown-item" href="litigation-docket.html">Litigation Docket</a>
+          <a class="nav-dropdown-item" href="automations.html">Tools &amp; Automations</a>
+          <a id="users-link" class="nav-dropdown-item hidden" href="users.html">Users</a>
+          <a id="weekly-report-link" class="nav-dropdown-item hidden" href="weekly-report.html">Reports</a>
+          <div class="nav-dropdown-divider"></div>
+          <button id="change-password-button" class="nav-dropdown-item nav-dropdown-btn hidden" type="button">Change Password</button>
+          <button id="logout-all-button" class="nav-dropdown-item nav-dropdown-btn" type="button">Log Out All Sessions</button>
+          <button id="logout-button" class="nav-dropdown-item nav-dropdown-btn" type="button">Logout</button>
+        </div>
       </div>
     </header>
 
