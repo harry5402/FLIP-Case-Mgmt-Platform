@@ -113,12 +113,33 @@ async function loadAccounts() {
 // ---------------------------------------------------------------------------
 // Load folder tree for an account (cached)
 // ---------------------------------------------------------------------------
-async function loadFolderTree(accountId) {
-  if (folderTrees[accountId]) return folderTrees[accountId];
+const FOLDER_CACHE_TTL = 20 * 60 * 1000; // 20 minutes
+
+async function loadFolderTree(accountId, forceRefresh = false) {
+  if (!forceRefresh && folderTrees[accountId]) return folderTrees[accountId];
+
+  // Check localStorage cache first
+  const cacheKey = `flipFolderTree_${accountId}`;
+  if (!forceRefresh) {
+    try {
+      const cached = JSON.parse(localStorage.getItem(cacheKey) || "null");
+      if (cached && Date.now() - cached.ts < FOLDER_CACHE_TTL) {
+        folderTrees[accountId] = cached.tree;
+        return cached.tree;
+      }
+    } catch { /* ignore parse errors */ }
+  }
+
   const res = await apiFetch(`/api/email/accounts/${accountId}/folders`);
   if (!res.ok) return [];
   const tree = await res.json();
   folderTrees[accountId] = tree;
+
+  // Cache in localStorage
+  try {
+    localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), tree }));
+  } catch { /* ignore storage errors */ }
+
   return tree;
 }
 

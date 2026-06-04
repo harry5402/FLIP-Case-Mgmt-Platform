@@ -68,7 +68,58 @@ async function graphRequest(token, endpoint, options = {}) {
 
 // ---------------------------------------------------------------------------
 // Token management
+// Direct HTTP calls to Microsoft's token endpoint — MSAL does not expose
+// refresh tokens in its public API, so we manage them ourselves.
 // ---------------------------------------------------------------------------
+async function exchangeCodeForTokens(code) {
+  const res = await fetch(
+    `https://login.microsoftonline.com/${process.env.MS_TENANT_ID}/oauth2/v2.0/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        client_id: process.env.MS_CLIENT_ID,
+        client_secret: process.env.MS_CLIENT_SECRET,
+        code,
+        redirect_uri: getRedirectUri(),
+        scope: MS_SCOPES.join(" "),
+      }),
+    }
+  );
+  const data = await res.json();
+  if (data.error) throw new Error(`Token exchange failed: ${data.error_description || data.error}`);
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token,
+    expiresAt: new Date(Date.now() + data.expires_in * 1000),
+  };
+}
+
+async function refreshAccessToken(refreshToken) {
+  const res = await fetch(
+    `https://login.microsoftonline.com/${process.env.MS_TENANT_ID}/oauth2/v2.0/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: process.env.MS_CLIENT_ID,
+        client_secret: process.env.MS_CLIENT_SECRET,
+        refresh_token: refreshToken,
+        scope: MS_SCOPES.join(" "),
+      }),
+    }
+  );
+  const data = await res.json();
+  if (data.error) throw new Error(`Token refresh failed: ${data.error_description || data.error}`);
+  return {
+    accessToken: data.access_token,
+    refreshToken: data.refresh_token || refreshToken, // MS returns a new one; fall back if not
+    expiresAt: new Date(Date.now() + data.expires_in * 1000),
+  };
+}
+
 async function getValidToken(accountId, db) {
   const { rows } = await db(
     "SELECT id, access_token, refresh_token, token_expires_at FROM ms_connected_accounts WHERE id = $1",
@@ -83,25 +134,19 @@ async function getValidToken(accountId, db) {
     return account.access_token;
   }
 
-  // Refresh
+  if (!account.refresh_token) {
+    throw new Error("No refresh token stored — account needs to be reconnected.");
+  }
+
   try {
-    const tokenResponse = await getMsalClient().acquireTokenByRefreshToken({
-      refreshToken: account.refresh_token,
-      scopes: MS_SCOPES,
-    });
-    const newExpiry = new Date(tokenResponse.expiresOn);
+    const tokens = await refreshAccessToken(account.refresh_token);
     await db(
       `UPDATE ms_connected_accounts
        SET access_token = $1, refresh_token = $2, token_expires_at = $3, updated_at = NOW()
        WHERE id = $4`,
-      [
-        tokenResponse.accessToken,
-        tokenResponse.refreshToken || account.refresh_token,
-        newExpiry,
-        accountId,
-      ]
+      [tokens.accessToken, tokens.refreshToken, tokens.expiresAt, accountId]
     );
-    return tokenResponse.accessToken;
+    return tokens.accessToken;
   } catch (err) {
     throw new Error(`Token refresh failed — account may need to be reconnected: ${err.message}`);
   }
@@ -121,29 +166,26 @@ async function getAccessibleAccounts(userId, db) {
 }
 
 // ---------------------------------------------------------------------------
-// Folder tree helper  (recursive up to 3 levels)
+// Folder tree helper — single request using $expand to get all levels at once
 // ---------------------------------------------------------------------------
-async function fetchFolderTree(token, folderId = null) {
-  const endpoint = folderId
-    ? `/me/mailFolders/${folderId}/childFolders?$top=100`
-    : `/me/mailFolders?$top=100`;
-  const data = await graphRequest(token, endpoint);
-  const folders = data.value || [];
-  const result = [];
-  for (const f of folders) {
-    const node = {
-      id: f.id,
-      name: f.displayName,
-      totalItemCount: f.totalItemCount,
-      unreadItemCount: f.unreadItemCount,
-      children: [],
-    };
-    if (f.childFolderCount > 0) {
-      node.children = await fetchFolderTree(token, f.id);
-    }
-    result.push(node);
-  }
-  return result;
+async function fetchFolderTree(token) {
+  // Fetch top-level folders with their children expanded (up to 3 levels) in one call
+  const fields = "id,displayName,totalItemCount,unreadItemCount,childFolderCount";
+  const expand = `childFolders($levels=max;$top=100;$select=${fields})`;
+  const data = await graphRequest(
+    token,
+    `/me/mailFolders?$top=100&$select=${fields}&$expand=${expand}`
+  );
+
+  const mapNode = (f) => ({
+    id: f.id,
+    name: f.displayName,
+    totalItemCount: f.totalItemCount || 0,
+    unreadItemCount: f.unreadItemCount || 0,
+    children: (f.childFolders?.value || f.childFolders || []).map(mapNode),
+  });
+
+  return (data.value || []).map(mapNode);
 }
 
 // ---------------------------------------------------------------------------
@@ -201,22 +243,22 @@ async function suggestFolder(subject, folders) {
     .join("\n");
 
   const response = await getAnthropic().messages.create({
-    model: "claude-opus-4-5",
+    model: "claude-haiku-4-5",
     max_tokens: 256,
     messages: [
       {
         role: "user",
-        content: `You are an assistant for a law firm that organizes emails into matter folders.
+        content: `You sort law firm emails into matter folders by matching the subject line to a folder name.
 
-Given this email subject line, suggest the best matching folder from the list below.
-Reply with ONLY valid JSON: { "folder_id": "...", "folder_name": "...", "confidence": "high|medium|low", "reasoning": "one sentence" }
+Look for: case numbers (e.g. 25-cv-07293), brand/matter names (e.g. "Louis Poulsen", "Wing Rails"), or firm names.
+Reply with ONLY valid JSON — no explanation: { "folder_id": "...", "folder_name": "...", "confidence": "high|medium|low", "reasoning": "one sentence" }
 
-Email subject: "${subject}"
+Subject: "${subject}"
 
-Available folders:
+Folders:
 ${folderList}
 
-If no folder is a reasonable match, use folder_id "UNMATCHED" and folder_name "No match found".`,
+If nothing matches, use folder_id "UNMATCHED" and folder_name "No match found".`,
       },
     ],
   });
@@ -334,18 +376,14 @@ module.exports = function registerEmailRoutes(app, { requireSession, query, with
     try {
       const { userId, isShared } = JSON.parse(Buffer.from(state, "base64").toString());
 
-      const tokenResponse = await getMsalClient().acquireTokenByCode({
-        code,
-        scopes: MS_SCOPES,
-        redirectUri: getRedirectUri(),
-      });
+      // Use direct HTTP exchange so we get the actual refresh token
+      const tokens = await exchangeCodeForTokens(code);
 
       // Get MS user profile
-      const profile = await graphRequest(tokenResponse.accessToken, "/me?$select=id,mail,displayName");
-      const msEmail = profile.mail || tokenResponse.account?.username || "";
+      const profile = await graphRequest(tokens.accessToken, "/me?$select=id,mail,displayName");
+      const msEmail = profile.mail || "";
       const displayName = profile.displayName || msEmail;
       const msUserId = profile.id;
-      const expiresAt = new Date(tokenResponse.expiresOn);
 
       await query(
         `INSERT INTO ms_connected_accounts
@@ -367,9 +405,9 @@ module.exports = function registerEmailRoutes(app, { requireSession, query, with
           msEmail,
           displayName,
           isShared,
-          tokenResponse.accessToken,
-          tokenResponse.refreshToken,
-          expiresAt,
+          tokens.accessToken,
+          tokens.refreshToken,
+          tokens.expiresAt,
         ]
       );
 
@@ -620,18 +658,31 @@ module.exports = function registerEmailRoutes(app, { requireSession, query, with
         [accountId]
       );
 
-      // Build path-qualified folder names (e.g. "Edison / Illinois / 25-cv-01059 Wing Rails")
+      // Build full path-qualified folder names up to 3 levels deep
+      // e.g. "Edison / Illinois / 25-cv-01059 Wing Rails 1.2 CS-1180.1"
       const folderMap = {};
       for (const m of mappings) folderMap[m.folder_id] = m;
 
-      const foldersForClaude = mappings.map((m) => {
-        let path = m.folder_name;
-        if (m.parent_folder_id && folderMap[m.parent_folder_id]) {
-          const parent = folderMap[m.parent_folder_id];
-          path = `${parent.folder_name} / ${m.folder_name}`;
+      const buildPath = (m) => {
+        const parts = [m.folder_name];
+        let current = m;
+        for (let i = 0; i < 3; i++) {
+          const parent = current.parent_folder_id ? folderMap[current.parent_folder_id] : null;
+          if (!parent) break;
+          parts.unshift(parent.folder_name);
+          current = parent;
         }
-        return { folder_id: m.folder_id, path };
-      });
+        // Also append the matter label if it adds context beyond the folder name
+        if (m.matter_label && m.matter_label !== m.folder_name) {
+          parts.push(`[${m.matter_label}]`);
+        }
+        return parts.join(" / ");
+      };
+
+      const foldersForClaude = mappings.map((m) => ({
+        folder_id: m.folder_id,
+        path: buildPath(m),
+      }));
 
       // Get unsorted inbox messages
       const inboxData = await graphRequest(token, "/me/mailFolders/inbox");
