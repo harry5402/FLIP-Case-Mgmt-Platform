@@ -1,4 +1,14 @@
 require("dotenv").config();
+
+// Catch unhandled rejections so Railway logs show the real error
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("[FATAL] Unhandled promise rejection:", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[FATAL] Uncaught exception:", err);
+  process.exit(1);
+});
+
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
@@ -4635,45 +4645,42 @@ const start = async () => {
   // Friday 9 AM — overdue task reminder via Teams DM
   // Runs at 9:00 AM Eastern (14:00 UTC) every Friday
   // ---------------------------------------------------------------------------
-  let cron;
   try {
-    cron = require("node-cron");
-  } catch (e) {
-    console.warn("[cron] node-cron not available, Friday reminders disabled:", e.message);
-  }
-
-  if (cron) cron.schedule("0 14 * * 5", async () => {
-    console.log("[cron] Running Friday overdue task reminders...");
-    try {
-      // Get all users with overdue open tasks
-      const { rows } = await query(`
-        SELECT
-          u.id,
-          u.email,
-          u.name,
-          json_agg(
-            json_build_object(
-              'taskType', t.task_type,
-              'dueDate',  t.due_date,
-              'caseName', c.name
-            ) ORDER BY t.due_date ASC
-          ) AS tasks
-        FROM tasks t
-        JOIN users u ON u.id = t.assigned_to_user_id
-        LEFT JOIN cases c ON c.id = t.case_id
-        WHERE t.status <> 'Complete'
-          AND t.due_date < CURRENT_DATE
-        GROUP BY u.id, u.email, u.name
-      `);
-
-      for (const row of rows) {
-        await notifyOverdueSummary(row.email, row.tasks, query);
+    const cron = require("node-cron");
+    cron.schedule("0 14 * * 5", async () => {
+      console.log("[cron] Running Friday overdue task reminders...");
+      try {
+        const { rows } = await query(`
+          SELECT
+            u.id,
+            u.email,
+            u.name,
+            json_agg(
+              json_build_object(
+                'taskType', t.task_type,
+                'dueDate',  t.due_date,
+                'caseName', c.name
+              ) ORDER BY t.due_date ASC
+            ) AS tasks
+          FROM tasks t
+          JOIN users u ON u.id = t.assigned_to_user_id
+          LEFT JOIN cases c ON c.id = t.case_id
+          WHERE t.status <> 'Complete'
+            AND t.due_date < CURRENT_DATE
+          GROUP BY u.id, u.email, u.name
+        `);
+        for (const row of rows) {
+          await notifyOverdueSummary(row.email, row.tasks, query);
+        }
+        console.log(`[cron] Overdue reminders sent to ${rows.length} user(s).`);
+      } catch (err) {
+        console.error("[cron] Friday reminder error:", err.message);
       }
-      console.log(`[cron] Overdue reminders sent to ${rows.length} user(s).`);
-    } catch (err) {
-      console.error("[cron] Friday reminder error:", err.message);
-    }
-  }, { timezone: "America/New_York" });
+    });
+    console.log("[cron] Friday overdue reminder scheduled (Fridays 14:00 UTC)");
+  } catch (e) {
+    console.warn("[cron] Skipping Friday reminders:", e.message);
+  }
 
   setInterval(async () => { // weekly report scheduler
     try {
