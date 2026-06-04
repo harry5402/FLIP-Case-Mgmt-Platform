@@ -131,7 +131,10 @@ async function loadFolderTree(accountId, forceRefresh = false) {
   }
 
   const res = await apiFetch(`/api/email/accounts/${accountId}/folders`);
-  if (!res.ok) return [];
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
   const tree = await res.json();
   folderTrees[accountId] = tree;
 
@@ -192,9 +195,18 @@ async function renderSidebar() {
       if (!isExpanded) {
         header.classList.add("expanded");
         treeContainer.classList.remove("hidden");
-        const tree = await loadFolderTree(account.id);
-        treeContainer.innerHTML = "";
-        renderFolderTree(tree, treeContainer, account.id);
+        treeContainer.innerHTML = `<div class="folder-item" style="opacity:0.5;"><span class="spinner"></span> Loading...</div>`;
+        try {
+          const tree = await loadFolderTree(account.id, true);
+          treeContainer.innerHTML = "";
+          if (!tree.length) {
+            treeContainer.innerHTML = `<div class="folder-item" style="opacity:0.5;font-size:12px;">No folders found</div>`;
+          } else {
+            renderFolderTree(tree, treeContainer, account.id);
+          }
+        } catch (err) {
+          treeContainer.innerHTML = `<div class="folder-item" style="color:#e74c3c;font-size:12px;white-space:normal;">Error: ${escapeHtml(err.message)}</div>`;
+        }
       } else {
         header.classList.remove("expanded");
         treeContainer.classList.add("hidden");
