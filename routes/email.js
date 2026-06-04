@@ -166,26 +166,45 @@ async function getAccessibleAccounts(userId, db) {
 }
 
 // ---------------------------------------------------------------------------
-// Folder tree helper — single request using $expand to get all levels at once
+// Folder tree helper — parallel recursive fetch
+// All folders at the same depth are fetched concurrently, so a 3-level inbox
+// takes 3 round trips instead of N sequential calls.
 // ---------------------------------------------------------------------------
+const FOLDER_FIELDS = "id,displayName,totalItemCount,unreadItemCount,childFolderCount";
+
+async function fetchFolderLevel(token, parentId = null) {
+  const endpoint = parentId
+    ? `/me/mailFolders/${parentId}/childFolders?$top=100&$select=${FOLDER_FIELDS}`
+    : `/me/mailFolders?$top=100&$select=${FOLDER_FIELDS}`;
+  const data = await graphRequest(token, endpoint);
+  return data.value || [];
+}
+
 async function fetchFolderTree(token) {
-  // Fetch top-level folders with their children expanded (up to 3 levels) in one call
-  const fields = "id,displayName,totalItemCount,unreadItemCount,childFolderCount";
-  const expand = `childFolders($levels=max;$top=100;$select=${fields})`;
-  const data = await graphRequest(
-    token,
-    `/me/mailFolders?$top=100&$select=${fields}&$expand=${expand}`
-  );
+  const topLevel = await fetchFolderLevel(token);
 
-  const mapNode = (f) => ({
-    id: f.id,
-    name: f.displayName,
-    totalItemCount: f.totalItemCount || 0,
-    unreadItemCount: f.unreadItemCount || 0,
-    children: (f.childFolders?.value || f.childFolders || []).map(mapNode),
-  });
+  const buildNodes = async (folders) => {
+    // Fetch all children of this level in parallel
+    const nodes = await Promise.all(
+      folders.map(async (f) => {
+        const node = {
+          id: f.id,
+          name: f.displayName,
+          totalItemCount: f.totalItemCount || 0,
+          unreadItemCount: f.unreadItemCount || 0,
+          children: [],
+        };
+        if (f.childFolderCount > 0) {
+          const children = await fetchFolderLevel(token, f.id);
+          node.children = await buildNodes(children);
+        }
+        return node;
+      })
+    );
+    return nodes;
+  };
 
-  return (data.value || []).map(mapNode);
+  return buildNodes(topLevel);
 }
 
 // ---------------------------------------------------------------------------
