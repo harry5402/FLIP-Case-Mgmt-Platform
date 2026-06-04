@@ -15,6 +15,10 @@ document.addEventListener("click", e => {
     navHamburger.classList.remove("open");
   }
 });
+navDropdown.addEventListener("click", () => {
+  navDropdown.classList.add("hidden");
+  navHamburger.classList.remove("open");
+});
 const usersLink = document.getElementById("users-link");
 const weeklyReportLink = document.getElementById("weekly-report-link");
 const logoutButton = document.getElementById("logout-button");
