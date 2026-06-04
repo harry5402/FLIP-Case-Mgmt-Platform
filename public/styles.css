@@ -1035,8 +1035,11 @@ tr.drag-over-below td {
   box-shadow: 0 8px 24px rgba(0,0,0,0.12);
   z-index: 200;
   padding: 6px 0;
-  display: flex;
+  display: none;
   flex-direction: column;
+}
+.nav-dropdown.open {
+  display: flex;
 }
 
 .nav-dropdown-item {

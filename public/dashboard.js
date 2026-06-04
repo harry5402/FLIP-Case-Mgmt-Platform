@@ -5,18 +5,18 @@ const navHamburger = document.getElementById("nav-hamburger");
 const navDropdown = document.getElementById("nav-dropdown");
 navHamburger.addEventListener("click", e => {
   e.stopPropagation();
-  const open = !navDropdown.classList.contains("hidden");
-  navDropdown.classList.toggle("hidden", open);
-  navHamburger.classList.toggle("open", !open);
+  const isOpen = navDropdown.classList.contains("open");
+  navDropdown.classList.toggle("open", !isOpen);
+  navHamburger.classList.toggle("open", !isOpen);
 });
 document.addEventListener("click", e => {
-  if (!navDropdown.classList.contains("hidden") && !navDropdown.contains(e.target)) {
-    navDropdown.classList.add("hidden");
+  if (navDropdown.classList.contains("open") && !navDropdown.contains(e.target)) {
+    navDropdown.classList.remove("open");
     navHamburger.classList.remove("open");
   }
 });
 navDropdown.addEventListener("click", () => {
-  navDropdown.classList.add("hidden");
+  navDropdown.classList.remove("open");
   navHamburger.classList.remove("open");
 });
 const usersLink = document.getElementById("users-link");
