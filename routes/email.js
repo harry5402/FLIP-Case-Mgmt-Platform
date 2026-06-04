@@ -166,11 +166,21 @@ async function getAccessibleAccounts(userId, db) {
 }
 
 // ---------------------------------------------------------------------------
-// Folder tree helper — parallel recursive fetch
-// All folders at the same depth are fetched concurrently, so a 3-level inbox
-// takes 3 round trips instead of N sequential calls.
+// Folder tree helper — concurrency-limited recursive fetch
+// Microsoft throttles at 4 concurrent requests per mailbox. We cap at 3.
 // ---------------------------------------------------------------------------
 const FOLDER_FIELDS = "id,displayName,totalItemCount,unreadItemCount,childFolderCount";
+const FOLDER_CONCURRENCY = 3;
+
+async function limitedParallel(items, limit, fn) {
+  const results = [];
+  for (let i = 0; i < items.length; i += limit) {
+    const batch = items.slice(i, i + limit);
+    const batchResults = await Promise.all(batch.map(fn));
+    results.push(...batchResults);
+  }
+  return results;
+}
 
 async function fetchFolderLevel(token, parentId = null) {
   const endpoint = parentId
@@ -183,26 +193,21 @@ async function fetchFolderLevel(token, parentId = null) {
 async function fetchFolderTree(token) {
   const topLevel = await fetchFolderLevel(token);
 
-  const buildNodes = async (folders) => {
-    // Fetch all children of this level in parallel
-    const nodes = await Promise.all(
-      folders.map(async (f) => {
-        const node = {
-          id: f.id,
-          name: f.displayName,
-          totalItemCount: f.totalItemCount || 0,
-          unreadItemCount: f.unreadItemCount || 0,
-          children: [],
-        };
-        if (f.childFolderCount > 0) {
-          const children = await fetchFolderLevel(token, f.id);
-          node.children = await buildNodes(children);
-        }
-        return node;
-      })
-    );
-    return nodes;
-  };
+  const buildNodes = async (folders) =>
+    limitedParallel(folders, FOLDER_CONCURRENCY, async (f) => {
+      const node = {
+        id: f.id,
+        name: f.displayName,
+        totalItemCount: f.totalItemCount || 0,
+        unreadItemCount: f.unreadItemCount || 0,
+        children: [],
+      };
+      if (f.childFolderCount > 0) {
+        const children = await fetchFolderLevel(token, f.id);
+        node.children = await buildNodes(children);
+      }
+      return node;
+    });
 
   return buildNodes(topLevel);
 }
