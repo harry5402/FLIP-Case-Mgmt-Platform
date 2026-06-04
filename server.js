@@ -4559,6 +4559,12 @@ const ensureEmailTables = async () => {
 const registerEmailRoutes = require("./routes/email");
 registerEmailRoutes(app, { requireSession, query, withTransaction, writeAuditLog });
 
+// ---------------------------------------------------------------------------
+// Automations routes (Exhibit 2, etc.)
+// ---------------------------------------------------------------------------
+const automationsRouter = require("./routes/automations");
+app.use("/api/automations", requireSession, automationsRouter);
+
 // Catch-all and error handler must stay after all route registrations
 app.use("/api", (req, res) => {
   res.status(404).json({ error: "Not found" });

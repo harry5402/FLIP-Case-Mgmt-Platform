@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Threads &amp; Automations</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="styles.css" />
+    <style>
+      .automations-layout {
+        display: flex;
+        gap: 0;
+        height: calc(100vh - 56px);
+        overflow: hidden;
+      }
+      .automations-sidebar {
+        width: 200px;
+        flex-shrink: 0;
+        border-right: 1px solid var(--border);
+        padding: 24px 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        overflow-y: auto;
+      }
+      .automations-sidebar-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        padding: 0 16px 8px;
+      }
+      .automation-nav-item {
+        display: block;
+        padding: 8px 16px;
+        font-size: 13px;
+        cursor: pointer;
+        border-radius: 0;
+        color: var(--text);
+        text-decoration: none;
+        border-left: 3px solid transparent;
+        transition: background 0.1s;
+      }
+      .automation-nav-item:hover {
+        background: var(--hover);
+      }
+      .automation-nav-item.active {
+        border-left-color: var(--accent, #4f8ef7);
+        background: var(--hover);
+        font-weight: 600;
+      }
+      .automations-content {
+        flex: 1;
+        overflow-y: auto;
+        padding: 32px 40px;
+      }
+      .automation-panel {
+        display: none;
+        max-width: 720px;
+      }
+      .automation-panel.active {
+        display: block;
+      }
+      .automation-title {
+        font-size: 20px;
+        font-weight: 700;
+        margin-bottom: 4px;
+      }
+      .automation-desc {
+        color: var(--muted);
+        font-size: 13px;
+        margin-bottom: 28px;
+      }
+      .form-section {
+        margin-bottom: 24px;
+      }
+      .form-label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin-bottom: 8px;
+      }
+      .csv-drop-zone {
+        border: 2px dashed var(--border);
+        border-radius: 8px;
+        padding: 32px;
+        text-align: center;
+        cursor: pointer;
+        transition: border-color 0.15s, background 0.15s;
+        font-size: 13px;
+        color: var(--muted);
+      }
+      .csv-drop-zone:hover, .csv-drop-zone.drag-over {
+        border-color: var(--accent, #4f8ef7);
+        background: var(--hover);
+      }
+      .csv-drop-zone input[type="file"] {
+        display: none;
+      }
+      .csv-preview {
+        margin-top: 12px;
+        font-size: 12px;
+        color: var(--text);
+        background: var(--hover);
+        border-radius: 6px;
+        padding: 10px 14px;
+        display: none;
+      }
+      .csv-preview.visible { display: block; }
+      .col-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .col-chip {
+        background: var(--border);
+        border-radius: 4px;
+        padding: 2px 8px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .col-chip.url-chip {
+        background: #d1fae5;
+        color: #065f46;
+      }
+      .col-chip.missing {
+        background: #fee2e2;
+        color: #991b1b;
+      }
+      .optional-args {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .optional-args input {
+        width: 100%;
+        padding: 8px 10px;
+        font-size: 13px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg, #fff);
+        color: var(--text);
+        box-sizing: border-box;
+      }
+      .optional-args label {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--muted);
+        display: block;
+        margin-bottom: 4px;
+      }
+      #exhibit2-run-btn {
+        margin-top: 8px;
+      }
+      /* Job status table */
+      .job-status-section {
+        margin-top: 32px;
+        display: none;
+      }
+      .job-status-section.visible { display: block; }
+      .job-status-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .job-status-header h3 { margin: 0; font-size: 15px; }
+      .progress-bar-wrap {
+        height: 6px;
+        background: var(--border);
+        border-radius: 3px;
+        margin-bottom: 16px;
+        overflow: hidden;
+      }
+      .progress-bar-fill {
+        height: 100%;
+        background: var(--accent, #4f8ef7);
+        border-radius: 3px;
+        transition: width 0.3s;
+        width: 0%;
+      }
+      .url-status-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+      .url-status-table th {
+        text-align: left;
+        padding: 6px 10px;
+        border-bottom: 1px solid var(--border);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .url-status-table td {
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--border);
+        vertical-align: top;
+        max-width: 380px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .status-badge {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .status-badge.pending   { background: #f3f4f6; color: #6b7280; }
+      .status-badge.capturing { background: #dbeafe; color: #1d4ed8; }
+      .status-badge.done      { background: #d1fae5; color: #065f46; }
+      .status-badge.failed    { background: #fee2e2; color: #991b1b; }
+      .job-summary {
+        margin-top: 16px;
+        font-size: 13px;
+        color: var(--muted);
+        display: flex;
+        gap: 20px;
+      }
+      .job-summary span b { color: var(--text); }
+      .stub-notice {
+        display: inline-block;
+        margin-top: 8px;
+        padding: 10px 16px;
+        background: var(--hover);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="header-spacer"></div>
+      <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
+      <div class="tab-switch">
+        <a class="ghost-button" href="index.html">Dashboard</a>
+        <a class="ghost-button" href="litigation-docket.html">Litigation Docket</a>
+        <button id="logout-button" class="ghost-button" type="button">Logout</button>
+      </div>
+    </header>
+
+    <div class="automations-layout">
+      <nav class="automations-sidebar">
+        <div class="automations-sidebar-label">Tools</div>
+        <a class="automation-nav-item active" data-panel="exhibit2">Exhibit 2 Generator</a>
+        <a class="automation-nav-item" data-panel="edison">Edison Cover Pages</a>
+        <a class="automation-nav-item" data-panel="screenshot-compiler">Screenshot PDF Compiler</a>
+      </nav>
+
+      <div class="automations-content">
+
+        <!-- Exhibit 2 Panel -->
+        <div class="automation-panel active" id="panel-exhibit2">
+          <div class="automation-title">Exhibit 2 Generator</div>
+          <div class="automation-desc">
+            Upload a CSV of infringing product URLs. The tool will capture full-page screenshots
+            and compile them into a single PDF with per-page headers and footers.
+          </div>
+
+          <div class="form-section">
+            <label class="form-label">1. Upload CSV</label>
+            <div class="csv-drop-zone" id="csv-drop-zone">
+              <div>Drop a CSV file here, or <u>click to browse</u></div>
+              <div style="font-size:11px;margin-top:6px;">Must contain a <code>url</code> column. Any other columns become page metadata.</div>
+              <input type="file" id="csv-file-input" accept=".csv,text/csv" />
+            </div>
+            <div class="csv-preview" id="csv-preview">
+              <div id="csv-preview-text"></div>
+              <div class="col-chips" id="col-chips"></div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <label class="form-label">2. Optional — Cover Page Info</label>
+            <div class="optional-args">
+              <div>
+                <label for="arg-matter">Matter / Case Name</label>
+                <input type="text" id="arg-matter" placeholder="e.g. Doe v. XYZ Sellers" />
+              </div>
+              <div>
+                <label for="arg-operator">Operator Name</label>
+                <input type="text" id="arg-operator" placeholder="e.g. Jane Smith" />
+              </div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <button id="exhibit2-run-btn" class="ghost-button" type="button" disabled>Generate PDF</button>
+          </div>
+
+          <!-- Live job status -->
+          <div class="job-status-section" id="job-status-section">
+            <div class="job-status-header">
+              <h3 id="job-status-heading">Processing…</h3>
+              <button id="download-pdf-btn" class="ghost-button hidden" type="button">Download PDF</button>
+            </div>
+            <div class="progress-bar-wrap">
+              <div class="progress-bar-fill" id="progress-bar-fill"></div>
+            </div>
+            <div class="job-summary">
+              <span><b id="stat-total">0</b> total</span>
+              <span><b id="stat-done">0</b> done</span>
+              <span><b id="stat-failed">0</b> failed</span>
+            </div>
+            <table class="url-status-table" style="margin-top:16px;">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>URL</th>
+                  <th>Status</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody id="url-status-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Edison Cover Pages Panel -->
+        <div class="automation-panel" id="panel-edison">
+          <div class="automation-title">Edison Cover Pages</div>
+          <div class="automation-desc">
+            Apply a standardized cover page to individual Edison case PDFs. Upload your PDFs and
+            the tool will prepend the correct cover page to each one.
+          </div>
+          <div class="stub-notice">
+            Backend coming soon — template pending.
+          </div>
+        </div>
+
+        <!-- Screenshot PDF Compiler Panel -->
+        <div class="automation-panel" id="panel-screenshot-compiler">
+          <div class="automation-title">Screenshot PDF Compiler</div>
+          <div class="automation-desc">
+            Upload folders of screenshots organized by defendant. The tool groups them into PDFs
+            under 30 MB each and applies defendant-specific footers to every page.
+          </div>
+          <div class="stub-notice">
+            Backend coming soon — input format and footer fields pending.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="automations.js"></script>
+  </body>
+</html>
