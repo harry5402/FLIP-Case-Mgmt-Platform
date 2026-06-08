@@ -1654,6 +1654,9 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
     return res.status(400).json({ error: "entries array is required." });
   }
 
+  // Track newly assigned users so we can notify them after responding
+  const toNotify = []; // [{ userId, taskType, dueDate }]
+
   for (let i = 0; i < entries.length; i += 1) {
     const entry = entries[i] || {};
     const collaboratorUserIds = normalizeUserIdList(
@@ -1662,6 +1665,18 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
     );
     let actionId = entry.id || null;
     if (entry.id) {
+      // Check previous assignee before updating
+      const prev = await query(
+        `SELECT assigned_to_user_id FROM litigation_actions WHERE id = $1`,
+        [entry.id]
+      );
+      const prevAssignee = prev.rows[0]?.assigned_to_user_id || null;
+      const newAssignee = entry.assignedToUserId || null;
+      // Notify if assignee changed to someone other than the person making the save
+      if (newAssignee && newAssignee !== prevAssignee && newAssignee !== req.session?.userId) {
+        toNotify.push({ userId: newAssignee, taskType: entry.action || "Docket action", dueDate: entry.finalDueDate || entry.internalDueDate || null });
+      }
+
       const updated = await query(
         `UPDATE litigation_actions
          SET action = $2,
@@ -1689,6 +1704,11 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
       );
       actionId = updated.rows[0]?.id || actionId;
     } else {
+      // New entry — notify if assigned to someone other than the person saving
+      if (entry.assignedToUserId && entry.assignedToUserId !== req.session?.userId) {
+        toNotify.push({ userId: entry.assignedToUserId, taskType: entry.action || "Docket action", dueDate: entry.finalDueDate || entry.internalDueDate || null });
+      }
+
       const inserted = await query(
         `INSERT INTO litigation_actions
           (case_id, action, internal_due_date, final_due_date, notes, assigned_to_user_id, assigned_to_label, sort_order, updated_at, updated_by)
@@ -1767,6 +1787,27 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
   });
 
   res.json({ ok: true });
+
+  // Fire Teams notifications after responding — never blocks the save
+  if (toNotify.length > 0) {
+    const caseName = (await query("SELECT name FROM cases WHERE id = $1", [req.params.id])).rows[0]?.name || null;
+    for (const n of toNotify) {
+      (async () => {
+        try {
+          const userRow = await query("SELECT email FROM users WHERE id = $1", [n.userId]);
+          if (userRow.rows[0]?.email) {
+            await notifyTaskAssigned(userRow.rows[0].email, {
+              taskType: n.taskType,
+              dueDate: n.dueDate,
+              caseName,
+              assignedByName: req.session?.name || req.session?.email || null,
+              flipUserId: n.userId,
+            }, query);
+          }
+        } catch (e) { console.error("[notify] docket entry assign:", e.message); }
+      })();
+    }
+  }
 });
 
 app.put("/api/litigation/actions/:id/state", async (req, res) => {
