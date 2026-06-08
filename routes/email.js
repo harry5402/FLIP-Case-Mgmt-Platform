@@ -1181,6 +1181,51 @@ function registerEmailRoutes(app, { requireSession, query, withTransaction, writ
     }
   });
 
+  // -------------------------------------------------------------------------
+  // POST /api/email/test-teams  (admin only — remove after debugging)
+  // Body: { recipientEmail, message }
+  // Returns full success/error detail so we can debug Teams DM flow
+  // -------------------------------------------------------------------------
+  app.post("/api/email/test-teams", requireSession, async (req, res) => {
+    const { recipientEmail, message } = req.body;
+    if (!recipientEmail) return res.status(400).json({ error: "recipientEmail required" });
+
+    try {
+      // Step 1: get sending account
+      const sender = await getDefaultSendingAccount(query);
+      if (!sender) return res.status(500).json({ step: "getDefaultSendingAccount", error: "No connected accounts found" });
+
+      // Step 2: get valid token
+      let token;
+      try {
+        token = await getValidToken(sender.id, query);
+      } catch (e) {
+        return res.status(500).json({ step: "getValidToken", error: e.message, accountId: sender.id });
+      }
+
+      // Step 3: look up recipient MS user ID
+      const looked = await lookupMsUserByEmail(token, recipientEmail);
+      const recipientId = looked?.id || recipientEmail;
+
+      // Step 4: attempt DM
+      try {
+        await sendTeamsDM(sender, recipientId, message || "<p>Test from FLIP 👋</p>", query);
+      } catch (e) {
+        return res.status(500).json({
+          step: "sendTeamsDM",
+          error: e.message,
+          senderMsUserId: sender.ms_user_id,
+          recipientId,
+          lookedUp: looked,
+        });
+      }
+
+      res.json({ ok: true, senderEmail: sender.email, recipientId, lookedUp: looked });
+    } catch (err) {
+      res.status(500).json({ step: "unknown", error: err.message });
+    }
+  });
+
 };
 
 // ---------------------------------------------------------------------------
