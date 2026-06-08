@@ -235,7 +235,7 @@ async function lookupMsUserByEmail(token, email) {
 /** Get the first connected account (litigation account) to use as sender */
 async function getDefaultSendingAccount(db) {
   const { rows } = await db(
-    `SELECT id, ms_user_id, email FROM ms_connected_accounts
+    `SELECT id, ms_user_id, ms_email AS email FROM ms_connected_accounts
      ORDER BY created_at ASC LIMIT 1`
   );
   return rows[0] || null;
