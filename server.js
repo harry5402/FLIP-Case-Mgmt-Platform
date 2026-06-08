@@ -2506,6 +2506,7 @@ app.post("/api/tasks", async (req, res) => {
             dueDate,
             caseName: caseName || null,
             assignedByName: req.session.name || req.session.email || null,
+            flipUserId: assignedToUserId,
           }, query);
         }
       } catch (e) { console.error("[notify] task create:", e.message); }
@@ -2558,6 +2559,7 @@ app.post("/api/groups/:id/tasks", async (req, res) => {
             dueDate,
             caseName: caseName || null,
             assignedByName: req.session.name || req.session.email || null,
+            flipUserId: assignedToUserId,
           }, query);
         }
       } catch (e) { console.error("[notify] group task create:", e.message); }

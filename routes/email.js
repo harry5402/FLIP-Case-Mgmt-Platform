@@ -235,21 +235,36 @@ async function lookupMsUserByEmail(token, email) {
 
 /**
  * Resolve a recipient's MS object ID.
- * Fast path: check ms_connected_accounts (works for anyone who has linked their account in FLIP).
- * Fallback: Graph API lookup (requires User.ReadBasic.All admin consent).
+ * 1. By FLIP user ID via connected_by_user_id (most reliable — no email mismatch)
+ * 2. By email match in ms_connected_accounts
+ * 3. Graph API lookup (requires User.ReadBasic.All admin consent)
  * Returns null if we can't resolve — caller should skip the notification gracefully.
  */
-async function resolveRecipientMsId(token, recipientEmail, db) {
-  // Fast path — already have their MS user ID stored
-  const { rows } = await db(
+async function resolveRecipientMsId(token, recipientEmail, db, flipUserId = null) {
+  // Fast path 1: look up by FLIP user ID (bypasses any email mismatch)
+  if (flipUserId) {
+    const { rows } = await db(
+      `SELECT ms_user_id FROM ms_connected_accounts
+       WHERE connected_by_user_id = $1 AND is_shared = FALSE AND ms_user_id IS NOT NULL
+       LIMIT 1`,
+      [flipUserId]
+    );
+    if (rows[0]?.ms_user_id) {
+      console.log(`[Teams] Resolved user ${flipUserId} from connected accounts (by user ID)`);
+      return rows[0].ms_user_id;
+    }
+  }
+
+  // Fast path 2: match by MS email
+  const { rows: emailRows } = await db(
     `SELECT ms_user_id FROM ms_connected_accounts
      WHERE LOWER(ms_email) = LOWER($1) AND ms_user_id IS NOT NULL
      LIMIT 1`,
     [recipientEmail]
   );
-  if (rows[0]?.ms_user_id) {
-    console.log(`[Teams] Resolved ${recipientEmail} from connected accounts`);
-    return rows[0].ms_user_id;
+  if (emailRows[0]?.ms_user_id) {
+    console.log(`[Teams] Resolved ${recipientEmail} from connected accounts (by email)`);
+    return emailRows[0].ms_user_id;
   }
 
   // Graph API fallback (needs User.ReadBasic.All)
@@ -316,7 +331,7 @@ async function notifyTaskAssigned(recipientEmail, taskInfo, db) {
     if (!sender) return; // No connected accounts yet
 
     const token = await getValidToken(sender.id, db);
-    const recipientId = await resolveRecipientMsId(token, recipientEmail, db);
+    const recipientId = await resolveRecipientMsId(token, recipientEmail, db, taskInfo.flipUserId || null);
     if (!recipientId) return;
 
     const due = taskInfo.dueDate
