@@ -1228,7 +1228,7 @@ function registerEmailRoutes(app, { requireSession, query, withTransaction, writ
   // Returns full success/error detail so we can debug Teams DM flow
   // -------------------------------------------------------------------------
   app.post("/api/email/test-teams", requireSession, async (req, res) => {
-    const { recipientEmail, message } = req.body;
+    const { recipientEmail, flipUserId, message } = req.body;
     if (!recipientEmail) return res.status(400).json({ error: "recipientEmail required" });
 
     try {
@@ -1244,13 +1244,14 @@ function registerEmailRoutes(app, { requireSession, query, withTransaction, writ
         return res.status(500).json({ step: "getValidToken", error: e.message, accountId: sender.id });
       }
 
-      // Step 3: resolve recipient MS user ID
-      const recipientId = await resolveRecipientMsId(token, recipientEmail, query);
+      // Step 3: resolve recipient MS user ID (pass flipUserId to test production path)
+      const recipientId = await resolveRecipientMsId(token, recipientEmail, query, flipUserId || null);
       if (!recipientId) {
         return res.status(500).json({
           step: "resolveRecipientMsId",
           error: `Could not resolve MS user ID for ${recipientEmail}. Either connect this account in the Email Portal, or have IT grant User.ReadBasic.All in Azure.`,
           senderMsUserId: sender.ms_user_id,
+          flipUserIdProvided: flipUserId || null,
         });
       }
 
