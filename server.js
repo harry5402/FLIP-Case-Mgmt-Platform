@@ -1790,7 +1790,7 @@ app.put("/api/litigation/cases/:id/entries", async (req, res) => {
 
   // Fire Teams notifications after responding — never blocks the save
   if (toNotify.length > 0) {
-    const caseName = (await query("SELECT name FROM cases WHERE id = $1", [req.params.id])).rows[0]?.name || null;
+    const caseName = (await query("SELECT case_name FROM cases WHERE id = $1", [req.params.id])).rows[0]?.case_name || null;
     for (const n of toNotify) {
       (async () => {
         try {
@@ -2539,7 +2539,7 @@ app.post("/api/tasks", async (req, res) => {
       try {
         const userRow = await query("SELECT email FROM users WHERE id = $1", [assignedToUserId]);
         const caseName = caseId
-          ? (await query("SELECT name FROM cases WHERE id = $1", [caseId])).rows[0]?.name
+          ? (await query("SELECT case_name FROM cases WHERE id = $1", [caseId])).rows[0]?.case_name
           : null;
         if (userRow.rows[0]?.email) {
           await notifyTaskAssigned(userRow.rows[0].email, {
@@ -2592,7 +2592,7 @@ app.post("/api/groups/:id/tasks", async (req, res) => {
       try {
         const userRow = await query("SELECT email FROM users WHERE id = $1", [assignedToUserId]);
         const caseName = caseId
-          ? (await query("SELECT name FROM cases WHERE id = $1", [caseId])).rows[0]?.name
+          ? (await query("SELECT case_name FROM cases WHERE id = $1", [caseId])).rows[0]?.case_name
           : null;
         if (userRow.rows[0]?.email) {
           await notifyTaskAssigned(userRow.rows[0].email, {
