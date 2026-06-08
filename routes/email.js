@@ -12,6 +12,7 @@ const MS_SCOPES = [
   "Mail.ReadWrite",
   "Mail.Send",
   "User.Read",
+  "User.ReadBasic.All",
   "Chat.Create",
   "ChatMessage.Send",
   "offline_access",
@@ -232,6 +233,36 @@ async function lookupMsUserByEmail(token, email) {
   }
 }
 
+/**
+ * Resolve a recipient's MS object ID.
+ * Fast path: check ms_connected_accounts (works for anyone who has linked their account in FLIP).
+ * Fallback: Graph API lookup (requires User.ReadBasic.All admin consent).
+ * Returns null if we can't resolve — caller should skip the notification gracefully.
+ */
+async function resolveRecipientMsId(token, recipientEmail, db) {
+  // Fast path — already have their MS user ID stored
+  const { rows } = await db(
+    `SELECT ms_user_id FROM ms_connected_accounts
+     WHERE LOWER(ms_email) = LOWER($1) AND ms_user_id IS NOT NULL
+     LIMIT 1`,
+    [recipientEmail]
+  );
+  if (rows[0]?.ms_user_id) {
+    console.log(`[Teams] Resolved ${recipientEmail} from connected accounts`);
+    return rows[0].ms_user_id;
+  }
+
+  // Graph API fallback (needs User.ReadBasic.All)
+  const looked = await lookupMsUserByEmail(token, recipientEmail);
+  if (looked?.id) {
+    console.log(`[Teams] Resolved ${recipientEmail} via Graph API`);
+    return looked.id;
+  }
+
+  console.warn(`[Teams] Could not resolve MS user ID for ${recipientEmail} — notification skipped`);
+  return null;
+}
+
 /** Get the first connected account (litigation account) to use as sender */
 async function getDefaultSendingAccount(db) {
   const { rows } = await db(
@@ -285,13 +316,8 @@ async function notifyTaskAssigned(recipientEmail, taskInfo, db) {
     if (!sender) return; // No connected accounts yet
 
     const token = await getValidToken(sender.id, db);
-
-    // Try to resolve the recipient's MS object ID.
-    // First attempt: direct lookup (requires User.ReadBasic.All).
-    // Fallback: pass email directly — Graph resolves it within the same tenant.
-    let recipientId = recipientEmail; // fallback: use email as identifier
-    const looked = await lookupMsUserByEmail(token, recipientEmail);
-    if (looked?.id) recipientId = looked.id;
+    const recipientId = await resolveRecipientMsId(token, recipientEmail, db);
+    if (!recipientId) return;
 
     const due = taskInfo.dueDate
       ? new Date(taskInfo.dueDate).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
@@ -325,8 +351,8 @@ async function notifyOverdueSummary(recipientEmail, tasks, db) {
     if (!sender) return;
 
     const token = await getValidToken(sender.id, db);
-    const looked = await lookupMsUserByEmail(token, recipientEmail);
-    const recipientId = looked?.id || recipientEmail;
+    const recipientId = await resolveRecipientMsId(token, recipientEmail, db);
+    if (!recipientId) return;
 
     const taskLines = tasks.map((t) => {
       const due = t.dueDate
@@ -1203,9 +1229,15 @@ function registerEmailRoutes(app, { requireSession, query, withTransaction, writ
         return res.status(500).json({ step: "getValidToken", error: e.message, accountId: sender.id });
       }
 
-      // Step 3: look up recipient MS user ID
-      const looked = await lookupMsUserByEmail(token, recipientEmail);
-      const recipientId = looked?.id || recipientEmail;
+      // Step 3: resolve recipient MS user ID
+      const recipientId = await resolveRecipientMsId(token, recipientEmail, query);
+      if (!recipientId) {
+        return res.status(500).json({
+          step: "resolveRecipientMsId",
+          error: `Could not resolve MS user ID for ${recipientEmail}. Either connect this account in the Email Portal, or have IT grant User.ReadBasic.All in Azure.`,
+          senderMsUserId: sender.ms_user_id,
+        });
+      }
 
       // Step 4: attempt DM
       try {
@@ -1216,11 +1248,10 @@ function registerEmailRoutes(app, { requireSession, query, withTransaction, writ
           error: e.message,
           senderMsUserId: sender.ms_user_id,
           recipientId,
-          lookedUp: looked,
         });
       }
 
-      res.json({ ok: true, senderEmail: sender.email, recipientId, lookedUp: looked });
+      res.json({ ok: true, senderEmail: sender.email, recipientId });
     } catch (err) {
       res.status(500).json({ step: "unknown", error: err.message });
     }
