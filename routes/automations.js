@@ -371,8 +371,8 @@ router.post("/edison/apply", edisonUpload.array("pdfs"), async (req, res) => {
       const coverPage = coverDoc.addPage([612, 792]); // letter size
       const { width, height } = coverPage.getSize();
 
-      const fontBold = await coverDoc.embedFont(StandardFonts.HelveticaBold);
-      const fontReg  = await coverDoc.embedFont(StandardFonts.Helvetica);
+      const fontBold = await coverDoc.embedFont(StandardFonts.TimesRomanBold);
+      const fontReg  = await coverDoc.embedFont(StandardFonts.TimesRoman);
 
       // "EXHIBIT 2"
       const title = "EXHIBIT 2";
