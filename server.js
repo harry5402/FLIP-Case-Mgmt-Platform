@@ -61,8 +61,9 @@ const DOCKET_STATUS_OPTIONS = [
   "Default Judgement Requested",
   "Default Judgement Granted",
   "TRO Requested",
-  "Negotiating",
   "TRO Signed",
+  "PI Requested",
+  "PI Granted",
   "Case Closed",
 ];
 
