@@ -3390,20 +3390,25 @@ app.post(
     };
 
     const mappedHeaders = {
-      seller: resolveHeader(mappingInput.seller, "SELLER", "Seller"),
+      seller: resolveHeader(mappingInput.seller, "SELLER", "Seller", "SELLER_LOGIN_ID", "STORE_NAME"),
       platform: resolveHeader(mappingInput.platform, "PLATFORM", "Platform"),
       businessName: resolveHeader(
         mappingInput.businessName,
         "BUSINESS NAME",
-        "BusinessName"
+        "BusinessName",
+        "COMPANY_NAME"
       ),
-      locatedIn: resolveHeader(mappingInput.locatedIn, "LOCATED IN", "LocatedIn"),
+      locatedIn: resolveHeader(mappingInput.locatedIn, "LOCATED IN", "LocatedIn", "USER_COUNTRY"),
       sellerLocation: resolveHeader(
         mappingInput.sellerLocation,
         "SELLER LOCATION",
         "SellerLocation"
       ),
       sellerUrl: resolveHeader(mappingInput.sellerUrl, "SELLER_URL", "SellerURL"),
+      email: resolveHeader(mappingInput.email, "EMAIL", "Email"),
+      ebayCity: resolveHeader(null, "CITY"),
+      ebayState: resolveHeader(null, "STATE"),
+      ebayCountry: resolveHeader(null, "USER_COUNTRY"),
     };
 
     if (!mappedHeaders.seller || !mappedHeaders.platform) {
@@ -3460,6 +3465,12 @@ app.post(
 
     uniqueRows.forEach((row) => {
       doeCounter += 1;
+      const locatedIn = valueFromRow(row, "locatedIn") ||
+        [valueFromRow(row, "ebayCity"), valueFromRow(row, "ebayState"), valueFromRow(row, "ebayCountry")]
+          .filter(Boolean).join(", ");
+      const sellerLocation = valueFromRow(row, "sellerLocation") ||
+        [valueFromRow(row, "ebayCity"), valueFromRow(row, "ebayState")]
+          .filter(Boolean).join(", ");
       values.push(
         req.params.id,
         `Doe ${doeCounter}`,
@@ -3468,10 +3479,10 @@ app.post(
         "",
         "",
         valueFromRow(row, "seller"),
-        "",
+        valueFromRow(row, "email"),
         valueFromRow(row, "businessName"),
-        valueFromRow(row, "locatedIn"),
-        valueFromRow(row, "sellerLocation"),
+        locatedIn,
+        sellerLocation,
         valueFromRow(row, "sellerUrl"),
         "",
         "",
@@ -3945,10 +3956,10 @@ app.post(
     };
 
     const mappedHeaders = {
-      seller: resolveHeader(mappingInput.seller, "SELLER", "Seller"),
-      platform: resolveHeader(mappingInput.platform, "PLATFORM", "Platform"),
-      productId: resolveHeader(mappingInput.productId, "No.", "No", "PRODUCT ID"),
-      title: resolveHeader(mappingInput.title, "TITLE", "Title"),
+      seller: resolveHeader(mappingInput.seller, "SELLER", "Seller", "SELLER_LOGIN_ID", "STORE_NAME"),
+      platform: resolveHeader(mappingInput.platform, "PLATFORM", "Platform", "LISTING_SITE"),
+      productId: resolveHeader(mappingInput.productId, "No.", "No", "PRODUCT ID", "ITEM_NUMBER"),
+      title: resolveHeader(mappingInput.title, "TITLE", "Title", "AUCT_TITL"),
       infType: resolveHeader(mappingInput.infType, "INF_TYPE", "InfType", "INF Type"),
       url: resolveHeader(mappingInput.url, "URL", "Url"),
       screenshotEvidence: resolveHeader(
