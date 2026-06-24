@@ -335,11 +335,16 @@ function tryRequire(name) {
 
 // In-memory store for completed edison files: token -> { pdfBuffer, filename, createdAt }
 const edisonFiles = new Map();
+// In-memory store for batches: batchId -> { tokens: [...], createdAt }
+const edisonBatches = new Map();
 
 setInterval(() => {
   const cutoff = Date.now() - 2 * 60 * 60 * 1000;
   for (const [token, f] of edisonFiles.entries()) {
     if (f.createdAt < cutoff) edisonFiles.delete(token);
+  }
+  for (const [batchId, b] of edisonBatches.entries()) {
+    if (b.createdAt < cutoff) edisonBatches.delete(batchId);
   }
 }, 10 * 60 * 1000);
 
@@ -420,7 +425,7 @@ router.post("/edison/apply", edisonUpload.array("pdfs"), async (req, res) => {
 
       const pdfBytes = await mergedDoc.save();
       const token = crypto.randomBytes(12).toString("hex");
-      const outName = file.originalname.replace(/\.pdf$/i, "") + `_Part${partNum}of${total}.pdf`;
+      const outName = `Ex 2 Part ${partNum} of ${total}.pdf`;
 
       edisonFiles.set(token, {
         pdfBuffer: Buffer.from(pdfBytes),
@@ -434,7 +439,13 @@ router.post("/edison/apply", edisonUpload.array("pdfs"), async (req, res) => {
     }
   }
 
-  res.json({ files: results });
+  const batchId = crypto.randomBytes(8).toString("hex");
+  edisonBatches.set(batchId, {
+    tokens: results.filter(r => r.token).map(r => r.token),
+    createdAt: Date.now(),
+  });
+
+  res.json({ files: results, batchId });
 });
 
 // GET /api/automations/edison/download/:token
@@ -444,6 +455,30 @@ router.get("/edison/download/:token", (req, res) => {
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `attachment; filename="${entry.filename}"`);
   res.send(entry.pdfBuffer);
+});
+
+// GET /api/automations/edison/download-all/:batchId
+router.get("/edison/download-all/:batchId", (req, res) => {
+  const batch = edisonBatches.get(req.params.batchId);
+  if (!batch) return res.status(404).json({ error: "Batch not found or expired" });
+
+  const archiver = require("archiver");
+  res.setHeader("Content-Type", "application/zip");
+  res.setHeader("Content-Disposition", `attachment; filename="Exhibit 2.zip"`);
+
+  const archive = archiver("zip");
+  archive.on("error", err => {
+    console.error("[edison] Zip error:", err);
+    res.status(500).end();
+  });
+  archive.pipe(res);
+
+  for (const token of batch.tokens) {
+    const entry = edisonFiles.get(token);
+    if (entry) archive.append(entry.pdfBuffer, { name: entry.filename });
+  }
+
+  archive.finalize();
 });
 
 module.exports = router;

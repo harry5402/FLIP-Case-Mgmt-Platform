@@ -261,7 +261,7 @@ edisonRunBtn.addEventListener('click', async () => {
     const res = await authFetch('/api/automations/edison/apply', { method: 'POST', body: formData });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed');
-    showEdisonResults(data.files);
+    showEdisonResults(data.files, data.batchId);
   } catch (err) {
     alert('Error: ' + err.message);
   } finally {
@@ -270,10 +270,17 @@ edisonRunBtn.addEventListener('click', async () => {
   }
 });
 
-function showEdisonResults(files) {
+function showEdisonResults(files, batchId) {
   const results = document.getElementById('edison-results');
   results.classList.remove('hidden');
-  results.innerHTML = `<h3>Done — ${files.length} PDF${files.length !== 1 ? 's' : ''} ready</h3><div class="edison-download-list"></div>`;
+  results.innerHTML = `
+    <div class="edison-results-header">
+      <h3>Done — ${files.length} PDF${files.length !== 1 ? 's' : ''} ready</h3>
+      <button id="edison-download-all-btn" class="ghost-button" type="button">Download All (.zip)</button>
+    </div>
+    <div class="edison-download-list"></div>
+  `;
+  document.getElementById('edison-download-all-btn').addEventListener('click', () => downloadEdisonBatch(batchId));
   const list = results.querySelector('.edison-download-list');
   files.forEach(f => {
     const row = document.createElement('div');
@@ -282,6 +289,18 @@ function showEdisonResults(files) {
     row.querySelector('button').addEventListener('click', () => downloadEdisonFile(f.token, f.name));
     list.appendChild(row);
   });
+}
+
+async function downloadEdisonBatch(batchId) {
+  const res = await authFetch(`/api/automations/edison/download-all/${batchId}`);
+  if (!res.ok) { alert('Download failed'); return; }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'Exhibit 2.zip';
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 async function downloadEdisonFile(token, name) {
