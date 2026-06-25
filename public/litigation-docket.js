@@ -1019,7 +1019,9 @@ const renderMbfdItems = async (renderId = latestTabRenderId) => {
         <div class="form-error row-error"></div>
         <div class="tab-switch">
           <button class="ghost-button mbfd-save" type="button">Save</button>
-          <button class="ghost-button mbfd-complete" type="button">Complete</button>
+          <button class="ghost-button mbfd-complete" type="button">${
+            item.isCompleted ? "Mark Incomplete" : "Complete"
+          }</button>
           <button class="ghost-button mbfd-complete-hide" type="button">Complete / Hide</button>
         </div>
       </div>
@@ -1045,13 +1047,22 @@ const renderMbfdItems = async (renderId = latestTabRenderId) => {
         rowError.textContent = error.message || "Unable to save Money Back to Doe item.";
       }
     });
-    card.querySelector(".mbfd-complete").addEventListener("click", async () => {
+    const completeButton = card.querySelector(".mbfd-complete");
+    completeButton.addEventListener("click", async () => {
       rowError.textContent = "";
+      const markingIncomplete = item.isCompleted;
       try {
-        await updateMbfdItemState(item.id, { isCompleted: true, isHidden: false });
-        card.classList.add("mbfd-completed");
+        await updateMbfdItemState(item.id, {
+          isCompleted: !markingIncomplete,
+          isHidden: false,
+        });
+        item.isCompleted = !markingIncomplete;
+        card.classList.toggle("mbfd-completed", item.isCompleted);
+        completeButton.textContent = item.isCompleted ? "Mark Incomplete" : "Complete";
       } catch (error) {
-        rowError.textContent = error.message || "Unable to complete Money Back to Doe item.";
+        rowError.textContent =
+          error.message ||
+          `Unable to ${markingIncomplete ? "mark incomplete" : "complete"} Money Back to Doe item.`;
       }
     });
     card.querySelector(".mbfd-complete-hide").addEventListener("click", async () => {

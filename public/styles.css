@@ -833,6 +833,7 @@ tr.is-completed td {
 .mbfd-completed {
   opacity: 0.78;
   border-color: #9cb59e;
+  background: #e3f1e4;
 }
 
 .collections-tab-card-header {
