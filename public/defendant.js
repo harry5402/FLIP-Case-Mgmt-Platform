@@ -59,6 +59,10 @@ const renderDefendantInfo = (defendant) => {
     ["Backend ID", "backendId", defendant.backendId || ""],
     ["Email", "email", defendant.email || ""],
     ["Marketplace", "platform", defendant.platform || ""],
+    ["Business Name", "businessName", defendant.businessName || ""],
+    ["Located In", "locatedIn", defendant.locatedIn || ""],
+    ["Seller Location", "sellerLocation", defendant.sellerLocation || ""],
+    ["Seller URL", "sellerUrl", defendant.sellerUrl || ""],
     ["Settlement Agreement", "settlementAgreementLink", agreementLink, "readonly"],
     ["Updated at", "updatedAt", defendant.updatedAt || "", "date"],
     ["Updated by", "updatedBy", defendant.updatedBy || ""],
@@ -320,29 +324,61 @@ const wireEditableSections = (defendantId, state) => {
   });
 };
 
+const listingFieldDefs = [
+  ["productId", "text"],
+  ["marketplaceId", "text"],
+  ["title", "text"],
+  ["infType", "text"],
+  ["url", "text"],
+  ["sales", "number"],
+  ["screenshotDate", "date"],
+  ["screenshots", "text"],
+  ["testPurchase", "text"],
+  ["testPurchaseStatus", "text"],
+  ["notes", "text"],
+  ["listingCopyrightLinks", "text"],
+];
+
 const renderListings = (listings) => {
   listingsTableBody.innerHTML = "";
   (listings || []).forEach((listing) => {
     const row = document.createElement("tr");
-    const url = listing.url
-      ? `<a href="${listing.url}" target="_blank" rel="noopener">Open</a>`
-      : "—";
-    const copyright = listing.listingCopyrightLinks
-      ? `<a href="${listing.listingCopyrightLinks}" target="_blank" rel="noopener">View</a>`
-      : "—";
+    row.dataset.listingId = listing.id;
+    const cells = listingFieldDefs
+      .map(
+        ([name, type]) =>
+          `<td><input name="${name}" type="${type}" value="${
+            listing[name] ?? ""
+          }" /></td>`
+      )
+      .join("");
     row.innerHTML = `
-      <td>${listing.productId || "—"}</td>
-      <td>${listing.marketplaceId || "—"}</td>
-      <td>${url}</td>
-      <td>${listing.sales ?? "—"}</td>
-      <td>${formatDate(listing.screenshotDate)}</td>
-      <td>${listing.screenshots || "—"}</td>
-      <td>${listing.testPurchase || "—"}</td>
-      <td>${listing.testPurchaseStatus || "—"}</td>
-      <td>${listing.notes || "—"}</td>
-      <td>${copyright}</td>
+      ${cells}
+      <td><button class="ghost-button" type="button" data-action="delete-listing">Delete</button></td>
     `;
     listingsTableBody.appendChild(row);
+
+    row.querySelectorAll("input").forEach((input) => {
+      input.addEventListener("change", async () => {
+        const fields = {};
+        row.querySelectorAll("input").forEach((el) => {
+          fields[el.name] =
+            el.type === "number"
+              ? el.value === "" ? null : Number(el.value)
+              : el.value.trim();
+        });
+        await updateListing(listing.id, fields);
+      });
+    });
+
+    row.querySelector('[data-action="delete-listing"]').addEventListener(
+      "click",
+      async () => {
+        if (!confirm("Delete this listing?")) return;
+        await deleteListing(listing.id);
+        row.remove();
+      }
+    );
   });
 };
 

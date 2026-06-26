@@ -3567,6 +3567,10 @@ app.get("/api/cases/:id/defendants", async (req, res) => {
       updatedBy: row.updated_by,
       notes: row.notes,
       listingsCount: row.listings_count ?? 0,
+      businessName: row.business_name,
+      locatedIn: row.located_in,
+      sellerLocation: row.seller_location,
+      sellerUrl: row.seller_url,
     }))
   );
 });
@@ -4245,6 +4249,10 @@ app.put("/api/defendants/:id", async (req, res) => {
     updatedAt,
     updatedBy,
     notes,
+    businessName,
+    locatedIn,
+    sellerLocation,
+    sellerUrl,
   } = req.body;
 
   const existing = await query("SELECT * FROM defendants WHERE id = $1", [
@@ -4268,8 +4276,12 @@ app.put("/api/defendants/:id", async (req, res) => {
       defendant_rep_name = COALESCE($10, defendant_rep_name),
       updated_at = COALESCE($11, updated_at),
       updated_by = COALESCE($12, updated_by),
-      notes = COALESCE($13, notes)
-     WHERE id = $14
+      notes = COALESCE($13, notes),
+      business_name = COALESCE($14, business_name),
+      located_in = COALESCE($15, located_in),
+      seller_location = COALESCE($16, seller_location),
+      seller_url = COALESCE($17, seller_url)
+     WHERE id = $18
      RETURNING *`,
     [
       doeNumber,
@@ -4285,6 +4297,10 @@ app.put("/api/defendants/:id", async (req, res) => {
       updatedAt,
       updatedBy,
       notes,
+      businessName,
+      locatedIn,
+      sellerLocation,
+      sellerUrl,
       req.params.id,
     ]
   );
@@ -4310,6 +4326,8 @@ app.get("/api/defendants/:id/listings", async (req, res) => {
       id: row.id,
       productId: row.product_id,
       marketplaceId: row.marketplace_id,
+      title: row.title,
+      infType: row.inf_type,
       url: row.url,
       sales: row.sales,
       screenshotDate: row.screenshot_date,
@@ -4320,6 +4338,114 @@ app.get("/api/defendants/:id/listings", async (req, res) => {
       listingCopyrightLinks: row.listing_copyright_links,
     }))
   );
+});
+
+app.put("/api/listings/:id", async (req, res) => {
+  const {
+    productId,
+    marketplaceId,
+    title,
+    infType,
+    url,
+    sales,
+    screenshotDate,
+    screenshots,
+    testPurchase,
+    testPurchaseStatus,
+    notes,
+    listingCopyrightLinks,
+  } = req.body;
+
+  const existing = await query("SELECT * FROM listings WHERE id = $1", [
+    req.params.id,
+  ]);
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "Listing not found" });
+  }
+
+  const result = await query(
+    `UPDATE listings SET
+      product_id = COALESCE($1, product_id),
+      marketplace_id = COALESCE($2, marketplace_id),
+      title = COALESCE($3, title),
+      inf_type = COALESCE($4, inf_type),
+      url = COALESCE($5, url),
+      sales = COALESCE($6, sales),
+      screenshot_date = COALESCE($7, screenshot_date),
+      screenshots = COALESCE($8, screenshots),
+      test_purchase = COALESCE($9, test_purchase),
+      test_purchase_status = COALESCE($10, test_purchase_status),
+      notes = COALESCE($11, notes),
+      listing_copyright_links = COALESCE($12, listing_copyright_links)
+     WHERE id = $13
+     RETURNING *`,
+    [
+      productId,
+      marketplaceId,
+      title,
+      infType,
+      url,
+      sales === "" || sales === undefined ? null : sales,
+      screenshotDate || null,
+      screenshots,
+      testPurchase,
+      testPurchaseStatus,
+      notes,
+      listingCopyrightLinks,
+      req.params.id,
+    ]
+  );
+
+  await writeAuditLog(req, {
+    action: "listings.update",
+    entityType: "listing",
+    entityId: req.params.id,
+    before: existing.rows[0],
+    after: result.rows[0],
+  });
+
+  res.json({
+    id: result.rows[0].id,
+    productId: result.rows[0].product_id,
+    marketplaceId: result.rows[0].marketplace_id,
+    title: result.rows[0].title,
+    infType: result.rows[0].inf_type,
+    url: result.rows[0].url,
+    sales: result.rows[0].sales,
+    screenshotDate: result.rows[0].screenshot_date,
+    screenshots: result.rows[0].screenshots,
+    testPurchase: result.rows[0].test_purchase,
+    testPurchaseStatus: result.rows[0].test_purchase_status,
+    notes: result.rows[0].notes,
+    listingCopyrightLinks: result.rows[0].listing_copyright_links,
+  });
+});
+
+app.delete("/api/listings/:id", async (req, res) => {
+  const existing = await query("SELECT * FROM listings WHERE id = $1", [
+    req.params.id,
+  ]);
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "Listing not found" });
+  }
+
+  await query("DELETE FROM listings WHERE id = $1", [req.params.id]);
+  await query(
+    `UPDATE defendants SET listings_count = (
+       SELECT COUNT(*)::int FROM listings WHERE defendant_id = $1
+     ) WHERE id = $1`,
+    [existing.rows[0].defendant_id]
+  );
+
+  await writeAuditLog(req, {
+    action: "listings.delete",
+    entityType: "listing",
+    entityId: req.params.id,
+    before: existing.rows[0],
+    after: null,
+  });
+
+  res.json({ success: true });
 });
 
 app.get("/api/defendants/:id/negotiation", async (req, res) => {

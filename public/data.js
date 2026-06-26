@@ -87,6 +87,28 @@ const loadListings = async (defendantId) => {
   return [];
 };
 
+const updateListing = async (listingId, updates) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/listings/${listingId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updates),
+    });
+    return response.json();
+  }
+  return null;
+};
+
+const deleteListing = async (listingId) => {
+  if (USE_API) {
+    const response = await authFetch(`${API_BASE}/api/listings/${listingId}`, {
+      method: "DELETE",
+    });
+    return response.json();
+  }
+  return null;
+};
+
 const loadGroups = async (caseId) => {
   if (USE_API) {
     const response = await authFetch(`${API_BASE}/api/cases/${caseId}/groups`);
