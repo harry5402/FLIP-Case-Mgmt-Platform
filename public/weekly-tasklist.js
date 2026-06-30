@@ -246,7 +246,7 @@ const init = async () => {
   modal.addEventListener("click", (e) => { if (e.target === modal) closeModal(); });
 
   try {
-    const response = await authFetch("/api/users");
+    const response = await authFetch("/api/users/options");
     const users = await response.json();
     users.forEach((u) => {
       const opt = document.createElement("option");
