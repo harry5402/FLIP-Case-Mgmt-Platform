@@ -224,6 +224,8 @@ const renderWeeklyTasks = (tasks) => {
   });
 };
 
+let generalTaskSubmitting = false;
+
 const init = async () => {
   const tasks = await loadAllTasks();
   renderWeeklyTasks(tasks);
@@ -258,6 +260,7 @@ const init = async () => {
 
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    if (generalTaskSubmitting) return;
     errorEl.textContent = "";
     const data = new FormData(form);
     const payload = {
@@ -269,7 +272,9 @@ const init = async () => {
       errorEl.textContent = "Task name and due date are required.";
       return;
     }
+    generalTaskSubmitting = true;
     const result = await createTask(payload);
+    generalTaskSubmitting = false;
     if (result?.error) {
       errorEl.textContent = result.error;
       return;

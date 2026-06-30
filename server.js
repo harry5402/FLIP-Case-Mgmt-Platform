@@ -2512,6 +2512,21 @@ app.post("/api/tasks", async (req, res) => {
     return res.status(400).json({ error: "taskType and dueDate are required." });
   }
 
+  // Dedup: reject if same user created an identical task in the last 5 seconds
+  const dupCheck = await query(
+    `SELECT id FROM tasks
+     WHERE created_by_user_id = $1
+       AND task_type = $2
+       AND COALESCE(assigned_to_user_id::text,'') = COALESCE($3::text,'')
+       AND due_date = $4
+       AND created_at >= NOW() - INTERVAL '5 seconds'
+     LIMIT 1`,
+    [req.session.userId, taskType, assignedToUserId || null, dueDate]
+  );
+  if (dupCheck.rows.length > 0) {
+    return res.status(409).json({ error: "Duplicate task submission detected." });
+  }
+
   const result = await query(
     `INSERT INTO tasks
       (case_id, defendant_id, task_type, assigned_to_user_id, due_date, status, created_by_user_id)
