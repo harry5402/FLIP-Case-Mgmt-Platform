@@ -592,6 +592,10 @@ const ensureLitigationTables = async () => {
     ALTER TABLE tasks
     ADD COLUMN IF NOT EXISTS task_role TEXT NOT NULL DEFAULT 'owner'
   `);
+  await query(`
+    ALTER TABLE tasks
+    ADD COLUMN IF NOT EXISTS notes TEXT
+  `);
 };
 
 const normalizeLitigationTab = (jurisdiction) => {
@@ -2436,6 +2440,7 @@ app.get("/api/tasks/my", async (req, res) => {
       jurisdiction: row.jurisdiction,
       defendantName: row.defendant_name,
       groupName: row.group_name,
+      notes: row.notes || null,
     }))
   );
 });
@@ -2502,15 +2507,18 @@ app.get("/api/tasks", async (req, res) => {
       jurisdiction: row.jurisdiction,
       defendantName: row.defendant_name,
       groupName: row.group_name,
+      notes: row.notes || null,
     }))
   );
 });
 
 app.post("/api/tasks", async (req, res) => {
-  const { caseId, defendantId, taskType, assignedToUserId, dueDate } = req.body;
+  const { caseId, defendantId, taskType, assignedToUserId, dueDate, notes } = req.body;
   if (!taskType || !dueDate) {
     return res.status(400).json({ error: "taskType and dueDate are required." });
   }
+
+  const cleanNotes = notes ? String(notes).trim() || null : null;
 
   // Dedup: reject if same user created an identical task in the last 5 seconds
   const dupCheck = await query(
@@ -2529,8 +2537,8 @@ app.post("/api/tasks", async (req, res) => {
 
   const result = await query(
     `INSERT INTO tasks
-      (case_id, defendant_id, task_type, assigned_to_user_id, due_date, status, created_by_user_id)
-     VALUES ($1,$2,$3,$4,$5,'Open',$6)
+      (case_id, defendant_id, task_type, assigned_to_user_id, due_date, status, created_by_user_id, notes)
+     VALUES ($1,$2,$3,$4,$5,'Open',$6,$7)
      RETURNING *`,
     [
       caseId || null,
@@ -2539,6 +2547,7 @@ app.post("/api/tasks", async (req, res) => {
       assignedToUserId || null,
       dueDate,
       req.session.userId,
+      cleanNotes,
     ]
   );
   await writeAuditLog(req, {

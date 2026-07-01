@@ -104,6 +104,7 @@ const createTaskCard = (task) => {
         <span>Due ${formatDate(task.dueDate)}</span>
         ${isInProgress && !isComplete ? "<span>In Progress</span>" : ""}
         ${isComplete ? "<span>Completed</span>" : ""}
+        ${task.targetType === "general" && task.notes ? `<span class="task-notes">${escapeHtml(task.notes)}</span>` : ""}
       </div>
     </div>
     <div class="row-right task-actions">
@@ -267,6 +268,7 @@ const init = async () => {
       taskType: String(data.get("taskType") || "").trim(),
       assignedToUserId: data.get("assignedToUserId") || null,
       dueDate: data.get("dueDate"),
+      notes: String(data.get("notes") || "").trim() || null,
     };
     if (!payload.taskType || !payload.dueDate) {
       errorEl.textContent = "Task name and due date are required.";

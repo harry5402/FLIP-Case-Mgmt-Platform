@@ -388,7 +388,8 @@ tbody td {
 }
 
 .form-field input,
-.form-field select {
+.form-field select,
+.form-field textarea {
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 8px 10px;
@@ -944,6 +945,13 @@ tr.drag-over-below td {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+}
+
+.task-notes {
+  width: 100%;
+  font-style: italic;
+  color: var(--muted);
+  white-space: pre-wrap;
 }
 
 .details {

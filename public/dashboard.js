@@ -151,6 +151,7 @@ const renderTasks = (tasks) => {
               ? `<span>Support Task</span>`
               : ""
           }
+          ${task.targetType === "general" && task.notes ? `<span class="task-notes">${escapeHtml(task.notes)}</span>` : ""}
         </div>
       </div>
       <div class="row-right task-actions">
