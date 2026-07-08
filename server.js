@@ -3596,6 +3596,7 @@ app.get("/api/cases/:id/defendants", async (req, res) => {
       locatedIn: row.located_in,
       sellerLocation: row.seller_location,
       sellerUrl: row.seller_url,
+      evidenceUrl: row.evidence_url,
     }))
   );
 });
@@ -4278,6 +4279,7 @@ app.put("/api/defendants/:id", async (req, res) => {
     locatedIn,
     sellerLocation,
     sellerUrl,
+    evidenceUrl,
   } = req.body;
 
   const existing = await query("SELECT * FROM defendants WHERE id = $1", [
@@ -4305,8 +4307,9 @@ app.put("/api/defendants/:id", async (req, res) => {
       business_name = COALESCE($14, business_name),
       located_in = COALESCE($15, located_in),
       seller_location = COALESCE($16, seller_location),
-      seller_url = COALESCE($17, seller_url)
-     WHERE id = $18
+      seller_url = COALESCE($17, seller_url),
+      evidence_url = COALESCE($18, evidence_url)
+     WHERE id = $19
      RETURNING *`,
     [
       doeNumber,
@@ -4326,6 +4329,7 @@ app.put("/api/defendants/:id", async (req, res) => {
       locatedIn,
       sellerLocation,
       sellerUrl,
+      evidenceUrl,
       req.params.id,
     ]
   );
@@ -4836,6 +4840,10 @@ app.use((err, req, res, next) => {
   return res.status(500).json({ error: "Internal server error" });
 });
 
+const ensureDefendantEvidenceUrl = async () => {
+  await query(`ALTER TABLE defendants ADD COLUMN IF NOT EXISTS evidence_url TEXT`);
+};
+
 const start = async () => {
   await ensureAuditLogTable();
   await ensureUserPermissionsColumns();
@@ -4845,6 +4853,7 @@ const start = async () => {
   await ensureCaseDocketOnlyColumn();
   await ensureLitigationTables();
   await ensureEmailTables();
+  await ensureDefendantEvidenceUrl();
   await ensureAdminUser();
 
   // ---------------------------------------------------------------------------

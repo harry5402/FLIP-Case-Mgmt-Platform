@@ -62,6 +62,7 @@ const renderDefendantInfo = (defendant, collection = {}) => {
     ["Seller Location", "sellerLocation", defendant.sellerLocation || ""],
     ["Seller URL", "sellerUrl", defendant.sellerUrl || ""],
     ["Restrained Amount", "restrainedAmount", collection.restrainedFundsCollectedAmount ?? "", "number"],
+    ["Evidence (OneDrive)", "evidenceUrl", defendant.evidenceUrl || "", "url"],
     ["Settlement Agreement", "settlementAgreementLink", agreementLink, "readonly"],
     ["Updated at", "updatedAt", defendant.updatedAt || "", "date"],
     ["Updated by", "updatedBy", defendant.updatedBy || ""],
@@ -72,10 +73,13 @@ const renderDefendantInfo = (defendant, collection = {}) => {
         return `<div class="info-row"><span>${label}</span><span>${value}</span></div>`;
       }
       const inputType = type || "text";
+      const downloadLink = type === "url" && value
+        ? ` <a href="${value}" target="_blank" rel="noopener">Open</a>`
+        : "";
       return `
         <div class="info-row">
           <span>${label}</span>
-          <span><input name="${name}" type="${inputType}" value="${value}" /></span>
+          <span><input name="${name}" type="text" value="${value}" />${downloadLink}</span>
         </div>
       `;
     })
