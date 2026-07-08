@@ -7,14 +7,12 @@ const representationList = document.getElementById("representation-list");
 const claimsTableBody = document.querySelector("#defendant-claims-table tbody");
 const negotiationList = document.getElementById("negotiation-list");
 const collectionList = document.getElementById("collection-list");
-const bookkeepingList = document.getElementById("bookkeeping-list");
 const listingsTableBody = document.querySelector("#listings-table tbody");
 const templatesList = document.getElementById("templates-list");
 const backToCase = document.getElementById("back-to-case");
 const defendantSave = document.getElementById("defendant-save");
 const negotiationSave = document.getElementById("negotiation-save");
 const collectionSave = document.getElementById("collection-save");
-const bookkeepingSave = document.getElementById("bookkeeping-save");
 const defendantSaveAll = document.getElementById("defendant-save-all");
 const defendantInfoSave = document.getElementById("defendant-info-save");
 const assignTaskButton = document.getElementById("assign-task-button");
@@ -48,7 +46,7 @@ const renderCaseInfo = (currentCase) => {
     .join("");
 };
 
-const renderDefendantInfo = (defendant) => {
+const renderDefendantInfo = (defendant, collection = {}) => {
   const agreementLink = defendant.settlementAgreementLink
     ? `<a href="${defendant.settlementAgreementLink}">View</a>`
     : "Pending";
@@ -63,6 +61,7 @@ const renderDefendantInfo = (defendant) => {
     ["Located In", "locatedIn", defendant.locatedIn || ""],
     ["Seller Location", "sellerLocation", defendant.sellerLocation || ""],
     ["Seller URL", "sellerUrl", defendant.sellerUrl || ""],
+    ["Restrained Amount", "restrainedAmount", collection.restrainedFundsCollectedAmount ?? "", "number"],
     ["Settlement Agreement", "settlementAgreementLink", agreementLink, "readonly"],
     ["Updated at", "updatedAt", defendant.updatedAt || "", "date"],
     ["Updated by", "updatedBy", defendant.updatedBy || ""],
@@ -190,43 +189,12 @@ const renderCollection = (collection = {}) => {
   `;
 };
 
-const renderBookkeeping = (bookkeeping = {}) => {
-  bookkeepingList.innerHTML = `
-    <div class="info-row">
-      <span>Status</span>
-      <span>
-        <select name="status">
-          ${["Open", "Pending", "Closed"].map(
-            (option) =>
-              `<option ${
-                option === bookkeeping.status ? "selected" : ""
-              }>${option}</option>`
-          )}
-        </select>
-      </span>
-    </div>
-    <div class="info-row">
-      <span>Agreement Processed</span>
-      <span>
-        <select name="agreementProcessed">
-          ${["No", "Yes"].map(
-            (option) =>
-              `<option ${
-                option === bookkeeping.agreementProcessed ? "selected" : ""
-              }>${option}</option>`
-          )}
-        </select>
-      </span>
-    </div>
-  `;
-};
 
 const wireEditableSections = (defendantId, state) => {
   const dirty = {
     notes: false,
     negotiation: false,
     collection: false,
-    bookkeeping: false,
   };
 
   const toggle = (button, show) => {
@@ -257,7 +225,6 @@ const wireEditableSections = (defendantId, state) => {
 
   syncSection(negotiationList, "negotiation", negotiationSave);
   syncSection(collectionList, "collection", collectionSave);
-  syncSection(bookkeepingList, "bookkeeping", bookkeepingSave);
 
   defendantNotes.addEventListener("input", (event) => {
     state.notes = event.target.value;
@@ -282,10 +249,6 @@ const wireEditableSections = (defendantId, state) => {
     }
     if (key === "collection") {
       await saveCollection(defendantId, state.collection);
-      return;
-    }
-    if (key === "bookkeeping") {
-      await saveBookkeeping(defendantId, state.bookkeeping);
     }
   };
 
@@ -306,7 +269,6 @@ const wireEditableSections = (defendantId, state) => {
   wireSaveButton(defendantSave, "notes");
   wireSaveButton(negotiationSave, "negotiation");
   wireSaveButton(collectionSave, "collection");
-  wireSaveButton(bookkeepingSave, "bookkeeping");
 
   defendantSaveAll.addEventListener("click", async () => {
     const keys = Object.keys(dirty).filter((key) => dirty[key]);
@@ -316,7 +278,7 @@ const wireEditableSections = (defendantId, state) => {
     Object.keys(dirty).forEach((key) => {
       dirty[key] = false;
     });
-    [defendantSave, negotiationSave, collectionSave, bookkeepingSave].forEach(
+    [defendantSave, negotiationSave, collectionSave].forEach(
       (button) => toggle(button, false)
     );
     toggle(defendantSaveAll, false);
@@ -449,22 +411,19 @@ const init = async () => {
   defendantMeta.textContent = `${defendant.id} • ${defendant.platform}`;
   const negotiationData = (await loadNegotiation(defendant.id)) || {};
   const collectionData = (await loadCollection(defendant.id)) || {};
-  const bookkeepingData = (await loadBookkeeping(defendant.id)) || {};
   const state = {
     notes: defendant.notes ?? "",
     negotiation: { ...(defendant.negotiation || {}), ...negotiationData },
     collection: { ...(defendant.collection || {}), ...collectionData },
-    bookkeeping: { ...(defendant.bookkeeping || {}), ...bookkeepingData },
   };
 
   renderCaseInfo(currentCase);
-  renderDefendantInfo(defendant);
+  renderDefendantInfo(defendant, state.collection);
   defendantNotes.value = state.notes;
   renderRepresentation(defendant);
   renderClaimsTable(defendant);
   renderNegotiation(state.negotiation);
   renderCollection(state.collection);
-  renderBookkeeping(state.bookkeeping);
   const listings = await loadListings(defendant.id);
   renderListings(listings);
   const templates = await loadCaseTemplates(currentCase.id);
@@ -511,7 +470,15 @@ const init = async () => {
       fields.updatedAt = new Date().toISOString().slice(0, 10);
     }
 
+    const restrainedAmount = fields.restrainedAmount;
+    delete fields.restrainedAmount;
+
     await updateDefendant(defendant.id, fields);
+    if (restrainedAmount !== null && restrainedAmount !== undefined) {
+      state.collection.restrainedFundsCollectedAmount = restrainedAmount;
+      await saveCollection(defendant.id, state.collection);
+    }
+
     defendantInfoSave.textContent = "Saved";
     setTimeout(() => {
       defendantInfoSave.textContent = "Save";
