@@ -10,6 +10,7 @@ const collectionList = document.getElementById("collection-list");
 const listingsTableBody = document.querySelector("#listings-table tbody");
 const templatesList = document.getElementById("templates-list");
 const backToCase = document.getElementById("back-to-case");
+const bookkeepingLink = document.getElementById("bookkeeping-link");
 const defendantSave = document.getElementById("defendant-save");
 const negotiationSave = document.getElementById("negotiation-save");
 const collectionSave = document.getElementById("collection-save");
@@ -411,6 +412,7 @@ const init = async () => {
   }
 
   backToCase.href = `case.html?caseId=${encodeURIComponent(currentCase.id)}`;
+  bookkeepingLink.href = `defendant-bookkeeping.html?caseId=${encodeURIComponent(currentCase.id)}&defendantId=${encodeURIComponent(defendant.id)}`;
   defendantTitle.textContent = defendant.name;
   defendantMeta.textContent = `${defendant.id} • ${defendant.platform}`;
   const negotiationData = (await loadNegotiation(defendant.id)) || {};
