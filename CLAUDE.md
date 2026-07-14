@@ -1,102 +1,133 @@
-# FLIP Case Management — Developer Reference
+# CLAUDE.md — FLIP Case Management Router
 
-## Stack
-- **Backend**: Node/Express, `server.js` (~4400 lines, single file)
-- **Database**: Postgres (Neon), accessed via `db.js` (`query()` helper wrapping pg pool)
-- **Frontend**: Static HTML/JS/CSS in `public/`, no build step
-- **Auth**: In-memory `sessions` Map on server; token stored in `localStorage` under `flipAuth`
-- **Hosting**: Railway (server), Neon (DB)
+## How to Use This File
+Read this at the start of every session. It tells you what the project is, how to classify the task, which skill file to load, and where things live.
 
-## Key files
+---
 
-| File | Purpose |
-|------|---------|
-| `server.js` | All API routes, DB migrations, business logic, scheduler |
-| `db.js` | Postgres pool + `query()` helper |
-| `public/auth.js` | Shared client auth: `getUser()`, `isAdmin()`, `authFetch()`, `requireAuth()`, `requireAdmin()` |
-| `public/styles.css` | Global styles — all pages share this one file |
-| `public/index.html` + `dashboard.js` | Dashboard: My Tasks + Cases list |
-| `public/weekly-tasklist.html` + `weekly-tasklist.js` | All open tasks grouped by day/overdue |
-| `public/litigation-docket.html` + `litigation-docket.js` | Docket case tabs, actions, collections, MBFD |
-| `public/users.html` + `users.js` | Admin-only user management |
-| `public/weekly-report.html` + `weekly-report.js` | Weekly task completion reports |
-| `public/case.html` + `case.js` | Individual case page |
-| `public/defendant.html` + `defendant.js` | Individual defendant page |
-| `public/group.html` + `group.js` | Group (multi-defendant) page |
+## Project Overview
+- **Name:** FLIP Case Management
+- **Purpose:** Internal platform for managing IP litigation cases, defendants, docket actions, tasks, and weekly reporting
+- **Stack:** Node/Express (`server.js`) + Postgres (Neon) + static HTML/JS/CSS (`public/`)
+- **Hosting:** Railway (server), Neon (DB)
 
-## Server.js structure (by line range)
+---
 
-- **1–175**: Config, constants, helpers (`hashPassword`, `withTransaction`, etc.)
-- **176–195**: Static file serving, session/CORS setup
-- **196–310**: DB migration functions (`ensureAuditLogTable`, `ensureUserPermissionsColumns`, `ensureTaskCompletedAt`, `ensureWeeklyReportTable`, etc.)
-- **311–560**: `ensureLitigationTables` (all docket-related schema migrations)
-- **560–800**: Business logic helpers (`syncLitigationTasks`, `syncLitigationActionCollaborators`, `generateWeeklyReport`, `getWeekBounds`, `loadWeeklyCleanupPermission`)
-- **800–1200**: Auth routes + user management routes
-- **1200–2260**: Litigation/docket routes (MBFD, cases, entries, actions, collections, archive, DocketBird)
-- **2260–2690**: Task routes (`/api/tasks/my`, `/api/tasks`, complete, state, general tasks)
-- **2690–4380**: Case, IP claims, defendants, groups, listings, negotiations, bookkeeping
-- **4380–4420**: Weekly report routes
-- **4420–4470**: Error handler + `start()` init sequence + `app.listen`
+## Task Classification — Read the Task, Pick a Lane
 
-## Auth patterns
+| If the task is about... | Load this skill file |
+|-------------------------|----------------------|
+| API routes, DB, auth middleware, migrations, business logic, scheduler | `skills/backend.md` |
+| Pages in `public/`, UI, styling, client-side JS, `auth.js` usage | `skills/frontend.md` |
+| Finding vulnerabilities, testing auth/access control, security review | `skills/pen-testing.md` |
+| Load testing, performance, DB connection behavior under traffic | `skills/stress-testing.md` |
+| Updating this file after a structural change to the codebase | `skills/docs.md` |
 
-**Server-side middleware** (in order of application):
-1. `requireSession` — validates Bearer token, sets `req.session`; returns 401 if missing
-2. `requireAdmin` — checks `req.session.role === 'admin'`; returns 403
-3. `requireWeeklyReportAccess` — passes admins through; checks `allow_weekly_report` from DB for others
-4. `app.use("/api", requireSession)` at line ~1007 — applies `requireSession` to all `/api/*` routes registered after it
+**Spans two lanes?** Load both skill files. Most features touch backend + frontend together.
 
-**Client-side** (`auth.js`): `requireAuth()` redirects to login if no token; `requireAdmin()` additionally redirects non-admins to dashboard. `authFetch()` always sends `Authorization: Bearer <token>` — use it for ALL API calls (never plain `fetch`), especially for file downloads (plain `<a href>` to API routes will 401).
+---
 
-## Database tables (key ones)
+## Project Structure Map
 
+```
+/
+├── server.js                        # Everything: all routes, migrations, business logic, scheduler (~4400 lines)
+├── db.js                            # Postgres pool + query() helper
+├── schema.sql                       # Reference schema (not auto-run — migrations are in server.js)
+├── package.json
+├── .env                             # DATABASE_URL, DOCKETBIRD_API_TOKEN — never commit
+├── public/
+│   ├── auth.js                      # Shared auth client — loaded first on every page
+│   ├── styles.css                   # Global styles — all pages share this
+│   ├── index.html + dashboard.js    # Dashboard: My Tasks + Cases list
+│   ├── weekly-tasklist.html + .js   # All open tasks grouped by day/overdue
+│   ├── litigation-docket.html + .js # Docket tabs, actions, collections, MBFD
+│   ├── case.html + case.js          # Individual case page
+│   ├── defendant.html + .js         # Individual defendant page
+│   ├── group.html + group.js        # Group (multi-defendant) page
+│   ├── users.html + users.js        # Admin-only user management
+│   └── weekly-report.html + .js     # Weekly task completion reports
+├── routes/                          # (if route files extracted from server.js)
+├── data/                            # Supporting data files
+├── uploads/                         # Uploaded files
+└── skills/
+    ├── backend.md
+    ├── frontend.md
+    ├── pen-testing.md
+    ├── stress-testing.md
+    └── docs.md
+```
+
+---
+
+## server.js Line Map
+| Lines | What's There |
+|-------|-------------|
+| 1–175 | Config, constants, helpers (`hashPassword`, `withTransaction`, etc.) |
+| 176–344 | Static file serving, session/CORS setup |
+| 345–919 | DB migration functions (`ensureAuditLogTable`, `ensureLitigationTables`, etc.) |
+| 919–1209 | Business logic helpers + auth routes + user management |
+| 1210 | `app.use("/api", requireSession)` — all protected routes registered after this |
+| 1211–2354 | Litigation/docket routes (MBFD, cases, entries, actions, collections, archive, DocketBird) |
+| 2355–2951 | Task routes (`/api/tasks/my`, `/api/tasks`, complete, state, general tasks, templates upload) |
+| 2952–4479 | Cases, IP claims, defendants, groups, listings, negotiations, defendant bookkeeping entries |
+| 4480–4539 | Defendant bookkeeping-entries CRUD (`/api/defendants/:id/bookkeeping-entries`, `/api/bookkeeping-entries/:id`) |
+| 4540–4765 | Defendant negotiation, collection, bookkeeping (legacy) routes |
+| 4766–4802 | Weekly report routes |
+| 4803–4919 | Email integration tables + automations router |
+| 4920–4996 | `start()` — runs all migrations, cron jobs, `app.listen` |
+
+---
+
+## Key Database Tables
 | Table | Notes |
 |-------|-------|
 | `users` | `role` ('admin'/'user'), `allow_weekly_task_cleanup`, `allow_weekly_report` |
 | `cases` | `status` = dashboard grouping only (`Undelivered/Active/Fully Finished`), `is_docket_only` |
-| `tasks` | Links to case/defendant/group via FKs; `task_type` text; `status` ('Open'/'In Progress'/'Complete'); `completed_at TIMESTAMPTZ`; `task_role` ('owner'/'collaborator'); `source_litigation_action_id` |
-| `litigation_case_state` | `docket_status` (NOT the same as `cases.status`), `archived`, DocketBird link |
-| `litigation_actions` | Docket entries; `assigned_to_user_id` OR `assigned_to_label` ('Lead Counsel'/'Defendant'/'Unassigned') |
-| `litigation_action_collaborators` | Per-collaborator completion state for docket actions |
+| `tasks` | FK to case/defendant/group; `task_type`; `status`; `completed_at TIMESTAMPTZ`; `task_role`; `source_litigation_action_id` |
+| `litigation_case_state` | `docket_status` (NOT `cases.status`), `archived`, DocketBird link |
+| `litigation_actions` | Docket entries; `assigned_to_user_id` OR `assigned_to_label` |
+| `litigation_action_collaborators` | Per-collaborator completion state |
 | `litigation_collections` | Collections rows per docket case |
-| `mbfd_items` | "Money Back to Doe" — NOT a case, separate table |
-| `audit_logs` | Tracks all significant mutations |
+| `mbfd_items` | Money Back to Doe — NOT a case |
+| `audit_logs` | All significant mutations |
 | `weekly_reports` | Generated CSVs, unique per `week_start` |
+| `defendant_bookkeeping_entries` | Per-defendant modular bookkeeping rows (platform, amount_restrained, notes) |
 
-## Task system rules
+---
 
-- **Dashboard My Tasks** (`/api/tasks/my`): only the logged-in user's open tasks
-- **Weekly Tasklist** (`/api/tasks`): ALL open tasks, grouped into OVERDUE / Mon–Fri buckets
-- **Due date**: always use `internalDueDate`; fall back to `finalDueDate` only if null — never reverse this
-- **Docket tasks** are synced via `syncLitigationTasks()` — they are rows in `tasks` with `task_type LIKE 'Docket:%'` and a `source_litigation_action_id`
-- **General tasks** have no `case_id`, `defendant_id`, or `group_id` — `targetType === 'general'`
-- **Completing a docket task**: owner completion → marks `litigation_actions` complete + cascades to collaborator tasks; collaborator completion → marks only `litigation_action_collaborators` row
-- **`allow_weekly_task_cleanup`**: per-user flag letting paralegals complete tasks not assigned to them
-- Tasks move to OVERDUE bucket only after Sunday 11:59 PM; they stay in their day bucket all week
+## Active Endpoints (Key Ones)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/auth/login` | Login — issues session token |
+| GET | `/api/tasks/my` | Logged-in user's open tasks only |
+| GET | `/api/tasks` | All open tasks (weekly tasklist) |
+| POST | `/api/tasks/:id/complete` | Complete a task; triggers docket cascade if applicable |
+| GET | `/api/litigation/cases` | Docket cases by tab/district |
+| GET | `/api/litigation/collections-summary` | Unified collections view |
+| POST | `/api/weekly-reports/generate` | Manually generate weekly report (admin) |
 
-## Docket / Litigation rules
+---
 
-- Docket tabs: `NDIL | GAND | NDIN | MDFL | WDPA | EDWI | EDMO | UNFILED | Money Back to Doe | ARCHIVED`
-- Docket cases sort by `cv-xxxxx` case number, not recent edit
-- `cases.status` ≠ `litigation_case_state.docket_status` — these are completely separate fields for separate purposes
-- Assignee options in docket: Unassigned (no label/user), Lead Counsel (`assigned_to_label='Lead Counsel'`), Defendant (`assigned_to_label='Defendant'`), or a real user (`assigned_to_user_id`)
-- DocketBird sync: env var `DOCKETBIRD_API_TOKEN`; sync failures must NOT crash the app
+## Critical Rules (Non-Negotiable)
+- `cases.status` ≠ `litigation_case_state.docket_status` — completely separate fields for separate purposes
+- Due dates: always use `internalDueDate`; fall back to `finalDueDate` only if null — never reverse this
+- All new protected routes must be registered AFTER `app.use("/api", requireSession)` at line ~1007
+- All multi-step writes must use `withTransaction()`
+- All significant mutations must write to `audit_logs`
+- DocketBird sync failures must NOT crash the app — catch and log only
+- Frontend API calls always use `authFetch()` — never plain `fetch()`
+- Date strings from DB parsed as local calendar dates (`new Date(year, month-1, day)`) — never `new Date(dateString)` directly
 
-## Weekly Reports
+---
 
-- Auto-generated every Saturday at noon (server local time) via `setInterval` in `start()`
-- Covers tasks due Mon–Fri of the current week + any still-overdue tasks from prior weeks
-- Admin can manually generate via `POST /api/weekly-reports/generate`
-- Access gated by `users.allow_weekly_report`; admins always have access
-- Download via `authFetch` + Blob URL — never a plain `<a href>` to the API
-
-## Frontend patterns
-
-- All pages load `auth.js` first (provides `escapeHtml`, `authFetch`, `getUser`, `isAdmin`, etc.)
-- Date strings from DB must be parsed as **local** calendar dates, not UTC (e.g. `new Date(year, month-1, day)` from a `YYYY-MM-DD` string) — UTC parsing shifts the date by one day
-- Nav links that are permission-gated use `id="..."` + `class="hidden"` in HTML, then JS removes `hidden` after checking role/permissions
-- The `ghost-button` class is the standard button style throughout
-
-## Do not commit
+## Do Not Commit
 - `.env`
 - DocketBird JSON/docs files
+
+---
+
+## Recent Changes
+| Date | Change |
+|------|--------|
+| 2026-06-18 | Routing system initialized — skill files created, CLAUDE.md converted to router format |
