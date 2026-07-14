@@ -4477,6 +4477,66 @@ app.delete("/api/listings/:id", async (req, res) => {
   res.json({ success: true });
 });
 
+app.get("/api/defendants/:id/bookkeeping-entries", async (req, res) => {
+  const result = await query(
+    "SELECT * FROM defendant_bookkeeping_entries WHERE defendant_id = $1 ORDER BY created_at ASC",
+    [req.params.id]
+  );
+  res.json(result.rows.map((row) => ({
+    id: row.id,
+    platform: row.platform,
+    amountRestrained: row.amount_restrained,
+    notes: row.notes,
+    createdAt: row.created_at,
+  })));
+});
+
+app.post("/api/defendants/:id/bookkeeping-entries", async (req, res) => {
+  const { platform, amountRestrained, notes } = req.body;
+  if (!platform) return res.status(400).json({ error: "Platform is required." });
+
+  const result = await query(
+    `INSERT INTO defendant_bookkeeping_entries (defendant_id, platform, amount_restrained, notes)
+     VALUES ($1, $2, $3, $4) RETURNING *`,
+    [req.params.id, platform, amountRestrained || null, notes || ""]
+  );
+  const row = result.rows[0];
+  await writeAuditLog(req, {
+    action: "defendant_bookkeeping_entries.create",
+    entityType: "defendant",
+    entityId: req.params.id,
+    before: null,
+    after: row,
+  });
+  res.json({ id: row.id, platform: row.platform, amountRestrained: row.amount_restrained, notes: row.notes, createdAt: row.created_at });
+});
+
+app.put("/api/bookkeeping-entries/:id", async (req, res) => {
+  const { platform, amountRestrained, notes } = req.body;
+  const existing = await query("SELECT * FROM defendant_bookkeeping_entries WHERE id = $1", [req.params.id]);
+  if (!existing.rows.length) return res.status(404).json({ error: "Entry not found." });
+
+  const result = await query(
+    `UPDATE defendant_bookkeeping_entries
+     SET platform = COALESCE($1, platform),
+         amount_restrained = COALESCE($2, amount_restrained),
+         notes = COALESCE($3, notes)
+     WHERE id = $4 RETURNING *`,
+    [platform, amountRestrained ?? null, notes, req.params.id]
+  );
+  const row = result.rows[0];
+  await writeAuditLog(req, { action: "defendant_bookkeeping_entries.update", entityType: "bookkeeping_entry", entityId: req.params.id, before: existing.rows[0], after: row });
+  res.json({ id: row.id, platform: row.platform, amountRestrained: row.amount_restrained, notes: row.notes, createdAt: row.created_at });
+});
+
+app.delete("/api/bookkeeping-entries/:id", async (req, res) => {
+  const existing = await query("SELECT * FROM defendant_bookkeeping_entries WHERE id = $1", [req.params.id]);
+  if (!existing.rows.length) return res.status(404).json({ error: "Entry not found." });
+  await query("DELETE FROM defendant_bookkeeping_entries WHERE id = $1", [req.params.id]);
+  await writeAuditLog(req, { action: "defendant_bookkeeping_entries.delete", entityType: "bookkeeping_entry", entityId: req.params.id, before: existing.rows[0], after: null });
+  res.json({ success: true });
+});
+
 app.get("/api/defendants/:id/negotiation", async (req, res) => {
   const result = await query(
     "SELECT * FROM negotiations WHERE defendant_id = $1 ORDER BY id LIMIT 1",
@@ -4844,6 +4904,19 @@ const ensureDefendantEvidenceUrl = async () => {
   await query(`ALTER TABLE defendants ADD COLUMN IF NOT EXISTS evidence_url TEXT`);
 };
 
+const ensureDefendantBookkeepingTable = async () => {
+  await query(`
+    CREATE TABLE IF NOT EXISTS defendant_bookkeeping_entries (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      defendant_id UUID REFERENCES defendants(id) ON DELETE CASCADE,
+      platform TEXT NOT NULL,
+      amount_restrained NUMERIC,
+      notes TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+};
+
 const start = async () => {
   await ensureAuditLogTable();
   await ensureUserPermissionsColumns();
@@ -4854,6 +4927,7 @@ const start = async () => {
   await ensureLitigationTables();
   await ensureEmailTables();
   await ensureDefendantEvidenceUrl();
+  await ensureDefendantBookkeepingTable();
   await ensureAdminUser();
 
   // ---------------------------------------------------------------------------
