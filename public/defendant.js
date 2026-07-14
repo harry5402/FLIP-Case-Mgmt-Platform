@@ -16,6 +16,7 @@ const negotiationSave = document.getElementById("negotiation-save");
 const collectionSave = document.getElementById("collection-save");
 const defendantSaveAll = document.getElementById("defendant-save-all");
 const defendantInfoSave = document.getElementById("defendant-info-save");
+const defendantInfoSaveRep = document.getElementById("defendant-info-save-rep");
 const assignTaskButton = document.getElementById("assign-task-button");
 const taskModal = document.getElementById("task-modal");
 const closeTaskModal = document.getElementById("close-task-modal");
@@ -88,17 +89,16 @@ const renderDefendantInfo = (defendant, collection = {}) => {
 };
 
 const renderRepresentation = (defendant) => {
-  const rep = defendant.representation || {};
   const rows = [
-    ["Plaintiff Rep Name", rep.plaintiffRepName || "—"],
-    ["Def. Rep Name", rep.defendantRepName || "—"],
-    ["Def. Rep Email", rep.defendantRepEmail || "—"],
-    ["Group Name", rep.groupName || "—"],
+    ["Plaintiff Rep Name", "plaintiffRepName", defendant.plaintiffRepName || ""],
+    ["Def. Rep Name", "defendantRepName", defendant.defendantRepName || ""],
+    ["Def. Rep Email", "defendantRepEmail", defendant.defendantRepEmail || ""],
+    ["Group Name", "groupName", defendant.groupName || ""],
   ];
   representationList.innerHTML = rows
     .map(
-      ([label, value]) =>
-        `<div class="info-row"><span>${label}</span><span>${value}</span></div>`
+      ([label, name, value]) =>
+        `<div class="info-row"><span>${label}</span><span><input name="${name}" type="text" value="${value}" /></span></div>`
     )
     .join("");
 };
@@ -464,7 +464,7 @@ const init = async () => {
 
   defendantInfoSave.addEventListener("click", async () => {
     const fields = {};
-    defendantInfoList.querySelectorAll("input").forEach((input) => {
+    [...defendantInfoList.querySelectorAll("input"), ...representationList.querySelectorAll("input")].forEach((input) => {
       if (input.type === "number") {
         fields[input.name] = input.value === "" ? null : Number(input.value);
         return;
@@ -486,10 +486,14 @@ const init = async () => {
     }
 
     defendantInfoSave.textContent = "Saved";
+    defendantInfoSaveRep.textContent = "Saved";
     setTimeout(() => {
       defendantInfoSave.textContent = "Save";
+      defendantInfoSaveRep.textContent = "Save";
     }, 900);
   });
+
+  defendantInfoSaveRep.addEventListener("click", () => defendantInfoSave.click());
 };
 
 init();

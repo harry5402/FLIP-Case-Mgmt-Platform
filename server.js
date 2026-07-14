@@ -3588,6 +3588,7 @@ app.get("/api/cases/:id/defendants", async (req, res) => {
       status: row.negotiation_legal_status || row.status,
       defendantRepEmail: row.defendant_rep_email,
       defendantRepName: row.defendant_rep_name,
+      plaintiffRepName: row.plaintiff_rep_name,
       updatedAt: row.updated_at,
       updatedBy: row.updated_by,
       notes: row.notes,
@@ -4280,6 +4281,7 @@ app.put("/api/defendants/:id", async (req, res) => {
     sellerLocation,
     sellerUrl,
     evidenceUrl,
+    plaintiffRepName,
   } = req.body;
 
   const existing = await query("SELECT * FROM defendants WHERE id = $1", [
@@ -4308,8 +4310,9 @@ app.put("/api/defendants/:id", async (req, res) => {
       located_in = COALESCE($15, located_in),
       seller_location = COALESCE($16, seller_location),
       seller_url = COALESCE($17, seller_url),
-      evidence_url = COALESCE($18, evidence_url)
-     WHERE id = $19
+      evidence_url = COALESCE($18, evidence_url),
+      plaintiff_rep_name = COALESCE($19, plaintiff_rep_name)
+     WHERE id = $20
      RETURNING *`,
     [
       doeNumber,
@@ -4330,6 +4333,7 @@ app.put("/api/defendants/:id", async (req, res) => {
       sellerLocation,
       sellerUrl,
       evidenceUrl,
+      plaintiffRepName,
       req.params.id,
     ]
   );
@@ -4902,6 +4906,7 @@ app.use((err, req, res, next) => {
 
 const ensureDefendantEvidenceUrl = async () => {
   await query(`ALTER TABLE defendants ADD COLUMN IF NOT EXISTS evidence_url TEXT`);
+  await query(`ALTER TABLE defendants ADD COLUMN IF NOT EXISTS plaintiff_rep_name TEXT`);
 };
 
 const ensureDefendantBookkeepingTable = async () => {
