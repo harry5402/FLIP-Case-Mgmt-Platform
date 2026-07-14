@@ -128,7 +128,7 @@ const renderNegotiation = (negotiation = {}) => {
       <span>Legal Status</span>
       <span>
         <select name="legalStatus">
-          ${["Active", "No Response", "Drafting", "Closed"].map(
+          ${["Active", "No Response", "Drafting", "Send Agreement", "Agreement Sent", "Closed"].map(
             (option) =>
               `<option ${
                 option === negotiation.legalStatus ? "selected" : ""
