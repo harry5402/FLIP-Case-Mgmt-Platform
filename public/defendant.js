@@ -69,7 +69,7 @@ const renderDefendantInfo = (defendant, collection = {}, restrainedRollup = 0, b
     ["Restrained Amount", "restrainedAmount", restrainedDisplay, "readonly"],
     ["Evidence (OneDrive)", "evidenceUrl", defendant.evidenceUrl || "", "url"],
     ["Settlement Agreement", "settlementAgreementLink", agreementLink, "readonly"],
-    ["Updated at", "updatedAt", defendant.updatedAt || "", "date"],
+    ["Updated at", "updatedAt", formatDate(defendant.updatedAt), "readonly"],
     ["Updated by", "updatedBy", defendant.updatedBy || ""],
   ];
   defendantInfoList.innerHTML = rows
@@ -84,7 +84,7 @@ const renderDefendantInfo = (defendant, collection = {}, restrainedRollup = 0, b
       return `
         <div class="info-row">
           <span>${label}</span>
-          <span><input name="${name}" type="text" value="${value}" />${downloadLink}</span>
+          <span><input name="${name}" type="${inputType}" value="${value}" />${downloadLink}</span>
         </div>
       `;
     })
