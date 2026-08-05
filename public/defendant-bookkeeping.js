@@ -36,6 +36,10 @@ const renderEntry = (entry) => {
         <span>Amount Restrained</span>
         <input class="entry-amount" type="number" min="0" step="0.01" value="${entry.amountRestrained ?? ""}" placeholder="0.00" />
       </label>
+      <label class="form-field">
+        <span>Amount Collected</span>
+        <input class="entry-amount-collected" type="number" min="0" step="0.01" value="${entry.amountCollected ?? ""}" placeholder="0.00" />
+      </label>
       <label class="form-field form-field-full">
         <span>Notes</span>
         <textarea class="entry-notes" rows="4" placeholder="Notes...">${entry.notes || ""}</textarea>
@@ -58,6 +62,7 @@ const renderEntry = (entry) => {
         body: JSON.stringify({
           platform: card.querySelector(".entry-platform").value,
           amountRestrained: card.querySelector(".entry-amount").value || null,
+          amountCollected: card.querySelector(".entry-amount-collected").value || null,
           notes: card.querySelector(".entry-notes").value.trim(),
         }),
       }).then((r) => r.json());

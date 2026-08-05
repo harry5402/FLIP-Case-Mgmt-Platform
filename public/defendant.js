@@ -48,10 +48,13 @@ const renderCaseInfo = (currentCase) => {
     .join("");
 };
 
-const renderDefendantInfo = (defendant, collection = {}) => {
+const renderDefendantInfo = (defendant, collection = {}, restrainedRollup = 0, bookkeepingUrl = "") => {
   const agreementLink = defendant.settlementAgreementLink
     ? `<a href="${defendant.settlementAgreementLink}">View</a>`
     : "Pending";
+  const restrainedDisplay = `${formatMoney(restrainedRollup)}${
+    bookkeepingUrl ? ` <a href="${bookkeepingUrl}">View Bookkeeping</a>` : ""
+  }`;
   const rows = [
     ["Doe #", "doeNumber", defendant.doeNumber || ""],
     ["Name", "name", defendant.name || ""],
@@ -63,7 +66,7 @@ const renderDefendantInfo = (defendant, collection = {}) => {
     ["Located In", "locatedIn", defendant.locatedIn || ""],
     ["Seller Location", "sellerLocation", defendant.sellerLocation || ""],
     ["Seller URL", "sellerUrl", defendant.sellerUrl || ""],
-    ["Restrained Amount", "restrainedAmount", collection.restrainedFundsCollectedAmount ?? "", "number"],
+    ["Restrained Amount", "restrainedAmount", restrainedDisplay, "readonly"],
     ["Evidence (OneDrive)", "evidenceUrl", defendant.evidenceUrl || "", "url"],
     ["Settlement Agreement", "settlementAgreementLink", agreementLink, "readonly"],
     ["Updated at", "updatedAt", defendant.updatedAt || "", "date"],
@@ -122,13 +125,21 @@ const renderClaimsTable = (defendant) => {
   });
 };
 
+const toDateInputValue = (value) => {
+  if (!value) return "";
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString().slice(0, 10);
+};
+
 const renderNegotiation = (negotiation = {}) => {
   negotiationList.innerHTML = `
     <div class="info-row">
       <span>Legal Status</span>
       <span>
         <select name="legalStatus">
-          ${["Active", "No Response", "Drafting", "Send Agreement", "Agreement Sent", "Closed"].map(
+          ${["Active", "No Response", "Drafting", "Negotiating", "Litigating", "Appearance Filed", "Defer Dismissal", "TO DO: Send Agreement", "Agreement Sent", "Agreement Signed", "Paid Settlement", "Paid Settlement Agreement Needed", "Paid Ready for Dismissal", "Dismissed with Prejudice", "Closed"].map(
             (option) =>
               `<option ${
                 option === negotiation.legalStatus ? "selected" : ""
@@ -147,7 +158,7 @@ const renderNegotiation = (negotiation = {}) => {
     </div>
     <div class="info-row">
       <span>Settlement Date</span>
-      <span><input name="settlementDate" type="date" value="${negotiation.settlementDate || ""}" /></span>
+      <span><input name="settlementDate" type="date" value="${toDateInputValue(negotiation.settlementDate)}" /></span>
     </div>
     <div class="info-row">
       <span>Settlement Amount</span>
@@ -173,7 +184,7 @@ const renderCollection = (collection = {}) => {
   collectionList.innerHTML = `
     <div class="info-row">
       <span>Settlement Collected Date</span>
-      <span><input name="settlementCollectedDate" type="date" value="${collection.settlementCollectedDate || ""}" /></span>
+      <span><input name="settlementCollectedDate" type="date" value="${toDateInputValue(collection.settlementCollectedDate)}" /></span>
     </div>
     <div class="info-row">
       <span>Collected Amount</span>
@@ -184,12 +195,12 @@ const renderCollection = (collection = {}) => {
       <span><input name="settlementPaymentId" type="text" value="${collection.settlementPaymentId || ""}" /></span>
     </div>
     <div class="info-row">
-      <span>Restrained Funds Collected Amount</span>
+      <span>Collected from Restrained Frozen Accounts</span>
       <span><input name="restrainedFundsCollectedAmount" type="number" value="${collection.restrainedFundsCollectedAmount ?? 0}" /></span>
     </div>
     <div class="info-row">
       <span>Total Collected Amount</span>
-      <span><input name="totalCollectedAmount" type="number" value="${collection.totalCollectedAmount ?? 0}" /></span>
+      <span id="collection-total-display">${formatMoney(Number(collection.totalCollectedAmount) || 0)}</span>
     </div>
   `;
 };
@@ -230,6 +241,22 @@ const wireEditableSections = (defendantId, state) => {
 
   syncSection(negotiationList, "negotiation", negotiationSave);
   syncSection(collectionList, "collection", collectionSave);
+
+  const recomputeTotalCollected = () => {
+    const total =
+      (Number(state.collection.collectedAmount) || 0) +
+      (Number(state.collection.restrainedFundsCollectedAmount) || 0);
+    state.collection.totalCollectedAmount = total;
+    const totalDisplay = document.getElementById("collection-total-display");
+    if (totalDisplay) totalDisplay.textContent = formatMoney(total);
+  };
+  collectionList
+    .querySelector('[name="collectedAmount"]')
+    ?.addEventListener("input", recomputeTotalCollected);
+  collectionList
+    .querySelector('[name="restrainedFundsCollectedAmount"]')
+    ?.addEventListener("input", recomputeTotalCollected);
+  recomputeTotalCollected();
 
   defendantNotes.addEventListener("input", (event) => {
     state.notes = event.target.value;
@@ -417,6 +444,13 @@ const init = async () => {
   defendantMeta.textContent = `${defendant.id} • ${defendant.platform}`;
   const negotiationData = (await loadNegotiation(defendant.id)) || {};
   const collectionData = (await loadCollection(defendant.id)) || {};
+  const bookkeepingEntries = await authFetch(`/api/defendants/${defendant.id}/bookkeeping-entries`).then((r) =>
+    r.json()
+  );
+  const restrainedRollup = bookkeepingEntries.reduce(
+    (sum, entry) => sum + (Number(entry.amountRestrained) || 0),
+    0
+  );
   const state = {
     notes: defendant.notes ?? "",
     negotiation: { ...(defendant.negotiation || {}), ...negotiationData },
@@ -424,7 +458,7 @@ const init = async () => {
   };
 
   renderCaseInfo(currentCase);
-  renderDefendantInfo(defendant, state.collection);
+  renderDefendantInfo(defendant, state.collection, restrainedRollup, bookkeepingLink.href);
   defendantNotes.value = state.notes;
   renderRepresentation(defendant);
   renderClaimsTable(defendant);
@@ -476,14 +510,7 @@ const init = async () => {
       fields.updatedAt = new Date().toISOString().slice(0, 10);
     }
 
-    const restrainedAmount = fields.restrainedAmount;
-    delete fields.restrainedAmount;
-
     await updateDefendant(defendant.id, fields);
-    if (restrainedAmount !== null && restrainedAmount !== undefined) {
-      state.collection.restrainedFundsCollectedAmount = restrainedAmount;
-      await saveCollection(defendant.id, state.collection);
-    }
 
     defendantInfoSave.textContent = "Saved";
     defendantInfoSaveRep.textContent = "Saved";

@@ -418,6 +418,27 @@ const ensureCaseDocketOnlyColumn = async () => {
   `);
 };
 
+const ensureCaseAgreementFolderLinkColumn = async () => {
+  await query(`
+    ALTER TABLE cases
+    ADD COLUMN IF NOT EXISTS agreement_folder_link TEXT
+  `);
+};
+
+const ensureCaseDefaultJudgmentAmountColumn = async () => {
+  await query(`
+    ALTER TABLE cases
+    ADD COLUMN IF NOT EXISTS default_judgment_amount NUMERIC
+  `);
+};
+
+const ensureCaseLocalCounselColumn = async () => {
+  await query(`
+    ALTER TABLE cases
+    ADD COLUMN IF NOT EXISTS local_counsel TEXT
+  `);
+};
+
 const ensureLitigationTables = async () => {
   await query(`
     CREATE TABLE IF NOT EXISTS litigation_case_state (
@@ -1487,6 +1508,8 @@ app.get("/api/litigation/cases", async (req, res) => {
         COALESCE(c.is_docket_only, FALSE) AS is_docket_only,
         c.judge,
         c.status,
+        c.default_judgment_amount,
+        c.local_counsel,
         COALESCE(
           state.docket_status,
           CASE
@@ -1548,6 +1571,8 @@ app.get("/api/litigation/cases", async (req, res) => {
       isDocketOnly: row.is_docket_only,
       judge: row.judge,
       status: row.status || "",
+      defaultJudgmentAmount: row.default_judgment_amount,
+      localCounsel: row.local_counsel || "",
       docketStatus: row.docket_status || "",
       docketbirdCaseId: row.docketbird_case_id || "",
       docketbirdLastSyncedAt: row.docketbird_last_synced_at,
@@ -2995,6 +3020,9 @@ const mapCase = (row) => ({
   notes: row.notes || "",
   ipClaims: [],
   isDocketOnly: row.is_docket_only || false,
+  agreementFolderLink: row.agreement_folder_link || "",
+  defaultJudgmentAmount: row.default_judgment_amount,
+  localCounsel: row.local_counsel || "",
 });
 
 const mapIpClaim = (row) => ({
@@ -3138,6 +3166,9 @@ app.put("/api/cases/:id", async (req, res) => {
     updatedBy,
     notes,
     docketDefendantCount,
+    agreementFolderLink,
+    defaultJudgmentAmount,
+    localCounsel,
   } = req.body;
   const actor = req.session?.name || req.session?.email || updatedBy || null;
 
@@ -3178,8 +3209,11 @@ app.put("/api/cases/:id", async (req, res) => {
       updated_by = $12,
       updated_at = NOW(),
       court = $7,
-      notes = $13
-     WHERE id = $14
+      notes = $13,
+      agreement_folder_link = $14,
+      default_judgment_amount = $15,
+      local_counsel = $16
+     WHERE id = $17
      RETURNING *`,
     [
       caseName !== undefined ? caseName || e.case_name : e.case_name,
@@ -3195,6 +3229,9 @@ app.put("/api/cases/:id", async (req, res) => {
       status !== undefined ? status || e.status : e.status,
       actor || e.updated_by,
       resolve(notes, e.notes),
+      resolve(agreementFolderLink, e.agreement_folder_link),
+      defaultJudgmentAmount !== undefined ? defaultJudgmentAmount : e.default_judgment_amount,
+      resolve(localCounsel, e.local_counsel),
       req.params.id,
     ]
   );
@@ -4492,19 +4529,20 @@ app.get("/api/defendants/:id/bookkeeping-entries", async (req, res) => {
     id: row.id,
     platform: row.platform,
     amountRestrained: row.amount_restrained,
+    amountCollected: row.amount_collected,
     notes: row.notes,
     createdAt: row.created_at,
   })));
 });
 
 app.post("/api/defendants/:id/bookkeeping-entries", async (req, res) => {
-  const { platform, amountRestrained, notes } = req.body;
+  const { platform, amountRestrained, amountCollected, notes } = req.body;
   if (!platform) return res.status(400).json({ error: "Platform is required." });
 
   const result = await query(
-    `INSERT INTO defendant_bookkeeping_entries (defendant_id, platform, amount_restrained, notes)
-     VALUES ($1, $2, $3, $4) RETURNING *`,
-    [req.params.id, platform, amountRestrained || null, notes || ""]
+    `INSERT INTO defendant_bookkeeping_entries (defendant_id, platform, amount_restrained, amount_collected, notes)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [req.params.id, platform, amountRestrained || null, amountCollected || null, notes || ""]
   );
   const row = result.rows[0];
   await writeAuditLog(req, {
@@ -4514,11 +4552,11 @@ app.post("/api/defendants/:id/bookkeeping-entries", async (req, res) => {
     before: null,
     after: row,
   });
-  res.json({ id: row.id, platform: row.platform, amountRestrained: row.amount_restrained, notes: row.notes, createdAt: row.created_at });
+  res.json({ id: row.id, platform: row.platform, amountRestrained: row.amount_restrained, amountCollected: row.amount_collected, notes: row.notes, createdAt: row.created_at });
 });
 
 app.put("/api/bookkeeping-entries/:id", async (req, res) => {
-  const { platform, amountRestrained, notes } = req.body;
+  const { platform, amountRestrained, amountCollected, notes } = req.body;
   const existing = await query("SELECT * FROM defendant_bookkeeping_entries WHERE id = $1", [req.params.id]);
   if (!existing.rows.length) return res.status(404).json({ error: "Entry not found." });
 
@@ -4526,13 +4564,14 @@ app.put("/api/bookkeeping-entries/:id", async (req, res) => {
     `UPDATE defendant_bookkeeping_entries
      SET platform = COALESCE($1, platform),
          amount_restrained = COALESCE($2, amount_restrained),
-         notes = COALESCE($3, notes)
-     WHERE id = $4 RETURNING *`,
-    [platform, amountRestrained ?? null, notes, req.params.id]
+         amount_collected = COALESCE($3, amount_collected),
+         notes = COALESCE($4, notes)
+     WHERE id = $5 RETURNING *`,
+    [platform, amountRestrained ?? null, amountCollected ?? null, notes, req.params.id]
   );
   const row = result.rows[0];
   await writeAuditLog(req, { action: "defendant_bookkeeping_entries.update", entityType: "bookkeeping_entry", entityId: req.params.id, before: existing.rows[0], after: row });
-  res.json({ id: row.id, platform: row.platform, amountRestrained: row.amount_restrained, notes: row.notes, createdAt: row.created_at });
+  res.json({ id: row.id, platform: row.platform, amountRestrained: row.amount_restrained, amountCollected: row.amount_collected, notes: row.notes, createdAt: row.created_at });
 });
 
 app.delete("/api/bookkeeping-entries/:id", async (req, res) => {
@@ -4922,6 +4961,7 @@ const ensureDefendantBookkeepingTable = async () => {
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);
+  await query(`ALTER TABLE defendant_bookkeeping_entries ADD COLUMN IF NOT EXISTS amount_collected NUMERIC`);
 };
 
 const start = async () => {
@@ -4931,6 +4971,9 @@ const start = async () => {
   await ensureWeeklyReportTable();
   await ensureCaseUpdatedAtTimestamp();
   await ensureCaseDocketOnlyColumn();
+  await ensureCaseAgreementFolderLinkColumn();
+  await ensureCaseDefaultJudgmentAmountColumn();
+  await ensureCaseLocalCounselColumn();
   await ensureLitigationTables();
   await ensureEmailTables();
   await ensureDefendantEvidenceUrl();

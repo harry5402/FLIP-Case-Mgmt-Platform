@@ -889,6 +889,8 @@ const openEditTitle = (item) => {
     : "NDIL";
   editTitleForm.elements.defendantCount.value = item.defendantCount ?? 0;
   editTitleForm.elements.defendantCount.disabled = !item.isDocketOnly;
+  editTitleForm.elements.defaultJudgmentAmount.value = item.defaultJudgmentAmount ?? "";
+  editTitleForm.elements.localCounsel.value = item.localCounsel || "";
   editTitleModal.classList.remove("hidden");
 };
 
@@ -1125,8 +1127,12 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
     if (focusCaseId && item.id === focusCaseId) {
       card.classList.add("focused-docket-case");
     }
+    const defaultJudgmentAmountHtml =
+      item.isDocketOnly && item.defaultJudgmentAmount
+        ? ` · Default Judgment: ${escapeHtml(formatCurrency(item.defaultJudgmentAmount))}`
+        : "";
     const caseTitleHtml = item.isDocketOnly
-      ? escapeHtml(item.caseName || "Case")
+      ? escapeHtml(item.caseName || "Case") + defaultJudgmentAmountHtml
       : `<a href="case.html?caseId=${encodeURIComponent(item.id)}">${escapeHtml(
           item.caseName || "Case"
         )}</a>`;
@@ -1146,6 +1152,7 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
           formatJurisdictionLabel(item.jurisdiction)
         )} · Defendants: ${escapeHtml(item.defendantCount || 0)}</div>
         <div class="litigation-case-meta">Judge: ${escapeHtml(item.judge || "—")}</div>
+        <div class="litigation-case-meta">Local Counsel: ${escapeHtml(item.localCounsel || "—")}</div>
         <div class="litigation-case-meta">Most recent edit: ${formatDateTime(
           item.mostRecentEditAt
         )} by ${escapeHtml(item.mostRecentEditBy || "—")}</div>
@@ -1608,12 +1615,15 @@ const init = async () => {
       try {
         const nextJurisdiction =
           String(formData.get("jurisdiction") || "").trim() || editingCase.jurisdiction || "NDIL";
+        const defaultJudgmentAmountRaw = String(formData.get("defaultJudgmentAmount") || "").trim();
         await updateDocketCase(editingCase.id, {
           caseName,
           caseNumber: String(formData.get("caseNumber") || "").trim() || null,
           judge: String(formData.get("judge") || "").trim() || null,
           jurisdiction: nextJurisdiction,
           docketDefendantCount: editingCase.isDocketOnly ? defendantCount : undefined,
+          defaultJudgmentAmount: defaultJudgmentAmountRaw === "" ? null : Number(defaultJudgmentAmountRaw),
+          localCounsel: String(formData.get("localCounsel") || "").trim() || null,
           updatedBy: getUser()?.name || getUser()?.email || null,
         });
         const currentCaseId = editingCase.id;

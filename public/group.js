@@ -89,7 +89,7 @@ const renderNegotiation = (negotiation = {}) => {
       <span>Legal Status</span>
       <span>
         <select name="legalStatus">
-          ${["Active", "No Response", "Drafting", "Closed"].map(
+          ${["Active", "No Response", "Drafting", "Negotiating", "Litigating", "Appearance Filed", "Defer Dismissal", "TO DO: Send Agreement", "Agreement Sent", "Agreement Signed", "Paid Settlement", "Paid Settlement Agreement Needed", "Paid Ready for Dismissal", "Dismissed with Prejudice", "Closed"].map(
             (option) =>
               `<option ${option === negotiation.legalStatus ? "selected" : ""}>${option}</option>`
           )}

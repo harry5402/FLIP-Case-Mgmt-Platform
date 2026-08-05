@@ -91,6 +91,14 @@ const renderCaseInfo = (currentCase) => {
     ["Case #", "caseNumber", currentCase.caseNumber || ""],
     ["Filed Date", "filedDate", toDateInputValue(currentCase.filedDate), "date"],
     ["Judge", "judge", currentCase.judge || ""],
+    ["Local Counsel", "localCounsel", currentCase.localCounsel || ""],
+    [
+      "Default Judgment Amount",
+      "defaultJudgmentAmount",
+      currentCase.defaultJudgmentAmount ?? "",
+      "number",
+    ],
+    ["Agreement Folder Link", "agreementFolderLink", currentCase.agreementFolderLink || "", "url"],
     [
       "Case Group",
       "status",
@@ -129,13 +137,17 @@ const renderCaseInfo = (currentCase) => {
           </div>
         `;
       }
-      const inputType = type || "text";
+      const inputType = type === "url" ? "text" : type || "text";
+      const openLink =
+        type === "url" && value
+          ? ` <a href="${escapeHtml(value)}" target="_blank" rel="noopener">Open</a>`
+          : "";
       return `
         <div class="info-row">
           <span>${label}</span>
           <span><input name="${name}" type="${inputType}" value="${escapeHtml(value)}" ${
             disabled ? "disabled" : ""
-          } /></span>
+          } />${openLink}</span>
         </div>
       `;
     })
@@ -389,7 +401,9 @@ const init = async () => {
   const renderCaseMeta = () => {
     caseMeta.textContent = `${currentCase.id} • Filed ${formatDate(
       currentCase.filedDate
-    )} • ${defendants.length} defendants`;
+    )} • ${defendants.length} defendants${
+      currentCase.localCounsel ? ` • Local Counsel: ${currentCase.localCounsel}` : ""
+    }`;
   };
   renderCaseMeta();
   renderCaseInfo(currentCase);
