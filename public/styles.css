@@ -225,6 +225,47 @@ h1 {
   min-width: 140px;
 }
 
+#statistics-body .info-card {
+  margin: 0 16px 20px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+  padding: 12px 16px 16px;
+}
+
+.stat-tile {
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: #fffdf9;
+  padding: 14px 16px;
+  text-align: center;
+}
+
+.stat-tile-warning {
+  border-color: var(--accent);
+  background: #fdf1ee;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.stat-tile-warning .stat-value {
+  color: var(--accent);
+}
+
+.stat-label {
+  margin-top: 4px;
+  font-family: "Inter", "Segoe UI", sans-serif;
+  font-size: 12px;
+  color: var(--muted);
+}
+
 .link-list {
   display: grid;
   gap: 8px;

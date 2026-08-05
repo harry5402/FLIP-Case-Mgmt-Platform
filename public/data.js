@@ -21,6 +21,11 @@ const loadCases = async () => {
   return merged;
 };
 
+const loadLitigationStats = async () => {
+  const response = await authFetch(`${API_BASE}/api/litigation/stats`);
+  return response.json();
+};
+
 const saveCase = async (newCase) => {
   if (USE_API) {
     const response = await authFetch(`${API_BASE}/api/cases`, {

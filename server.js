@@ -1584,6 +1584,71 @@ app.get("/api/litigation/cases", async (req, res) => {
   );
 });
 
+app.get("/api/litigation/stats", async (req, res) => {
+  const activeCaseWhere = `
+    COALESCE(state.archived, FALSE) = FALSE
+    AND (
+      COALESCE(c.is_docket_only, FALSE) = TRUE
+      OR UPPER(COALESCE(c.status, '')) = 'ACTIVE'
+      OR COALESCE(state.docket_status, '') <> ''
+      OR c.status = ANY($1::text[])
+    )
+  `;
+
+  const totalsResult = await query(
+    `SELECT
+        COUNT(*)::int AS total_active_cases,
+        AVG(CURRENT_DATE - c.filed_date)::float AS avg_days_open
+     FROM cases c
+     LEFT JOIN litigation_case_state state ON state.case_id = c.id
+     WHERE ${activeCaseWhere}`,
+    [DOCKET_STATUS_OPTIONS]
+  );
+
+  const byJurisdictionResult = await query(
+    `SELECT
+        UPPER(NULLIF(TRIM(COALESCE(c.jurisdiction, '')), '')) AS jurisdiction,
+        COUNT(*)::int AS case_count
+     FROM cases c
+     LEFT JOIN litigation_case_state state ON state.case_id = c.id
+     WHERE ${activeCaseWhere}
+     GROUP BY UPPER(NULLIF(TRIM(COALESCE(c.jurisdiction, '')), ''))
+     ORDER BY case_count DESC, jurisdiction ASC NULLS LAST`,
+    [DOCKET_STATUS_OPTIONS]
+  );
+
+  const overdueTasksResult = await query(
+    `SELECT COUNT(*)::int AS overdue_count
+     FROM tasks t
+     LEFT JOIN LATERAL (
+       SELECT la.final_due_date, la.is_hidden
+       FROM litigation_actions la
+       WHERE la.id = t.source_litigation_action_id
+       ORDER BY la.updated_at DESC NULLS LAST, la.id DESC
+       LIMIT 1
+     ) docket_action ON TRUE
+     WHERE COALESCE(docket_action.is_hidden, FALSE) = FALSE
+       AND t.status <> 'Complete'
+       AND COALESCE(t.due_date, docket_action.final_due_date) IS NOT NULL
+       AND COALESCE(t.due_date, docket_action.final_due_date) < CURRENT_DATE`
+  );
+
+  const totalsRow = totalsResult.rows[0] || {};
+
+  res.json({
+    totalActiveCases: totalsRow.total_active_cases || 0,
+    avgDaysOpen:
+      totalsRow.avg_days_open === null || totalsRow.avg_days_open === undefined
+        ? null
+        : Math.round(totalsRow.avg_days_open),
+    byJurisdiction: byJurisdictionResult.rows.map((row) => ({
+      jurisdiction: row.jurisdiction || "UNSPECIFIED",
+      caseCount: row.case_count,
+    })),
+    overdueTaskCount: overdueTasksResult.rows[0]?.overdue_count || 0,
+  });
+});
+
 app.get("/api/litigation/cases/:id/entries", async (req, res) => {
   const result = await query(
     `SELECT la.id, la.action, la.internal_due_date, la.final_due_date, la.notes, la.sort_order,

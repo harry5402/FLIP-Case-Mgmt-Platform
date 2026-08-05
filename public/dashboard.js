@@ -1,4 +1,20 @@
 const caseGroups = document.getElementById("case-groups");
+const statisticsBody = document.getElementById("statistics-body");
+
+const jurisdictionDisplayLabels = {
+  NDIL: "ILND",
+  GAND: "GAND",
+  NDIN: "INND",
+  MDFL: "FLMD",
+  WDPA: "PAWD",
+  EDWI: "WIED",
+  EDMO: "MOED",
+  WDTX: "TXWD",
+  UNFILED: "UNFILED",
+};
+
+const formatJurisdictionLabel = (value) =>
+  jurisdictionDisplayLabels[String(value || "").toUpperCase()] || String(value || "Unspecified");
 
 // Hamburger menu
 const navHamburger = document.getElementById("nav-hamburger");
@@ -93,6 +109,54 @@ const renderGroups = (cases) => {
     details.appendChild(list);
     caseGroups.appendChild(details);
   });
+};
+
+const renderStatistics = (stats) => {
+  const overdueCount = stats.overdueTaskCount || 0;
+  const avgDaysOpen = stats.avgDaysOpen === null || stats.avgDaysOpen === undefined
+    ? "—"
+    : `${stats.avgDaysOpen}d`;
+
+  const countsByLabel = new Map();
+  (stats.byJurisdiction || []).forEach((row) => {
+    const label = formatJurisdictionLabel(row.jurisdiction);
+    countsByLabel.set(label, (countsByLabel.get(label) || 0) + row.caseCount);
+  });
+
+  const jurisdictionRows = Array.from(countsByLabel.entries())
+    .sort((a, b) => b[1] - a[1])
+    .map(
+      ([label, count]) => `
+        <div class="info-row">
+          <span>${label}</span>
+          <span>${count}</span>
+        </div>
+      `
+    )
+    .join("");
+
+  statisticsBody.innerHTML = `
+    <div class="stats-grid">
+      <div class="stat-tile">
+        <div class="stat-value">${stats.totalActiveCases || 0}</div>
+        <div class="stat-label">Active Cases</div>
+      </div>
+      <div class="stat-tile">
+        <div class="stat-value">${avgDaysOpen}</div>
+        <div class="stat-label">Avg. Time Open</div>
+      </div>
+      <div class="stat-tile${overdueCount > 0 ? " stat-tile-warning" : ""}">
+        <div class="stat-value">${overdueCount}</div>
+        <div class="stat-label">Overdue Tasks</div>
+      </div>
+    </div>
+    <div class="info-card">
+      <h3>Cases by Jurisdiction</h3>
+      <div class="info-list">
+        ${jurisdictionRows || '<div class="empty-state">No active cases yet.</div>'}
+      </div>
+    </div>
+  `;
 };
 
 const renderTasks = (tasks) => {
@@ -257,6 +321,8 @@ const init = async () => {
   renderTasks(tasks);
   const cases = await loadCases();
   renderGroups(cases);
+  const stats = await loadLitigationStats();
+  renderStatistics(stats);
 };
 
 init();
