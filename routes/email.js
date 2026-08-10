@@ -2,6 +2,18 @@
 
 const msal = require("@azure/msal-node");
 const Anthropic = require("@anthropic-ai/sdk");
+const multer = require("multer");
+
+const agreementUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024 },
+});
+
+const encodeSharingUrl = (url) => {
+  const base64 = Buffer.from(url.trim(), "utf-8").toString("base64");
+  const base64url = base64.replace(/=+$/, "").replace(/\//g, "_").replace(/\+/g, "-");
+  return `u!${base64url}`;
+};
 
 // ---------------------------------------------------------------------------
 // Config
@@ -15,6 +27,7 @@ const MS_SCOPES = [
   "User.ReadBasic.All",
   "Chat.Create",
   "ChatMessage.Send",
+  "Files.ReadWrite",
   "offline_access",
 ];
 
@@ -490,6 +503,126 @@ function registerEmailRoutes(app, { requireSession, query, withTransaction, writ
       res.status(500).json({ error: "Failed to load cases" });
     }
   });
+
+  // -------------------------------------------------------------------------
+  // POST /api/defendants/:id/upload-agreement
+  // Uploads a file directly into the case's linked OneDrive folder via Graph API,
+  // then stores the resulting link on the defendant's Settlement Agreement field.
+  // -------------------------------------------------------------------------
+  app.post(
+    "/api/defendants/:id/upload-agreement",
+    requireSession,
+    agreementUpload.single("file"),
+    async (req, res) => {
+      if (!req.file) return res.status(400).json({ error: "File is required." });
+
+      const defResult = await query(
+        `SELECT d.id, d.doe_number, d.name, c.agreement_folder_link
+         FROM defendants d
+         JOIN cases c ON c.id = d.case_id
+         WHERE d.id = $1`,
+        [req.params.id]
+      );
+      if (!defResult.rows.length) {
+        return res.status(404).json({ error: "Defendant not found." });
+      }
+      const defendant = defResult.rows[0];
+      if (!defendant.agreement_folder_link) {
+        return res.status(400).json({
+          error: "This case has no Agreement Folder Link set. Add one on the case page first.",
+        });
+      }
+
+      const account = await getDefaultSendingAccount(query);
+      if (!account) {
+        return res.status(400).json({
+          error: "No Microsoft account is connected. Connect one under Email settings first.",
+        });
+      }
+
+      let token;
+      try {
+        token = await getValidToken(account.id, query);
+      } catch (err) {
+        return res.status(502).json({ error: `Unable to get a Microsoft access token: ${err.message}` });
+      }
+
+      const shareId = encodeSharingUrl(defendant.agreement_folder_link);
+      let folderItem;
+      try {
+        const shareRes = await fetch(
+          `${GRAPH_BASE}/shares/${shareId}/driveItem?$select=id,parentReference,name,folder`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!shareRes.ok) {
+          throw new Error(`Graph API ${shareRes.status}: ${await shareRes.text()}`);
+        }
+        folderItem = await shareRes.json();
+      } catch (err) {
+        return res.status(502).json({
+          error: `Unable to resolve the Agreement Folder Link: ${err.message}. Confirm the connected Microsoft account (${account.email}) has access to that folder, and that "Files.ReadWrite" is a granted delegated permission for this app in Azure AD.`,
+        });
+      }
+
+      if (!folderItem.folder) {
+        return res.status(400).json({ error: "The Agreement Folder Link does not point to a folder." });
+      }
+
+      const driveId = folderItem.parentReference?.driveId;
+      const safeName = `${defendant.doe_number || defendant.name || "defendant"} - ${req.file.originalname}`.replace(
+        /[\\/:*?"<>|]/g,
+        "-"
+      );
+
+      let uploadedItem;
+      try {
+        const uploadRes = await fetch(
+          `${GRAPH_BASE}/drives/${driveId}/items/${folderItem.id}:/${encodeURIComponent(safeName)}:/content`,
+          {
+            method: "PUT",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": req.file.mimetype || "application/octet-stream",
+            },
+            body: req.file.buffer,
+          }
+        );
+        if (!uploadRes.ok) {
+          throw new Error(`Graph API ${uploadRes.status}: ${await uploadRes.text()}`);
+        }
+        uploadedItem = await uploadRes.json();
+      } catch (err) {
+        return res.status(502).json({ error: `Upload failed: ${err.message}` });
+      }
+
+      const webUrl = uploadedItem.webUrl;
+      await query(`UPDATE defendants SET settlement_agreement_link = $1 WHERE id = $2`, [
+        webUrl,
+        req.params.id,
+      ]);
+
+      const negotiationUpdate = await query(
+        `UPDATE negotiations SET agreement_uploaded = 'Yes' WHERE defendant_id = $1 RETURNING id`,
+        [req.params.id]
+      );
+      if (!negotiationUpdate.rows.length) {
+        await query(
+          `INSERT INTO negotiations (defendant_id, agreement_uploaded) VALUES ($1, 'Yes')`,
+          [req.params.id]
+        );
+      }
+
+      await writeAuditLog(req, {
+        action: "defendants.agreement_upload",
+        entityType: "defendant",
+        entityId: req.params.id,
+        before: null,
+        after: { fileName: safeName, webUrl },
+      });
+
+      res.json({ ok: true, webUrl, fileName: safeName });
+    }
+  );
 
   // -------------------------------------------------------------------------
   // OAuth — Start (API endpoint — returns auth URL to frontend)

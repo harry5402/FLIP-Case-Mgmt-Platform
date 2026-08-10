@@ -68,18 +68,17 @@ const docketStatusOptions = [
   "Case Closed",
 ];
 
-const docketCaseTabs = ["NDIL", "GAND", "NDIN", "MDFL", "WDPA", "EDWI", "EDMO", "WDTX", "UNFILED"];
+const docketCaseTabs = ["NDIL", "GAND", "NDIN", "WDPA", "EDWI", "WDTX", "EDTX", "UNFILED"];
 const LEAD_COUNSEL_ASSIGNEE = "__lead_counsel__";
 const DEFENDANT_ASSIGNEE = "__defendant__";
 const jurisdictionDisplayLabels = {
   NDIL: "ILND",
   GAND: "GAND",
   NDIN: "INND",
-  MDFL: "FLMD",
   WDPA: "PAWD",
   EDWI: "WIED",
-  EDMO: "MOED",
   WDTX: "TXWD",
+  EDTX: "TXED",
   UNFILED: "UNFILED",
   MBFD: "Money Back to Doe",
   ARCHIVED: "ARCHIVED",

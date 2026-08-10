@@ -5,11 +5,10 @@ const jurisdictionDisplayLabels = {
   NDIL: "ILND",
   GAND: "GAND",
   NDIN: "INND",
-  MDFL: "FLMD",
   WDPA: "PAWD",
   EDWI: "WIED",
-  EDMO: "MOED",
   WDTX: "TXWD",
+  EDTX: "TXED",
   UNFILED: "UNFILED",
 };
 

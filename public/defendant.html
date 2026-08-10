@@ -103,8 +103,10 @@
           <div class="info-card">
             <div class="info-card-header">
               <h3>Negotiation</h3>
-              <button class="ghost-button" type="button">Upload Agreement</button>
+              <button class="ghost-button" id="upload-agreement-button" type="button">Upload Agreement</button>
+              <input id="upload-agreement-input" type="file" class="hidden" />
             </div>
+            <div id="negotiation-upload-status" class="form-error"></div>
             <div id="negotiation-list" class="info-list"></div>
             <button class="ghost-button hidden" id="negotiation-save" type="button">
               Save

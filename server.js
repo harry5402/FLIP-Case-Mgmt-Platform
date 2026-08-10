@@ -46,11 +46,10 @@ const LITIGATION_TABS = [
   "NDIL",
   "GAND",
   "NDIN",
-  "MDFL",
   "WDPA",
   "EDWI",
-  "EDMO",
   "WDTX",
+  "EDTX",
   "UNFILED",
   "MBFD",
   "ARCHIVED",
@@ -72,11 +71,10 @@ const DOCKETBIRD_COURT_ID_BY_JURISDICTION = {
   NDIL: "ilnd",
   GAND: "gand",
   NDIN: "innd",
-  MDFL: "flmd",
   WDPA: "pawd",
   EDWI: "wied",
-  EDMO: "moed",
   WDTX: "txwd",
+  EDTX: "txed",
 };
 
 const toDateOnly = (value) => {
@@ -3702,6 +3700,7 @@ app.get("/api/cases/:id/defendants", async (req, res) => {
       sellerLocation: row.seller_location,
       sellerUrl: row.seller_url,
       evidenceUrl: row.evidence_url,
+      settlementAgreementLink: row.settlement_agreement_link,
     }))
   );
 });
@@ -5013,6 +5012,7 @@ app.use((err, req, res, next) => {
 const ensureDefendantEvidenceUrl = async () => {
   await query(`ALTER TABLE defendants ADD COLUMN IF NOT EXISTS evidence_url TEXT`);
   await query(`ALTER TABLE defendants ADD COLUMN IF NOT EXISTS plaintiff_rep_name TEXT`);
+  await query(`ALTER TABLE defendants ADD COLUMN IF NOT EXISTS settlement_agreement_link TEXT`);
 };
 
 const ensureDefendantBookkeepingTable = async () => {

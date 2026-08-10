@@ -23,6 +23,9 @@ const closeTaskModal = document.getElementById("close-task-modal");
 const taskForm = document.getElementById("task-form");
 const taskUserSelect = document.getElementById("task-user-select");
 const taskError = document.getElementById("task-error");
+const uploadAgreementButton = document.getElementById("upload-agreement-button");
+const uploadAgreementInput = document.getElementById("upload-agreement-input");
+const negotiationUploadStatus = document.getElementById("negotiation-upload-status");
 
 const renderCaseInfo = (currentCase) => {
   const rows = [
@@ -521,6 +524,44 @@ const init = async () => {
   });
 
   defendantInfoSaveRep.addEventListener("click", () => defendantInfoSave.click());
+
+  uploadAgreementButton.addEventListener("click", () => {
+    negotiationUploadStatus.textContent = "";
+    uploadAgreementInput.click();
+  });
+
+  uploadAgreementInput.addEventListener("change", async () => {
+    const file = uploadAgreementInput.files[0];
+    uploadAgreementInput.value = "";
+    if (!file) return;
+
+    negotiationUploadStatus.style.color = "";
+    negotiationUploadStatus.textContent = "Uploading…";
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const response = await authFetch(`/api/defendants/${defendant.id}/upload-agreement`, {
+        method: "POST",
+        body: formData,
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload.error || "Upload failed.");
+      }
+
+      negotiationUploadStatus.textContent = `Uploaded: ${payload.fileName}`;
+
+      defendant.settlementAgreementLink = payload.webUrl;
+      renderDefendantInfo(defendant, state.collection, restrainedRollup, bookkeepingLink.href);
+
+      state.negotiation.agreementUploaded = "Yes";
+      const agreementSelect = negotiationList.querySelector('select[name="agreementUploaded"]');
+      if (agreementSelect) agreementSelect.value = "Yes";
+    } catch (error) {
+      negotiationUploadStatus.style.color = "#dc2626";
+      negotiationUploadStatus.textContent = error.message || "Upload failed.";
+    }
+  });
 };
 
 init();
