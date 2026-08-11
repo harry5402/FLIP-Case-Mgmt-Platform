@@ -69,6 +69,8 @@ const DOCKET_STATUS_OPTIONS = [
 
 const CASE_TYPE_OPTIONS = ["Coresearch", "FAIKERZ", "Knobbe Martens"];
 
+const ASSET_RESTRAINT_OPTIONS = ["Yes", "No"];
+
 const DOCKETBIRD_COURT_ID_BY_JURISDICTION = {
   NDIL: "ilnd",
   GAND: "gand",
@@ -443,6 +445,13 @@ const ensureCaseTypeColumn = async () => {
   await query(`
     ALTER TABLE cases
     ADD COLUMN IF NOT EXISTS case_type TEXT
+  `);
+};
+
+const ensureCaseAssetRestraintColumn = async () => {
+  await query(`
+    ALTER TABLE cases
+    ADD COLUMN IF NOT EXISTS asset_restraint TEXT
   `);
 };
 
@@ -1518,6 +1527,7 @@ app.get("/api/litigation/cases", async (req, res) => {
         c.default_judgment_amount,
         c.local_counsel,
         c.case_type,
+        c.asset_restraint,
         COALESCE(
           state.docket_status,
           CASE
@@ -1582,6 +1592,7 @@ app.get("/api/litigation/cases", async (req, res) => {
       defaultJudgmentAmount: row.default_judgment_amount,
       localCounsel: row.local_counsel || "",
       caseType: row.case_type || "",
+      assetRestraint: row.asset_restraint || "",
       docketStatus: row.docket_status || "",
       docketbirdCaseId: row.docketbird_case_id || "",
       docketbirdLastSyncedAt: row.docketbird_last_synced_at,
@@ -2195,6 +2206,35 @@ app.put("/api/litigation/cases/:id/case-type", async (req, res) => {
   });
 
   res.json({ ok: true, caseType: caseType || "" });
+});
+
+app.put("/api/litigation/cases/:id/asset-restraint", async (req, res) => {
+  const assetRestraint = String(req.body?.assetRestraint || "").trim();
+  if (assetRestraint && !ASSET_RESTRAINT_OPTIONS.includes(assetRestraint)) {
+    return res.status(400).json({ error: "Invalid asset restraint value." });
+  }
+
+  const existing = await query("SELECT id, asset_restraint FROM cases WHERE id = $1", [
+    req.params.id,
+  ]);
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "Case not found." });
+  }
+
+  await query(
+    `UPDATE cases SET asset_restraint = $1, updated_at = NOW(), updated_by = $2 WHERE id = $3`,
+    [assetRestraint || null, req.session?.name || req.session?.email || null, req.params.id]
+  );
+
+  await writeAuditLog(req, {
+    action: "litigation.case.asset_restraint",
+    entityType: "case",
+    entityId: req.params.id,
+    before: { assetRestraint: existing.rows[0].asset_restraint || "" },
+    after: { assetRestraint: assetRestraint || "" },
+  });
+
+  res.json({ ok: true, assetRestraint: assetRestraint || "" });
 });
 
 app.put("/api/litigation/cases/:id/default-judgment-amount", async (req, res) => {
@@ -3155,6 +3195,7 @@ const mapCase = (row) => ({
   defaultJudgmentAmount: row.default_judgment_amount,
   localCounsel: row.local_counsel || "",
   caseType: row.case_type || "",
+  assetRestraint: row.asset_restraint || "",
 });
 
 const mapIpClaim = (row) => ({
@@ -5109,6 +5150,7 @@ const start = async () => {
   await ensureCaseDefaultJudgmentAmountColumn();
   await ensureCaseLocalCounselColumn();
   await ensureCaseTypeColumn();
+  await ensureCaseAssetRestraintColumn();
   await ensureLitigationTables();
   await ensureEmailTables();
   await ensureDefendantEvidenceUrl();

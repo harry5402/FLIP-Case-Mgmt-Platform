@@ -69,6 +69,7 @@ const docketStatusOptions = [
 ];
 
 const caseTypeOptions = ["", "Coresearch", "FAIKERZ", "Knobbe Martens"];
+const assetRestraintOptions = ["", "Yes", "No"];
 
 const docketCaseTabs = ["NDIL", "GAND", "NDIN", "WDPA", "EDWI", "WDTX", "EDTX", "UNFILED"];
 const LEAD_COUNSEL_ASSIGNEE = "__lead_counsel__";
@@ -163,6 +164,12 @@ const updateDefaultJudgmentAmount = (caseId, defaultJudgmentAmount) =>
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ defaultJudgmentAmount }),
+  });
+const updateAssetRestraint = (caseId, assetRestraint) =>
+  fetchJson(`/api/litigation/cases/${caseId}/asset-restraint`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ assetRestraint }),
   });
 const updateDocketBirdLink = (caseId, docketbirdCaseId) =>
   fetchJson(`/api/litigation/cases/${caseId}/docketbird-link`, {
@@ -288,6 +295,16 @@ const buildCaseTypeOptions = (selectedValue) =>
         `<option value="${escapeHtml(type)}" ${
           type === (selectedValue || "") ? "selected" : ""
         }>${escapeHtml(type || "—")}</option>`
+    )
+    .join("");
+
+const buildAssetRestraintOptions = (selectedValue) =>
+  assetRestraintOptions
+    .map(
+      (value) =>
+        `<option value="${escapeHtml(value)}" ${
+          value === (selectedValue || "") ? "selected" : ""
+        }>${escapeHtml(value || "—")}</option>`
     )
     .join("");
 
@@ -1218,6 +1235,13 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
           </label>
           <button class="ghost-button save-default-judgment-amount" type="button">Save</button>
           <span class="case-status-feedback default-judgment-feedback"></span>
+          <label class="inline-select-field">
+            <span>Asset Restraint</span>
+            <select class="lit-input asset-restraint-select" data-case-id="${item.id}">
+              ${buildAssetRestraintOptions(item.assetRestraint || "")}
+            </select>
+          </label>
+          <span class="case-status-feedback asset-restraint-feedback"></span>
         </div>
         <div class="litigation-case-status-row">
           <label class="inline-select-field docketbird-link-row">
@@ -1461,6 +1485,21 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
         defaultJudgmentFeedback.textContent = "Saved";
       } catch (error) {
         defaultJudgmentFeedback.textContent = error.message || "Unable to save amount.";
+      }
+    });
+    const assetRestraintSelect = card.querySelector(".asset-restraint-select");
+    const assetRestraintFeedback = card.querySelector(".asset-restraint-feedback");
+    assetRestraintSelect.addEventListener("change", async () => {
+      assetRestraintFeedback.textContent = "";
+      assetRestraintSelect.disabled = true;
+      try {
+        await updateAssetRestraint(item.id, assetRestraintSelect.value || "");
+        item.assetRestraint = assetRestraintSelect.value || "";
+        assetRestraintFeedback.textContent = "Saved";
+      } catch (error) {
+        assetRestraintFeedback.textContent = error.message || "Unable to save asset restraint.";
+      } finally {
+        assetRestraintSelect.disabled = false;
       }
     });
     card.querySelector(".edit-title-button").addEventListener("click", () => {
