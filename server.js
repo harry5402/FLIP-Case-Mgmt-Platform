@@ -67,7 +67,7 @@ const DOCKET_STATUS_OPTIONS = [
   "Case Closed",
 ];
 
-const CASE_TYPE_OPTIONS = ["Edison", "FAIKERZ", "Glimpse LLC"];
+const CASE_TYPE_OPTIONS = ["Coresearch", "FAIKERZ", "Knobbe Martens"];
 
 const DOCKETBIRD_COURT_ID_BY_JURISDICTION = {
   NDIL: "ilnd",

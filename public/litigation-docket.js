@@ -68,7 +68,7 @@ const docketStatusOptions = [
   "Case Closed",
 ];
 
-const caseTypeOptions = ["", "Edison", "FAIKERZ", "Glimpse LLC"];
+const caseTypeOptions = ["", "Coresearch", "FAIKERZ", "Knobbe Martens"];
 
 const docketCaseTabs = ["NDIL", "GAND", "NDIN", "WDPA", "EDWI", "WDTX", "EDTX", "UNFILED"];
 const LEAD_COUNSEL_ASSIGNEE = "__lead_counsel__";

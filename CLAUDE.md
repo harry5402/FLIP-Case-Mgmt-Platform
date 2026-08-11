@@ -13,6 +13,12 @@ Read this at the start of every session. It tells you what the project is, how t
 
 ---
 
+## Verification
+- Harry verifies UI/frontend changes himself. Do not start the dev server or drive the Browser pane to check a change unless he explicitly asks — it burns tokens for no benefit here.
+- Still run cheap static checks (`node --check`, type checks, existing test suites) when relevant.
+
+---
+
 ## Task Classification — Read the Task, Pick a Lane
 
 | If the task is about... | Load this skill file |
