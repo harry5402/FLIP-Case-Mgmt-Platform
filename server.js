@@ -67,6 +67,8 @@ const DOCKET_STATUS_OPTIONS = [
   "Case Closed",
 ];
 
+const CASE_TYPE_OPTIONS = ["Edison", "FAIKERZ", "Glimpse LLC"];
+
 const DOCKETBIRD_COURT_ID_BY_JURISDICTION = {
   NDIL: "ilnd",
   GAND: "gand",
@@ -434,6 +436,13 @@ const ensureCaseLocalCounselColumn = async () => {
   await query(`
     ALTER TABLE cases
     ADD COLUMN IF NOT EXISTS local_counsel TEXT
+  `);
+};
+
+const ensureCaseTypeColumn = async () => {
+  await query(`
+    ALTER TABLE cases
+    ADD COLUMN IF NOT EXISTS case_type TEXT
   `);
 };
 
@@ -1508,6 +1517,7 @@ app.get("/api/litigation/cases", async (req, res) => {
         c.status,
         c.default_judgment_amount,
         c.local_counsel,
+        c.case_type,
         COALESCE(
           state.docket_status,
           CASE
@@ -1571,6 +1581,7 @@ app.get("/api/litigation/cases", async (req, res) => {
       status: row.status || "",
       defaultJudgmentAmount: row.default_judgment_amount,
       localCounsel: row.local_counsel || "",
+      caseType: row.case_type || "",
       docketStatus: row.docket_status || "",
       docketbirdCaseId: row.docketbird_case_id || "",
       docketbirdLastSyncedAt: row.docketbird_last_synced_at,
@@ -2157,6 +2168,63 @@ app.put("/api/litigation/cases/:id/docket-status", async (req, res) => {
   });
 
   res.json({ ok: true, docketStatus: docketStatus || "" });
+});
+
+app.put("/api/litigation/cases/:id/case-type", async (req, res) => {
+  const caseType = String(req.body?.caseType || "").trim();
+  if (caseType && !CASE_TYPE_OPTIONS.includes(caseType)) {
+    return res.status(400).json({ error: "Invalid case type." });
+  }
+
+  const existing = await query("SELECT id, case_type FROM cases WHERE id = $1", [req.params.id]);
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "Case not found." });
+  }
+
+  await query(
+    `UPDATE cases SET case_type = $1, updated_at = NOW(), updated_by = $2 WHERE id = $3`,
+    [caseType || null, req.session?.name || req.session?.email || null, req.params.id]
+  );
+
+  await writeAuditLog(req, {
+    action: "litigation.case.case_type",
+    entityType: "case",
+    entityId: req.params.id,
+    before: { caseType: existing.rows[0].case_type || "" },
+    after: { caseType: caseType || "" },
+  });
+
+  res.json({ ok: true, caseType: caseType || "" });
+});
+
+app.put("/api/litigation/cases/:id/default-judgment-amount", async (req, res) => {
+  const raw = req.body?.defaultJudgmentAmount;
+  const amount = raw === null || raw === undefined || raw === "" ? null : Number(raw);
+  if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+    return res.status(400).json({ error: "Invalid amount." });
+  }
+
+  const existing = await query("SELECT id, default_judgment_amount FROM cases WHERE id = $1", [
+    req.params.id,
+  ]);
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "Case not found." });
+  }
+
+  await query(
+    `UPDATE cases SET default_judgment_amount = $1, updated_at = NOW(), updated_by = $2 WHERE id = $3`,
+    [amount, req.session?.name || req.session?.email || null, req.params.id]
+  );
+
+  await writeAuditLog(req, {
+    action: "litigation.case.default_judgment_amount",
+    entityType: "case",
+    entityId: req.params.id,
+    before: { defaultJudgmentAmount: existing.rows[0].default_judgment_amount },
+    after: { defaultJudgmentAmount: amount },
+  });
+
+  res.json({ ok: true, defaultJudgmentAmount: amount });
 });
 
 app.put("/api/litigation/cases/:id/docketbird-link", async (req, res) => {
@@ -3086,6 +3154,7 @@ const mapCase = (row) => ({
   agreementFolderLink: row.agreement_folder_link || "",
   defaultJudgmentAmount: row.default_judgment_amount,
   localCounsel: row.local_counsel || "",
+  caseType: row.case_type || "",
 });
 
 const mapIpClaim = (row) => ({
@@ -5039,6 +5108,7 @@ const start = async () => {
   await ensureCaseAgreementFolderLinkColumn();
   await ensureCaseDefaultJudgmentAmountColumn();
   await ensureCaseLocalCounselColumn();
+  await ensureCaseTypeColumn();
   await ensureLitigationTables();
   await ensureEmailTables();
   await ensureDefendantEvidenceUrl();

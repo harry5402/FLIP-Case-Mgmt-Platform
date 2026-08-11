@@ -68,6 +68,8 @@ const docketStatusOptions = [
   "Case Closed",
 ];
 
+const caseTypeOptions = ["", "Edison", "FAIKERZ", "Glimpse LLC"];
+
 const docketCaseTabs = ["NDIL", "GAND", "NDIN", "WDPA", "EDWI", "WDTX", "EDTX", "UNFILED"];
 const LEAD_COUNSEL_ASSIGNEE = "__lead_counsel__";
 const DEFENDANT_ASSIGNEE = "__defendant__";
@@ -149,6 +151,18 @@ const updateDocketStatus = (caseId, docketStatus) =>
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ docketStatus }),
+  });
+const updateCaseType = (caseId, caseType) =>
+  fetchJson(`/api/litigation/cases/${caseId}/case-type`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ caseType }),
+  });
+const updateDefaultJudgmentAmount = (caseId, defaultJudgmentAmount) =>
+  fetchJson(`/api/litigation/cases/${caseId}/default-judgment-amount`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ defaultJudgmentAmount }),
   });
 const updateDocketBirdLink = (caseId, docketbirdCaseId) =>
   fetchJson(`/api/litigation/cases/${caseId}/docketbird-link`, {
@@ -266,6 +280,18 @@ const buildStatusOptions = (selectedValue) =>
         }>${escapeHtml(status || "—")}</option>`
     )
     .join("");
+
+const buildCaseTypeOptions = (selectedValue) =>
+  caseTypeOptions
+    .map(
+      (type) =>
+        `<option value="${escapeHtml(type)}" ${
+          type === (selectedValue || "") ? "selected" : ""
+        }>${escapeHtml(type || "—")}</option>`
+    )
+    .join("");
+
+const DEFAULT_JUDGMENT_GRANTED_STATUS = "Default Judgement Granted";
 
 const setSaveStateIndicator = (element, state, message = "") => {
   if (!element) return;
@@ -1152,6 +1178,15 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
         )} · Defendants: ${escapeHtml(item.defendantCount || 0)}</div>
         <div class="litigation-case-meta">Judge: ${escapeHtml(item.judge || "—")}</div>
         <div class="litigation-case-meta">Local Counsel: ${escapeHtml(item.localCounsel || "—")}</div>
+        <div class="litigation-case-status-row case-type-row">
+          <label class="inline-select-field">
+            <span>Case Type</span>
+            <select class="lit-input case-type-select" data-case-id="${item.id}">
+              ${buildCaseTypeOptions(item.caseType || "")}
+            </select>
+          </label>
+          <span class="case-status-feedback case-type-feedback"></span>
+        </div>
         <div class="litigation-case-meta">Most recent edit: ${formatDateTime(
           item.mostRecentEditAt
         )} by ${escapeHtml(item.mostRecentEditBy || "—")}</div>
@@ -1165,8 +1200,24 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
               ${buildStatusOptions(item.docketStatus || "")}
             </select>
           </label>
-          <span class="case-status-feedback"></span>
+          <span class="case-status-feedback docket-status-feedback"></span>
           <button class="ghost-button edit-title-button" type="button">Edit Title</button>
+        </div>
+        <div class="litigation-case-status-row default-judgment-row${
+          (item.docketStatus || "") === DEFAULT_JUDGMENT_GRANTED_STATUS ? "" : " hidden"
+        }">
+          <label class="inline-select-field">
+            <span>Default Judgment Amount</span>
+            <input
+              class="lit-input default-judgment-amount-input"
+              type="number"
+              min="0"
+              step="0.01"
+              value="${item.defaultJudgmentAmount ?? ""}"
+            />
+          </label>
+          <button class="ghost-button save-default-judgment-amount" type="button">Save</button>
+          <span class="case-status-feedback default-judgment-feedback"></span>
         </div>
         <div class="litigation-case-status-row">
           <label class="inline-select-field docketbird-link-row">
@@ -1360,10 +1411,15 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
       }
     });
     const caseStatusSelect = card.querySelector(".case-status-select");
-    const caseStatusFeedback = card.querySelector(".case-status-feedback");
+    const caseStatusFeedback = card.querySelector(".docket-status-feedback");
+    const defaultJudgmentRow = card.querySelector(".default-judgment-row");
     caseStatusSelect.addEventListener("change", async () => {
       caseStatusFeedback.textContent = "";
       caseStatusSelect.disabled = true;
+      defaultJudgmentRow?.classList.toggle(
+        "hidden",
+        caseStatusSelect.value !== DEFAULT_JUDGMENT_GRANTED_STATUS
+      );
       try {
         await updateDocketStatus(item.id, caseStatusSelect.value || "");
         caseStatusFeedback.textContent = "Saved";
@@ -1372,6 +1428,39 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
         caseStatusFeedback.textContent = error.message || "Unable to save status.";
       } finally {
         caseStatusSelect.disabled = false;
+      }
+    });
+    const caseTypeSelect = card.querySelector(".case-type-select");
+    const caseTypeFeedback = card.querySelector(".case-type-feedback");
+    caseTypeSelect.addEventListener("change", async () => {
+      caseTypeFeedback.textContent = "";
+      caseTypeSelect.disabled = true;
+      try {
+        await updateCaseType(item.id, caseTypeSelect.value || "");
+        item.caseType = caseTypeSelect.value || "";
+        caseTypeFeedback.textContent = "Saved";
+      } catch (error) {
+        caseTypeFeedback.textContent = error.message || "Unable to save case type.";
+      } finally {
+        caseTypeSelect.disabled = false;
+      }
+    });
+    const defaultJudgmentAmountInput = card.querySelector(".default-judgment-amount-input");
+    const defaultJudgmentFeedback = card.querySelector(".default-judgment-feedback");
+    card.querySelector(".save-default-judgment-amount").addEventListener("click", async () => {
+      defaultJudgmentFeedback.textContent = "";
+      const raw = defaultJudgmentAmountInput.value.trim();
+      const amount = raw === "" ? null : Number(raw);
+      if (amount !== null && (!Number.isFinite(amount) || amount < 0)) {
+        defaultJudgmentFeedback.textContent = "Enter a valid amount.";
+        return;
+      }
+      try {
+        await updateDefaultJudgmentAmount(item.id, amount);
+        item.defaultJudgmentAmount = amount;
+        defaultJudgmentFeedback.textContent = "Saved";
+      } catch (error) {
+        defaultJudgmentFeedback.textContent = error.message || "Unable to save amount.";
       }
     });
     card.querySelector(".edit-title-button").addEventListener("click", () => {

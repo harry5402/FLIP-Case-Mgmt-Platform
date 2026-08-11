@@ -734,6 +734,10 @@ tbody td {
   margin-top: 4px;
 }
 
+.litigation-case-status-row.hidden {
+  display: none;
+}
+
 .inline-select-field {
   display: flex;
   align-items: center;
