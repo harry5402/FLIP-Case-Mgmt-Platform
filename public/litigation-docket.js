@@ -1050,7 +1050,7 @@ const renderMbfdItems = async (renderId = latestTabRenderId) => {
           </label>
           <label class="form-field">
             <span>Amount</span>
-            <input class="lit-input mbfd-amount" type="number" min="0" step="0.01" value="${escapeHtml(
+            <input class="lit-input mbfd-amount" type="text" inputmode="decimal" value="${escapeHtml(
               item.amount ?? ""
             )}" />
           </label>
@@ -1239,9 +1239,8 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
             <span>Default Judgment Amount</span>
             <input
               class="lit-input default-judgment-amount-input"
-              type="number"
-              min="0"
-              step="0.01"
+              type="text"
+              inputmode="decimal"
               value="${item.defaultJudgmentAmount ?? ""}"
             />
           </label>
