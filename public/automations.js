@@ -314,3 +314,102 @@ async function downloadEdisonFile(token, name) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+// ── Complaint Specification - Defendant List ────────────────────────────────
+
+let complaintCsvFile = null;
+let complaintPdfFile = null;
+
+const complaintCsvDropZone = document.getElementById('complaint-csv-drop-zone');
+const complaintCsvFileInput = document.getElementById('complaint-csv-file-input');
+const complaintCsvPreview = document.getElementById('complaint-csv-preview');
+const complaintCsvPreviewText = document.getElementById('complaint-csv-preview-text');
+const complaintColChips = document.getElementById('complaint-col-chips');
+
+const complaintPdfDropZone = document.getElementById('complaint-pdf-drop-zone');
+const complaintPdfFileInput = document.getElementById('complaint-pdf-file-input');
+const complaintPdfFileList = document.getElementById('complaint-pdf-file-list');
+
+const complaintSpecRunBtn = document.getElementById('complaint-spec-run-btn');
+
+const COMPLAINT_NAME_COLUMNS = ['name', 'defendant', 'defendant name'];
+
+complaintCsvDropZone.addEventListener('click', () => complaintCsvFileInput.click());
+complaintCsvDropZone.addEventListener('dragover', e => { e.preventDefault(); complaintCsvDropZone.classList.add('drag-over'); });
+complaintCsvDropZone.addEventListener('dragleave', () => complaintCsvDropZone.classList.remove('drag-over'));
+complaintCsvDropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  complaintCsvDropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) handleComplaintCsvFile(f);
+});
+complaintCsvFileInput.addEventListener('change', () => {
+  if (complaintCsvFileInput.files[0]) handleComplaintCsvFile(complaintCsvFileInput.files[0]);
+});
+
+function handleComplaintCsvFile(file) {
+  complaintCsvFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const firstLine = e.target.result.split('\n')[0];
+    const cols = firstLine.split(',').map(c => c.trim().replace(/^"|"$/g, ''));
+    const rowCount = e.target.result.split('\n').filter(l => l.trim()).length - 1;
+    const hasName = cols.some(c => COMPLAINT_NAME_COLUMNS.includes(c.toLowerCase()));
+
+    complaintCsvPreviewText.textContent = `${escapeHtml(file.name)} — ${rowCount} row${rowCount !== 1 ? 's' : ''} detected`;
+    complaintColChips.innerHTML = '';
+    cols.forEach(col => {
+      const chip = document.createElement('span');
+      const isNameCol = COMPLAINT_NAME_COLUMNS.includes(col.toLowerCase());
+      chip.className = 'col-chip' + (isNameCol ? ' url-chip' : '');
+      chip.textContent = col;
+      complaintColChips.appendChild(chip);
+    });
+    if (!hasName) {
+      const warn = document.createElement('span');
+      warn.className = 'col-chip missing';
+      warn.textContent = '⚠ no "name" column found';
+      complaintColChips.appendChild(warn);
+    }
+    complaintCsvPreview.classList.add('visible');
+    updateComplaintRunBtn();
+  };
+  reader.readAsText(file);
+}
+
+complaintPdfDropZone.addEventListener('click', () => complaintPdfFileInput.click());
+complaintPdfDropZone.addEventListener('dragover', e => { e.preventDefault(); complaintPdfDropZone.classList.add('drag-over'); });
+complaintPdfDropZone.addEventListener('dragleave', () => complaintPdfDropZone.classList.remove('drag-over'));
+complaintPdfDropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  complaintPdfDropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type === 'application/pdf') handleComplaintPdfFile(f);
+});
+complaintPdfFileInput.addEventListener('change', () => {
+  if (complaintPdfFileInput.files[0]) handleComplaintPdfFile(complaintPdfFileInput.files[0]);
+});
+
+function handleComplaintPdfFile(file) {
+  complaintPdfFile = file;
+  complaintPdfFileList.innerHTML = `
+    <div class="edison-file-row">
+      <span class="file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+      <button class="move-btn" data-action="remove" title="Remove">✕</button>
+    </div>
+  `;
+  complaintPdfFileList.querySelector('.move-btn').addEventListener('click', () => {
+    complaintPdfFile = null;
+    complaintPdfFileList.innerHTML = '';
+    updateComplaintRunBtn();
+  });
+  updateComplaintRunBtn();
+}
+
+function updateComplaintRunBtn() {
+  complaintSpecRunBtn.disabled = !(complaintCsvFile && complaintPdfFile);
+}
+
+complaintSpecRunBtn.addEventListener('click', () => {
+  alert('This tool\'s backend isn\'t connected yet — front end only for now.');
+});

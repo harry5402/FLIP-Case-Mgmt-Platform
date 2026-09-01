@@ -356,6 +356,7 @@
         <a class="automation-nav-item active" data-panel="exhibit2">Exhibit 2 Generator</a>
         <a class="automation-nav-item" data-panel="edison">Edison Cover Pages</a>
         <a class="automation-nav-item" data-panel="screenshot-compiler">Screenshot PDF Compiler</a>
+        <a class="automation-nav-item" data-panel="complaint-spec">Complaint Specification - Defendant List</a>
       </nav>
 
       <div class="automations-content">
@@ -466,6 +467,45 @@
           </div>
           <div class="stub-notice">
             Backend coming soon — input format and footer fields pending.
+          </div>
+        </div>
+
+        <!-- Complaint Specification - Defendant List Panel -->
+        <div class="automation-panel" id="panel-complaint-spec">
+          <div class="automation-title">Complaint Specification - Defendant List</div>
+          <div class="automation-desc">
+            Upload a CSV of defendant names and the complaint they belong to. The tool will
+            insert the defendant names from the CSV into the complaint's defendant list.
+          </div>
+
+          <div class="form-section">
+            <label class="form-label">1. Upload Defendant CSV</label>
+            <div class="csv-drop-zone" id="complaint-csv-drop-zone">
+              <div>Drop a CSV file here, or <u>click to browse</u></div>
+              <div style="font-size:11px;margin-top:6px;">Must contain a <code>name</code> column with defendant names.</div>
+              <input type="file" id="complaint-csv-file-input" accept=".csv,text/csv" />
+            </div>
+            <div class="csv-preview" id="complaint-csv-preview">
+              <div id="complaint-csv-preview-text"></div>
+              <div class="col-chips" id="complaint-col-chips"></div>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <label class="form-label">2. Upload Complaint (PDF)</label>
+            <div class="csv-drop-zone" id="complaint-pdf-drop-zone">
+              <div>Drop the complaint PDF here, or <u>click to browse</u></div>
+              <div style="font-size:11px;margin-top:6px;">The defendant names will be inserted into this document.</div>
+              <input type="file" id="complaint-pdf-file-input" accept="application/pdf" />
+            </div>
+            <div class="edison-file-list" id="complaint-pdf-file-list"></div>
+          </div>
+
+          <div class="form-section">
+            <button id="complaint-spec-run-btn" class="ghost-button" type="button" disabled>Generate Complaint</button>
+            <div class="stub-notice">
+              Backend coming soon — this will insert the defendant names from the CSV into the uploaded complaint.
+            </div>
           </div>
         </div>
 
