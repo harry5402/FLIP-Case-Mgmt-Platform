@@ -707,6 +707,19 @@ tbody td {
   font-weight: 700;
 }
 
+.case-age-badge {
+  display: inline-block;
+  margin-left: 10px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-alt, rgba(0, 0, 0, 0.06));
+  color: var(--muted);
+  font-family: "Inter", "Segoe UI", sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
 .case-collapse-toggle {
   flex-shrink: 0;
 }

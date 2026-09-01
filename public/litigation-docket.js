@@ -103,6 +103,14 @@ const formatDateTime = (value) => {
   });
 };
 
+const formatDaysOpen = (value) => {
+  if (!value) return "";
+  const createdAt = new Date(value);
+  if (Number.isNaN(createdAt.getTime())) return "";
+  const days = Math.max(0, Math.floor((Date.now() - createdAt.getTime()) / 86400000));
+  return `${days} ${days === 1 ? "day" : "days"} open`;
+};
+
 const formatCurrency = (value) => {
   if (value === null || value === undefined || value === "") return "—";
   const numberValue = Number(value);
@@ -1178,6 +1186,10 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
       : `<a href="case.html?caseId=${encodeURIComponent(item.id)}">${escapeHtml(
           item.caseName || "Case"
         )}</a>`;
+    const daysOpenLabel = formatDaysOpen(item.caseCreatedAt);
+    const daysOpenHtml = daysOpenLabel
+      ? `<span class="case-age-badge">${escapeHtml(daysOpenLabel)}</span>`
+      : "";
     const collapsedCaseIds = getCollapsedCaseIds(tab);
     const shouldStartCollapsed = focusCaseId
       ? item.id !== focusCaseId
@@ -1185,7 +1197,7 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
     card.innerHTML = `
       <div class="litigation-case-header">
         <div class="litigation-case-topline">
-          <div class="litigation-case-title">${caseTitleHtml}</div>
+          <div class="litigation-case-title">${caseTitleHtml}${daysOpenHtml}</div>
           <button class="ghost-button case-collapse-toggle" type="button" aria-expanded="true">
             Collapse
           </button>

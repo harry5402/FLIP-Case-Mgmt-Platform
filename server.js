@@ -1540,7 +1540,8 @@ app.get("/api/litigation/cases", async (req, res) => {
         COALESCE(state.docket_defendant_count, defs.count, 0) AS defendant_count,
         COALESCE(state.archived, FALSE) AS archived,
         COALESCE(a.created_at, c.updated_at, c.created_at) AS most_recent_edit_at,
-        COALESCE(a.user_email, c.updated_by, '') AS most_recent_edit_by
+        COALESCE(a.user_email, c.updated_by, '') AS most_recent_edit_by,
+        c.created_at AS case_created_at
      FROM cases c
      LEFT JOIN litigation_case_state state ON state.case_id = c.id
      LEFT JOIN (
@@ -1600,6 +1601,7 @@ app.get("/api/litigation/cases", async (req, res) => {
       archived: row.archived,
       mostRecentEditAt: row.most_recent_edit_at,
       mostRecentEditBy: row.most_recent_edit_by,
+      caseCreatedAt: row.case_created_at,
     }))
   );
 });
