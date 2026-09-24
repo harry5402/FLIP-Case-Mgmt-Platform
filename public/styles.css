@@ -1049,6 +1049,17 @@ tbody td {
   min-width: 0;
 }
 
+.assignment-stack > * {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.assignment-stack .collaborator-toggle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .entries-table {
   table-layout: fixed;
 }

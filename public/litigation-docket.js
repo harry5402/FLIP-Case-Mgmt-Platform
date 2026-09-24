@@ -262,7 +262,7 @@ const buildUserOptions = (selectedValue) => {
     }>Defendant</option>`,
   ];
   userOptions.forEach((user) => {
-    const label = user.name ? `${user.name} (${user.email})` : user.email;
+    const label = user.name || user.email;
     options.push(
       `<option value="${escapeHtml(user.id)}" ${
         user.id === selectedValue ? "selected" : ""
@@ -276,7 +276,7 @@ const buildUserMultiOptions = (selectedValues = []) => {
   const selectedSet = new Set((selectedValues || []).map((value) => String(value || "")));
   const options = [];
   userOptions.forEach((user) => {
-    const label = user.name ? `${user.name} (${user.email})` : user.email;
+    const label = user.name || user.email;
     options.push(
       `<option value="${escapeHtml(user.id)}" ${
         selectedSet.has(String(user.id)) ? "selected" : ""
@@ -650,7 +650,7 @@ const renderEntryRow = (entry = {}) => {
           getAssignedToSelectValue(entry)
         )}</select>
         <button class="ghost-button collaborator-toggle" type="button">${
-          collaboratorIds.length ? `Edit Collaborators (${collaboratorIds.length})` : "Add Collaborators"
+          collaboratorIds.length ? `Collaborators (${collaboratorIds.length})` : "+ Collaborator"
         }</button>
         <select class="lit-input collaborator-select hidden" data-field="collaboratorUserIds" multiple size="3">${buildUserMultiOptions(
           collaboratorIds
@@ -737,9 +737,9 @@ const renderEntryRow = (entry = {}) => {
     const selectedCount = collaboratorSelect?.selectedOptions?.length || 0;
     collaboratorToggle.textContent = collaboratorSelect.classList.contains("hidden")
       ? selectedCount
-        ? `Edit Collaborators (${selectedCount})`
-        : "Add Collaborators"
-      : "Hide Collaborators";
+        ? `Collaborators (${selectedCount})`
+        : "+ Collaborator"
+      : "Hide";
   };
   collaboratorToggle?.addEventListener("click", () => {
     collaboratorSelect.classList.toggle("hidden");
@@ -1302,12 +1302,12 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
           <table class="entries-table">
             <colgroup>
               <col style="width: 4%" />
-              <col style="width: 29%" />
-              <col style="width: 14%" />
-              <col style="width: 10%" />
-              <col style="width: 10%" />
-              <col style="width: 18%" />
+              <col style="width: 21%" />
+              <col style="width: 12%" />
               <col style="width: 15%" />
+              <col style="width: 15%" />
+              <col style="width: 16%" />
+              <col style="width: 17%" />
             </colgroup>
             <thead>
               <tr>
