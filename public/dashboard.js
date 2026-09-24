@@ -15,38 +15,7 @@ const jurisdictionDisplayLabels = {
 const formatJurisdictionLabel = (value) =>
   jurisdictionDisplayLabels[String(value || "").toUpperCase()] || String(value || "Unspecified");
 
-// Hamburger menu
-const navHamburger = document.getElementById("nav-hamburger");
-const navDropdown = document.getElementById("nav-dropdown");
-navHamburger.addEventListener("click", e => {
-  e.stopPropagation();
-  const isOpen = navDropdown.classList.contains("open");
-  navDropdown.classList.toggle("open", !isOpen);
-  navHamburger.classList.toggle("open", !isOpen);
-});
-document.addEventListener("click", e => {
-  if (navDropdown.classList.contains("open") && !navDropdown.contains(e.target)) {
-    navDropdown.classList.remove("open");
-    navHamburger.classList.remove("open");
-  }
-});
-navDropdown.addEventListener("click", () => {
-  navDropdown.classList.remove("open");
-  navHamburger.classList.remove("open");
-});
-const usersLink = document.getElementById("users-link");
-const weeklyReportLink = document.getElementById("weekly-report-link");
-const logoutButton = document.getElementById("logout-button");
-const logoutAllButton = document.getElementById("logout-all-button");
-const changePasswordButton = document.getElementById("change-password-button");
 const tasksList = document.getElementById("tasks-list");
-const passwordModal = document.getElementById("password-modal");
-const closePasswordModal = document.getElementById("close-password-modal");
-const passwordForm = document.getElementById("password-form");
-const oldPasswordInput = document.getElementById("old-password");
-const newPasswordInput = document.getElementById("new-password");
-const confirmPasswordInput = document.getElementById("confirm-password");
-const passwordError = document.getElementById("password-error");
 
 const statusToGroup = (status) => {
   if (!status) return "Undelivered";
@@ -248,74 +217,7 @@ const renderTasks = (tasks) => {
   });
 };
 
-const openPasswordModal = () => {
-  passwordError.textContent = "";
-  passwordForm.reset();
-  passwordModal.classList.remove("hidden");
-  oldPasswordInput.focus();
-};
-
-const closePasswordModalHandler = () => {
-  passwordModal.classList.add("hidden");
-};
-
-const onPasswordSubmit = async (event) => {
-  event.preventDefault();
-  passwordError.textContent = "";
-
-  const oldPassword = oldPasswordInput.value;
-  const newPassword = newPasswordInput.value;
-  const confirmPassword = confirmPasswordInput.value;
-
-  if (newPassword !== confirmPassword) {
-    passwordError.textContent = "New password confirmation does not match.";
-    return;
-  }
-  if (newPassword.length < 8) {
-    passwordError.textContent = "New password must be at least 8 characters.";
-    return;
-  }
-
-  const response = await authFetch("/api/auth/change-password", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ oldPassword, newPassword }),
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    passwordError.textContent =
-      payload?.error || "Unable to update password. Please try again.";
-    return;
-  }
-
-  closePasswordModalHandler();
-  alert("Password updated.");
-};
-
 const init = async () => {
-  if (isAdmin()) {
-    usersLink.classList.remove("hidden");
-  } else {
-    changePasswordButton.classList.remove("hidden");
-  }
-  if (isAdmin() || getUser()?.allowWeeklyReport) {
-    weeklyReportLink.classList.remove("hidden");
-  }
-  logoutButton.addEventListener("click", signOut);
-  logoutAllButton.addEventListener("click", async () => {
-    const confirmed = window.confirm(
-      "Log out all active sessions for this account?"
-    );
-    if (!confirmed) return;
-    const result = await logoutAllSessions();
-    if (result?.ok) {
-      alert("All sessions logged out. Please sign in again.");
-      signOut();
-    }
-  });
-  changePasswordButton.addEventListener("click", openPasswordModal);
-  closePasswordModal.addEventListener("click", closePasswordModalHandler);
-  passwordForm.addEventListener("submit", onPasswordSubmit);
   const tasks = await loadMyTasks();
   renderTasks(tasks);
   const cases = await loadCases();

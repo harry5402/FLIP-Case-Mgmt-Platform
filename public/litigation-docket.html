@@ -7,15 +7,14 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
+  <body data-nav="docket">
     <header class="app-header">
       <div class="tab-switch"></div>
       <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
-      <div class="tab-switch">
-        <a class="ghost-button" href="weekly-tasklist.html">Weekly Tasklist</a>
-        <a class="ghost-button" href="automations.html">Threads &amp; Automations</a>
-      </div>
+      <div class="tab-switch"></div>
     </header>
+
+    <div id="app-nav"></div>
 
     <main class="layout single">
       <section class="panel docket-panel">
@@ -316,6 +315,7 @@
     <script>
       requireAuth();
     </script>
+    <script src="nav.js"></script>
     <script src="data.js"></script>
     <script src="litigation-docket.js"></script>
   </body>

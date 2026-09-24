@@ -9,16 +9,6 @@ document.addEventListener("DOMContentLoaded", () => {
     return;
   }
 
-  // Handle logout
-  const logoutBtn = document.getElementById("logout-button");
-  if (logoutBtn) {
-    logoutBtn.addEventListener("click", async () => {
-      await apiFetch("/api/auth/logout", { method: "POST" });
-      localStorage.removeItem("flipAuth");
-      window.location.href = "login.html";
-    });
-  }
-
   // Handle OAuth redirect result
   const params = new URLSearchParams(window.location.search);
   if (params.get("connected") === "1") {

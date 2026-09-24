@@ -11,13 +11,6 @@ document.querySelectorAll('.automation-nav-item').forEach(item => {
   });
 });
 
-// Logout
-document.getElementById('logout-button').addEventListener('click', async () => {
-  await authFetch('/api/auth/logout', { method: 'POST' });
-  localStorage.removeItem('flipAuth');
-  location.href = 'login.html';
-});
-
 // ── Exhibit 2 ──────────────────────────────────────────────────────────────
 
 let csvFile = null;

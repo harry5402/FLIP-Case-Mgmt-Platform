@@ -96,6 +96,16 @@ a:hover {
   color: #d83333;
 }
 
+/* On sidebar pages the body is now --paper, not the navy gradient login.html
+   still uses — the header title needs a dark color to stay legible there. */
+body.has-sidebar .home-title {
+  color: var(--navy-800);
+}
+
+body.has-sidebar .home-title:hover {
+  color: var(--rust-600);
+}
+
 .header-spacer {
   width: 120px;
 }
@@ -1086,77 +1096,120 @@ tr.drag-over-below td {
   }
 }
 
-/* ── Hamburger nav menu ───────────────────────────────────────────── */
-.nav-menu-wrap {
-  position: relative;
+/* ── Shared sidebar nav (REDESIGN.md Phase 2) ────────────────────────── */
+body.has-sidebar {
+  padding-left: 240px;
+  background: var(--paper);
 }
 
-.nav-hamburger {
+.app-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 240px;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  background: radial-gradient(circle at 25% 0%, #34399b 0%, var(--navy-700) 48%, var(--navy-900) 100%);
+  overflow-y: auto;
+  z-index: 15;
+}
+
+.app-sidebar-logo {
+  display: flex;
+  align-items: center;
   justify-content: center;
-  gap: 5px;
-  width: 38px;
-  height: 38px;
-  padding: 8px;
-  border-radius: 10px;
-}
-
-.nav-hamburger span {
-  display: block;
-  width: 18px;
-  height: 2px;
-  background: #333333;
-  border-radius: 2px;
-  transition: opacity 0.15s, transform 0.15s;
-  pointer-events: none;
-}
-
-.nav-hamburger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
-.nav-hamburger.open span:nth-child(2) { opacity: 0; }
-.nav-hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
-
-.nav-dropdown {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  min-width: 200px;
+  margin: 20px auto 8px;
+  width: 72px;
+  height: 72px;
   background: #ffffff;
-  border: 1px solid #e3d9cf;
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-  z-index: 200;
-  padding: 6px 0;
-  display: none;
-  flex-direction: column;
-}
-.nav-dropdown.open {
-  display: flex;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
 }
 
-.nav-dropdown-item {
-  display: block;
-  padding: 9px 16px;
-  font-size: 13px;
+.app-sidebar-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 6px;
+}
+
+.app-sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 12px;
+  flex: 1;
+}
+
+.app-sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-  color: #333333;
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.78);
   text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: background 0.12s, color 0.12s;
+}
+
+.app-sidebar-link svg {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.app-sidebar-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+.app-sidebar-link.active {
+  background: rgba(255, 255, 255, 0.12);
+  border-left-color: var(--rust-600);
+  color: #ffffff;
+}
+
+.app-sidebar-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.app-sidebar-user {
+  padding: 4px 12px 8px;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-sidebar-action {
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-size: 13px;
+  text-align: left;
   background: none;
   border: none;
+  color: rgba(255, 255, 255, 0.7);
   cursor: pointer;
-  text-align: left;
-  width: 100%;
-  box-sizing: border-box;
-  transition: background 0.1s;
+  transition: background 0.12s, color 0.12s;
 }
 
-.nav-dropdown-item:hover {
-  background: #fff1e6;
-  color: #b74b35;
+.app-sidebar-action:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
 }
 
-.nav-dropdown-divider {
-  height: 1px;
-  background: #e3d9cf;
-  margin: 6px 0;
+.app-sidebar-action-primary {
+  color: #ffffff;
+  font-weight: 500;
 }

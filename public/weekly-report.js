@@ -3,7 +3,6 @@ const reportsList = document.getElementById("reports-list");
 const reportsEmpty = document.getElementById("reports-empty");
 const adminActions = document.getElementById("admin-actions");
 const generateButton = document.getElementById("generate-button");
-const logoutButton = document.getElementById("logout-button");
 
 const formatDate = (value) => {
   if (!value) return "—";
@@ -106,7 +105,5 @@ generateButton.addEventListener("click", async () => {
   }
   await loadReports();
 });
-
-logoutButton.addEventListener("click", signOut);
 
 loadReports();

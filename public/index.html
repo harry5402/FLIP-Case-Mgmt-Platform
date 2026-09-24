@@ -7,28 +7,14 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
+  <body data-nav="dashboard">
     <header class="app-header">
       <div class="header-spacer"></div>
       <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
-      <div class="nav-menu-wrap">
-        <button id="nav-hamburger" class="ghost-button nav-hamburger" type="button" aria-label="Menu">
-          <span></span><span></span><span></span>
-        </button>
-        <div id="nav-dropdown" class="nav-dropdown">
-          <a class="nav-dropdown-item" href="email.html">Email Portal</a>
-          <a class="nav-dropdown-item" href="weekly-tasklist.html">Weekly Tasklist</a>
-          <a class="nav-dropdown-item" href="litigation-docket.html">Litigation Docket</a>
-          <a class="nav-dropdown-item" href="automations.html">Tools &amp; Automations</a>
-          <a id="users-link" class="nav-dropdown-item hidden" href="users.html">Users</a>
-          <a id="weekly-report-link" class="nav-dropdown-item hidden" href="weekly-report.html">Reports</a>
-          <div class="nav-dropdown-divider"></div>
-          <button id="change-password-button" class="nav-dropdown-item nav-dropdown-btn hidden" type="button">Change Password</button>
-          <button id="logout-all-button" class="nav-dropdown-item nav-dropdown-btn" type="button">Log Out All Sessions</button>
-          <button id="logout-button" class="nav-dropdown-item nav-dropdown-btn" type="button">Logout</button>
-        </div>
-      </div>
+      <div class="header-spacer"></div>
     </header>
+
+    <div id="app-nav"></div>
 
     <main class="layout single">
       <section class="panel" id="tasks">
@@ -71,48 +57,11 @@
       </section>
     </main>
 
-    <div id="password-modal" class="modal hidden">
-      <div class="modal-card">
-        <div class="panel-header-row">
-          <div>
-            <h2>Change Password</h2>
-            <div class="muted">Update your account password</div>
-          </div>
-          <button class="ghost-button" id="close-password-modal" type="button">
-            Close
-          </button>
-        </div>
-        <form id="password-form" class="form-grid">
-          <label class="form-field">
-            Current Password
-            <input id="old-password" type="password" autocomplete="current-password" required />
-          </label>
-          <label class="form-field">
-            New Password
-            <input id="new-password" type="password" autocomplete="new-password" minlength="8" required />
-          </label>
-          <label class="form-field">
-            Confirm New Password
-            <input
-              id="confirm-password"
-              type="password"
-              autocomplete="new-password"
-              minlength="8"
-              required
-            />
-          </label>
-        </form>
-        <div class="form-actions">
-          <div id="password-error" class="form-error"></div>
-          <button class="ghost-button" type="submit" form="password-form">Save</button>
-        </div>
-      </div>
-    </div>
-
     <script src="auth.js"></script>
     <script>
       requireAuth();
     </script>
+    <script src="nav.js"></script>
     <script src="data.js"></script>
     <script src="dashboard.js"></script>
   </body>

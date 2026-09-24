@@ -1,7 +1,6 @@
 const userForm = document.getElementById("user-form");
 const usersError = document.getElementById("users-error");
 const usersTableBody = document.querySelector("#users-table tbody");
-const logoutButton = document.getElementById("logout-button");
 
 const formatDate = (value) => {
   if (!value) return "—";
@@ -130,7 +129,5 @@ userForm.addEventListener("submit", async (event) => {
   userForm.reset();
   await loadUsers();
 });
-
-logoutButton.addEventListener("click", signOut);
 
 loadUsers();

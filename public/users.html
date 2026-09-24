@@ -7,12 +7,14 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
+  <body data-nav="users">
     <header class="app-header">
-      <a class="pill" href="index.html">Back to Dashboard</a>
+      <div class="header-spacer"></div>
       <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
-      <button id="logout-button" class="ghost-button" type="button">Logout</button>
+      <div class="header-spacer"></div>
     </header>
+
+    <div id="app-nav"></div>
 
     <main class="layout single">
       <section class="panel">
@@ -73,6 +75,7 @@
     <script>
       requireAdmin();
     </script>
+    <script src="nav.js"></script>
     <script src="users.js"></script>
   </body>
 </html>
