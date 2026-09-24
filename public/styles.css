@@ -1046,7 +1046,16 @@ tbody td {
 .assignment-stack {
   display: grid;
   gap: 6px;
-  min-width: 220px;
+  min-width: 0;
+}
+
+.entries-table {
+  table-layout: fixed;
+}
+
+.entries-table .lit-input,
+.entries-table .assignment-stack {
+  max-width: 100%;
 }
 
 .collaborator-select {

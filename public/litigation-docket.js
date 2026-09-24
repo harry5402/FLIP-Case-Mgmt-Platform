@@ -1299,7 +1299,16 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
       </div>
       <div class="litigation-case-body">
         <div class="table-wrap">
-          <table>
+          <table class="entries-table">
+            <colgroup>
+              <col style="width: 4%" />
+              <col style="width: 29%" />
+              <col style="width: 14%" />
+              <col style="width: 10%" />
+              <col style="width: 10%" />
+              <col style="width: 18%" />
+              <col style="width: 15%" />
+            </colgroup>
             <thead>
               <tr>
                 <th>Move</th>
