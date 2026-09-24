@@ -9,7 +9,9 @@ const negotiationList = document.getElementById("negotiation-list");
 const collectionList = document.getElementById("collection-list");
 const listingsTableBody = document.querySelector("#listings-table tbody");
 const templatesList = document.getElementById("templates-list");
-const backToCase = document.getElementById("back-to-case");
+const breadcrumbCaseLink = document.getElementById("breadcrumb-case-link");
+const breadcrumbDoe = document.getElementById("breadcrumb-doe");
+const breadcrumbDefendantName = document.getElementById("breadcrumb-defendant-name");
 const bookkeepingLink = document.getElementById("bookkeeping-link");
 const defendantSave = document.getElementById("defendant-save");
 const negotiationSave = document.getElementById("negotiation-save");
@@ -114,14 +116,14 @@ const renderClaimsTable = (defendant) => {
   (defendant.ipClaims || []).forEach((claim) => {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td>${claim.id ?? "—"}</td>
+      <td class="mono">${claim.id ?? "—"}</td>
       <td>${claim.brandName || "—"}</td>
       <td>${claim.type || "—"}</td>
       <td>${claim.subType || "—"}</td>
-      <td>${formatDate(claim.applicationDate)}</td>
-      <td>${formatDate(claim.registrationDate)}</td>
-      <td>${claim.serialNumber || "—"}</td>
-      <td>${claim.registrationNumber || "—"}</td>
+      <td class="mono">${formatDate(claim.applicationDate)}</td>
+      <td class="mono">${formatDate(claim.registrationDate)}</td>
+      <td class="mono">${claim.serialNumber || "—"}</td>
+      <td class="mono">${claim.registrationNumber || "—"}</td>
       <td>${claim.specimenFolder || "—"}</td>
     `;
     claimsTableBody.appendChild(row);
@@ -322,13 +324,13 @@ const wireEditableSections = (defendantId, state) => {
 };
 
 const listingFieldDefs = [
-  ["productId", "text"],
-  ["marketplaceId", "text"],
+  ["productId", "text", true],
+  ["marketplaceId", "text", true],
   ["title", "text"],
   ["infType", "text"],
   ["url", "text"],
-  ["sales", "number"],
-  ["screenshotDate", "date"],
+  ["sales", "number", true],
+  ["screenshotDate", "date", true],
   ["screenshots", "text"],
   ["testPurchase", "text"],
   ["testPurchaseStatus", "text"],
@@ -343,8 +345,8 @@ const renderListings = (listings) => {
     row.dataset.listingId = listing.id;
     const cells = listingFieldDefs
       .map(
-        ([name, type]) =>
-          `<td><input name="${name}" type="${type}" value="${
+        ([name, type, mono]) =>
+          `<td><input name="${name}" type="${type}" class="${mono ? "mono" : ""}" value="${
             listing[name] ?? ""
           }" /></td>`
       )
@@ -441,7 +443,10 @@ const init = async () => {
     return;
   }
 
-  backToCase.href = `case.html?caseId=${encodeURIComponent(currentCase.id)}`;
+  breadcrumbCaseLink.href = `case.html?caseId=${encodeURIComponent(currentCase.id)}`;
+  breadcrumbCaseLink.textContent = currentCase.caseName || currentCase.title || "Case";
+  breadcrumbDoe.textContent = defendant.doeNumber || "Doe";
+  breadcrumbDefendantName.textContent = defendant.name || "Defendant";
   bookkeepingLink.href = `defendant-bookkeeping.html?caseId=${encodeURIComponent(currentCase.id)}&defendantId=${encodeURIComponent(defendant.id)}`;
   defendantTitle.textContent = defendant.name;
   defendantMeta.textContent = `${defendant.id} • ${defendant.platform}`;

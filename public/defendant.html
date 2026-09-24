@@ -9,10 +9,9 @@
   </head>
   <body>
     <header class="app-header">
-      <a class="pill" id="back-to-case" href="index.html">Back to Case</a>
+      <div class="header-spacer"></div>
       <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
       <div class="header-spacer"></div>
-      <a class="pill" id="bookkeeping-link" href="index.html">Bookkeeping</a>
     </header>
 
     <div id="app-nav"></div>
@@ -22,10 +21,18 @@
         <div class="panel-header">
           <div class="panel-header-row">
             <div>
-              <h2 id="defendant-title">Defendant</h2>
+              <nav class="breadcrumb">
+                <a id="breadcrumb-case-link" href="index.html">Case</a>
+                <span class="breadcrumb-sep">/</span>
+                <span id="breadcrumb-doe">Doe #</span>
+                <span class="breadcrumb-sep">/</span>
+                <span id="breadcrumb-defendant-name">Defendant</span>
+              </nav>
+              <h1 id="defendant-title">Defendant</h1>
               <div id="defendant-meta" class="muted">Loading...</div>
             </div>
             <div class="tab-switch">
+              <a class="ghost-button" id="bookkeeping-link" href="index.html">Bookkeeping</a>
               <button class="ghost-button" id="assign-task-button" type="button">
                 Assign Task
               </button>

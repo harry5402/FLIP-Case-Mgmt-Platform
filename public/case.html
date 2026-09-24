@@ -8,8 +8,10 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header class="app-header centered">
+    <header class="app-header">
+      <div class="header-spacer"></div>
       <a class="home-title" href="index.html">FLIP Schedule A Litigation</a>
+      <div class="header-spacer"></div>
     </header>
 
     <div id="app-nav"></div>
@@ -17,7 +19,14 @@
     <main class="layout single">
       <section class="panel" id="case-info">
         <div class="panel-header">
-          <h2 id="case-title">Case</h2>
+          <nav class="breadcrumb">
+            <a href="litigation-docket.html">Docket</a>
+            <span class="breadcrumb-sep">/</span>
+            <span id="breadcrumb-jurisdiction">—</span>
+            <span class="breadcrumb-sep">/</span>
+            <span id="breadcrumb-case-name">Case</span>
+          </nav>
+          <h1 id="case-title">Case</h1>
           <div id="case-meta" class="muted">Loading...</div>
         </div>
         <div id="toast" class="toast hidden">Saved ✓</div>

@@ -1,5 +1,7 @@
 const caseTitle = document.getElementById("case-title");
 const caseMeta = document.getElementById("case-meta");
+const breadcrumbJurisdiction = document.getElementById("breadcrumb-jurisdiction");
+const breadcrumbCaseName = document.getElementById("breadcrumb-case-name");
 const caseInfoList = document.getElementById("case-info-list");
 const caseInfoSave = document.getElementById("case-info-save");
 const toast = document.getElementById("toast");
@@ -73,6 +75,14 @@ const toDateInputValue = (value) => {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
+};
+
+const renderBreadcrumb = (currentCase) => {
+  const jurisdiction = currentCase.jurisdiction || currentCase.court || "";
+  breadcrumbJurisdiction.innerHTML = jurisdiction
+    ? `<a href="litigation-docket.html?tab=${encodeURIComponent(jurisdiction)}">${escapeHtml(jurisdiction)}</a>`
+    : "—";
+  breadcrumbCaseName.textContent = currentCase.caseName || currentCase.title || "Case";
 };
 
 const renderCaseInfo = (currentCase) => {
@@ -176,17 +186,17 @@ const renderClaimsTable = (claims) => {
   (claims || []).forEach((claim) => {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td>${claim.id ?? "—"}</td>
+      <td class="mono">${claim.id ?? "—"}</td>
       <td>${escapeHtml(claim.brandName || "—")}</td>
       <td>${escapeHtml(claim.type || "—")}</td>
       <td>${escapeHtml(claim.subType || "—")}</td>
-      <td>${formatDate(claim.applicationDate)}</td>
-      <td>${formatDate(claim.registrationDate)}</td>
-      <td>${escapeHtml(claim.serialNumber || "—")}</td>
-      <td>${escapeHtml(claim.registrationNumber || "—")}</td>
+      <td class="mono">${formatDate(claim.applicationDate)}</td>
+      <td class="mono">${formatDate(claim.registrationDate)}</td>
+      <td class="mono">${escapeHtml(claim.serialNumber || "—")}</td>
+      <td class="mono">${escapeHtml(claim.registrationNumber || "—")}</td>
       <td>${escapeHtml(claim.specimenFolder || "—")}</td>
-      <td>${claim.listingsCount ?? "—"}</td>
-      <td>${claim.defendantCount ?? "—"}</td>
+      <td class="mono">${claim.listingsCount ?? "—"}</td>
+      <td class="mono">${claim.defendantCount ?? "—"}</td>
       <td><button class="ghost-button claim-edit" type="button" data-claim-id="${claim.id}">Edit</button></td>
     `;
     const editButton = row.querySelector(".claim-edit");
@@ -202,6 +212,9 @@ const renderClaimsTable = (claims) => {
   }
 };
 
+const statusChipHtml = (value) =>
+  `<span class="status-chip status-chip-neutral">${escapeHtml(value || "—")}</span>`;
+
 const renderDefendantsTable = (currentCase) => {
   defendantsTableBody.innerHTML = "";
   currentCase.defendants.forEach((def) => {
@@ -212,17 +225,17 @@ const renderDefendantsTable = (currentCase) => {
         )}&defendantId=${encodeURIComponent(def.id)}">${def.doeNumber}</a>`
       : "—";
     row.innerHTML = `
-      <td>${doeLink}</td>
+      <td class="mono">${doeLink}</td>
       <td>${escapeHtml(def.groupName || "—")}</td>
       <td>${escapeHtml(def.platform || "—")}</td>
-      <td>${escapeHtml(def.merchantId || "—")}</td>
+      <td class="mono">${escapeHtml(def.merchantId || "—")}</td>
       <td><a href="defendant.html?caseId=${encodeURIComponent(
         currentCase.id
       )}&defendantId=${encodeURIComponent(def.id)}">${escapeHtml(def.name || "—")}</a></td>
       <td>${escapeHtml(def.email || "—")}</td>
-      <td>${escapeHtml(def.status || "—")}</td>
+      <td>${statusChipHtml(def.status)}</td>
       <td>${escapeHtml(def.defendantRepEmail || "—")}</td>
-      <td>${def.listingsCount ?? def.listings?.length ?? "—"}</td>
+      <td class="mono">${def.listingsCount ?? def.listings?.length ?? "—"}</td>
     `;
     defendantsTableBody.appendChild(row);
   });
@@ -251,10 +264,10 @@ const renderGroupsTable = (defendants) => {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${escapeHtml(group.groupName)}</td>
-      <td>${group.count}</td>
+      <td class="mono">${group.count}</td>
       <td>${escapeHtml(group.plaintiffRepName)}</td>
       <td>${escapeHtml(group.defRepEmail)}</td>
-      <td>${escapeHtml(group.status)}</td>
+      <td>${statusChipHtml(group.status)}</td>
     `;
     groupsTableBody.appendChild(row);
   });
@@ -266,10 +279,10 @@ const renderGroupsFromApi = (groups) => {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td><a href="group.html?groupId=${encodeURIComponent(group.id)}">${escapeHtml(group.groupName || "—")}</a></td>
-      <td>${group.defendantCount ?? 0}</td>
+      <td class="mono">${group.defendantCount ?? 0}</td>
       <td>${escapeHtml(group.plaintiffRepName || "—")}</td>
       <td>${escapeHtml(group.defendantRepEmail || "—")}</td>
-      <td>${escapeHtml(group.status || "—")}</td>
+      <td>${statusChipHtml(group.status)}</td>
     `;
     groupsTableBody.appendChild(row);
   });
@@ -396,6 +409,7 @@ const init = async () => {
   }
 
   caseTitle.textContent = currentCase.caseName || currentCase.title;
+  renderBreadcrumb(currentCase);
   currentCaseId = currentCase.id;
   const defendants = await loadDefendants(currentCase.id);
   const renderCaseMeta = () => {
@@ -560,6 +574,7 @@ const init = async () => {
     if (updatedCase && !updatedCase.error) {
       currentCase = { ...currentCase, ...updatedCase };
       caseTitle.textContent = currentCase.caseName || currentCase.title;
+      renderBreadcrumb(currentCase);
       renderCaseMeta();
       renderCaseInfo(currentCase);
       caseInfoSave.textContent = "Saved";

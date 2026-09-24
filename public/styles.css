@@ -260,6 +260,48 @@ h1 {
   min-width: 140px;
 }
 
+/* ── Breadcrumb (Case Detail, Defendant Detail) ──────────────────────── */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.breadcrumb a {
+  color: var(--muted);
+}
+
+.breadcrumb a:hover {
+  color: var(--rust-600);
+}
+
+.breadcrumb-sep {
+  color: var(--border);
+}
+
+/* ── Case Info: two-column definition list ───────────────────────────── */
+#case-info-list {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px 24px;
+}
+
+@media (max-width: 700px) {
+  #case-info-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ── Data Actions: vertical list of full-width buttons ───────────────── */
+.data-actions-card .link-list > * {
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+}
+
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -517,6 +559,22 @@ thead th {
   color: var(--muted);
   font-weight: 600;
   white-space: nowrap;
+}
+
+#listings-table input,
+#listings-table select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+  background: #fffaf4;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#listings-table input.mono {
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
 }
 
 tbody td {
