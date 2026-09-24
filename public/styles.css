@@ -838,13 +838,13 @@ tbody td {
 
 .docket-layout {
   display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
+  grid-template-columns: 226px minmax(0, 1fr);
   min-height: 720px;
 }
 
 .docket-sidebar {
   border-right: 1px solid var(--border);
-  background: linear-gradient(180deg, #fffaf4 0%, #fff6ee 100%);
+  background: var(--card);
 }
 
 .docket-sidebar-inner {
@@ -852,7 +852,7 @@ tbody td {
   top: 88px;
   display: grid;
   gap: 16px;
-  padding: 18px 16px 18px 18px;
+  padding: 18px 12px 18px 18px;
 }
 
 .docket-sidebar-header {
@@ -866,15 +866,35 @@ tbody td {
   gap: 10px;
 }
 
-.docket-sidebar-actions .ghost-button,
-.docket-tabs .ghost-button {
+.docket-sidebar-actions .ghost-button {
   width: 100%;
   justify-content: center;
 }
 
 .docket-tabs {
   display: grid;
-  gap: 8px;
+  gap: 2px;
+}
+
+.docket-tabs .ghost-button {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  border: none;
+  border-left: 3px solid transparent;
+  border-radius: 0;
+  background: none;
+  padding: 10px 12px;
+}
+
+.docket-tabs .ghost-button:hover {
+  background: var(--line);
+}
+
+.docket-tabs .ghost-button.active {
+  background: rgba(183, 75, 53, 0.1);
+  border-left-color: var(--rust-600);
+  color: var(--rust-700);
 }
 
 .docket-main {
@@ -925,10 +945,11 @@ tbody td {
 .case-age-badge {
   display: inline-block;
   margin-left: 10px;
-  padding: 2px 8px;
+  padding: 2px 9px;
   border-radius: 999px;
-  background: var(--surface-alt, rgba(0, 0, 0, 0.06));
+  background: var(--line);
   color: var(--muted);
+  border: 1px solid var(--border);
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
   font-size: 11px;
   font-weight: 600;
@@ -1007,11 +1028,11 @@ tbody td {
 .lit-input {
   width: 100%;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 6px 8px;
   font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
   font-size: 12px;
-  background: #fffaf4;
+  background: var(--card);
 }
 
 .lit-textarea {
@@ -1062,15 +1083,15 @@ tbody td {
 }
 
 .collaborator-pill.is-complete {
-  background: #eaf7ed;
-  border-color: #cfe9d4;
-  color: #1f6b2e;
+  background: var(--green-bg);
+  border-color: var(--green-border);
+  color: var(--green-text);
 }
 
 .collaborator-pill.is-in-progress {
-  background: #fff1bf;
-  border-color: #e0c15f;
-  color: #8a6500;
+  background: var(--amber-bg);
+  border-color: var(--amber-border);
+  color: var(--amber-text);
 }
 
 .action-textarea {
@@ -1081,18 +1102,20 @@ tbody td {
   min-height: 84px;
 }
 
-tr.due-soon td {
-  background: #ffe8e6;
+tr.due-soon td:first-child {
+  border-left: 3px solid var(--danger-text);
 }
 
-tr.is-in-progress td {
-  background: #fff1bf;
-  color: #6e5100;
+tr.is-in-progress td:first-child {
+  border-left: 3px solid var(--amber-text);
 }
 
-tr.is-completed td {
-  background: #d7ead9;
-  color: #23452a;
+tr.is-completed td:first-child {
+  border-left: 3px solid var(--green-text);
+}
+
+.row-state-chip.hidden {
+  display: none;
 }
 
 .focused-docket-case {
@@ -1124,12 +1147,13 @@ tr.is-completed td {
 
 .row-action-buttons {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 }
 
 .drag-cell {
-  width: 56px;
+  width: 40px;
   text-align: center;
 }
 
@@ -1137,15 +1161,21 @@ tr.is-completed td {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 28px;
-  padding: 4px 6px;
-  border-radius: 999px;
-  border: 1px dashed var(--border);
-  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-  font-size: 12px;
+  padding: 6px;
+  border-radius: var(--radius-sm);
   color: var(--muted);
   cursor: grab;
   user-select: none;
+}
+
+.drag-handle svg {
+  width: 12px;
+  height: 18px;
+}
+
+.drag-handle:hover {
+  background: var(--line);
+  color: var(--ink);
 }
 
 .drag-handle:active {
@@ -1193,10 +1223,6 @@ tr.drag-over-below td {
   .docket-sidebar-inner {
     position: static;
     padding: 18px 18px 8px;
-  }
-
-  .docket-tabs {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   }
 }
 

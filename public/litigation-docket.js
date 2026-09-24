@@ -462,7 +462,7 @@ const renderCollectionsTab = async (renderId) => {
       <div class="collections-tab-card-header">
         <div class="litigation-case-header" style="flex:1;padding-bottom:0;">
           <div class="litigation-case-title">${escapeHtml(caseItem.caseName)}</div>
-          <div class="litigation-case-meta">${escapeHtml(caseItem.caseNumber)}${caseItem.jurisdiction ? " · " + escapeHtml(caseItem.jurisdiction) : ""}${caseItem.defendantCount ? " · Defendants: " + caseItem.defendantCount : ""}${caseItem.judge ? " · " + escapeHtml(caseItem.judge) : ""}</div>
+          <div class="litigation-case-meta"><span class="mono">${escapeHtml(caseItem.caseNumber)}</span>${caseItem.jurisdiction ? " · " + escapeHtml(caseItem.jurisdiction) : ""}${caseItem.defendantCount ? " · Defendants: " + caseItem.defendantCount : ""}${caseItem.judge ? " · " + escapeHtml(caseItem.judge) : ""}</div>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
           <button class="ghost-button collections-tab-add-row" type="button">+ Add Row</button>
@@ -567,12 +567,31 @@ const attachEntryDragBehavior = (row) => {
   });
 };
 
+const refreshRowStateChip = (row) => {
+  const chip = row.querySelector(".row-state-chip");
+  if (!chip) return;
+  if (row.classList.contains("is-completed")) {
+    chip.className = "row-state-chip status-chip status-chip-green";
+    chip.textContent = "Completed";
+  } else if (row.classList.contains("due-soon")) {
+    chip.className = "row-state-chip status-chip status-chip-danger";
+    chip.textContent = "Due Soon";
+  } else if (row.classList.contains("is-in-progress")) {
+    chip.className = "row-state-chip status-chip status-chip-amber";
+    chip.textContent = "In Progress";
+  } else {
+    chip.className = "row-state-chip status-chip hidden";
+    chip.textContent = "";
+  }
+};
+
 const setEntryRowInProgressState = (row, isInProgress) => {
   row.classList.toggle("is-in-progress", Boolean(isInProgress) && !row.classList.contains("is-completed"));
   const progressButton = row.querySelector(".progress-action");
   if (progressButton) {
     progressButton.textContent = isInProgress ? "Clear Progress" : "In Progress";
   }
+  refreshRowStateChip(row);
 };
 
 const setEntryRowCompletionState = (row, isCompleted, isInProgress = false) => {
@@ -590,6 +609,7 @@ const setEntryRowCompletionState = (row, isCompleted, isInProgress = false) => {
   if (completeButton) {
     completeButton.textContent = isCompleted ? "Incomplete" : "Complete";
   }
+  refreshRowStateChip(row);
 };
 
 const refreshEntryRowDueHighlight = (row) => {
@@ -599,6 +619,7 @@ const refreshEntryRowDueHighlight = (row) => {
     "due-soon",
     !row.classList.contains("is-completed") && (isDueSoon(internalDue) || isDueSoon(finalDue))
   );
+  refreshRowStateChip(row);
 };
 
 const renderEntryRow = (entry = {}) => {
@@ -612,7 +633,13 @@ const renderEntryRow = (entry = {}) => {
   }
   row.innerHTML = `
     <td class="drag-cell">
-      <span class="drag-handle" draggable="true" title="Drag to reorder">::</span>
+      <span class="drag-handle" draggable="true" title="Drag to reorder">
+        <svg viewBox="0 0 10 16" fill="currentColor" aria-hidden="true">
+          <circle cx="3" cy="2" r="1.3"/><circle cx="7" cy="2" r="1.3"/>
+          <circle cx="3" cy="8" r="1.3"/><circle cx="7" cy="8" r="1.3"/>
+          <circle cx="3" cy="14" r="1.3"/><circle cx="7" cy="14" r="1.3"/>
+        </svg>
+      </span>
     </td>
     <td><textarea class="lit-input lit-textarea action-textarea" data-field="action" rows="2">${escapeHtml(
       entry.action || ""
@@ -642,6 +669,7 @@ const renderEntryRow = (entry = {}) => {
     )}</textarea></td>
     <td>
       <div class="row-action-buttons">
+        <span class="row-state-chip status-chip hidden"></span>
         <button class="ghost-button progress-action" type="button" ${
           entry.id ? "" : "disabled"
         }>${entry.isInProgress ? "Clear Progress" : "In Progress"}</button>
@@ -884,8 +912,8 @@ const renderHiddenActionRow = (entry = {}) => {
   row.innerHTML = `
     <td>${escapeHtml(entry.action || "—")}</td>
     <td>${escapeHtml(assignedLabel)}</td>
-    <td>${escapeHtml(toDateInputValue(entry.internalDueDate) || "—")}</td>
-    <td>${escapeHtml(toDateInputValue(entry.finalDueDate) || "—")}</td>
+    <td class="mono">${escapeHtml(toDateInputValue(entry.internalDueDate) || "—")}</td>
+    <td class="mono">${escapeHtml(toDateInputValue(entry.finalDueDate) || "—")}</td>
     <td>${escapeHtml(entry.notes || "—")}</td>
     <td>${escapeHtml(completedLabel)}</td>
     <td><button class="ghost-button restore-hidden-action" type="button">Restore</button></td>
@@ -966,8 +994,8 @@ const renderHiddenMbfdRow = (item = {}) => {
     : "No";
   row.innerHTML = `
     <td>${escapeHtml(item.caseName || "—")}</td>
-    <td>${escapeHtml(item.doeNumber || "—")}</td>
-    <td>${escapeHtml(formatCurrency(item.amount))}</td>
+    <td class="mono">${escapeHtml(item.doeNumber || "—")}</td>
+    <td class="mono">${escapeHtml(formatCurrency(item.amount))}</td>
     <td>${escapeHtml(item.attorneyEmail || "—")}</td>
     <td>${escapeHtml(completedLabel)}</td>
     <td><button class="ghost-button restore-hidden-mbfd" type="button">Restore</button></td>
@@ -1202,7 +1230,7 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
             Collapse
           </button>
         </div>
-        <div class="litigation-case-meta">${escapeHtml(item.caseNumber || "—")} · ${escapeHtml(
+        <div class="litigation-case-meta"><span class="mono">${escapeHtml(item.caseNumber || "—")}</span> · ${escapeHtml(
           formatJurisdictionLabel(item.jurisdiction)
         )} · Defendants: ${escapeHtml(item.defendantCount || 0)}</div>
         <div class="litigation-case-meta">Judge: ${escapeHtml(item.judge || "—")}</div>
