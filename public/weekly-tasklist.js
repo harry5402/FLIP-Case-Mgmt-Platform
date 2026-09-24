@@ -73,7 +73,7 @@ const getTaskBucket = (task, week) => {
   return weekdayLabels[day - 1];
 };
 
-const createTaskCard = (task) => {
+const createTaskCard = (task, { isOverdue = false } = {}) => {
   const currentUser = getUser();
   const isAssignedToCurrentUser =
     Boolean(currentUser?.id) && currentUser.id === task.assignedToUserId;
@@ -88,11 +88,20 @@ const createTaskCard = (task) => {
     ? `${task.assignedToName}${task.assignedToEmail ? ` (${task.assignedToEmail})` : ""}`
     : task.assignedToEmail || task.assignedToLabel || "Unassigned";
   const row = document.createElement("div");
-  row.className = `card row${isInProgress ? " is-in-progress" : ""}`;
+  row.className = `card row${
+    isOverdue && !isComplete ? " is-overdue" : isInProgress ? " is-in-progress" : ""
+  }`;
   const targetUrl = getTaskTargetUrl(task);
   const titleHtml = targetUrl
     ? `<a class="card-title task-link" href="${targetUrl}">${escapeHtml(task.taskType)}</a>`
     : `<span class="card-title">${escapeHtml(task.taskType)}</span>`;
+  const stateChip = isComplete
+    ? '<span class="status-chip status-chip-green">Completed</span>'
+    : isOverdue
+      ? '<span class="status-chip status-chip-danger">Overdue</span>'
+      : isInProgress
+        ? '<span class="status-chip status-chip-amber">In Progress</span>'
+        : "";
   row.innerHTML = `
     <div class="row-left">
       ${titleHtml}
@@ -101,13 +110,12 @@ const createTaskCard = (task) => {
         <span>${getTaskContextLabel(task)}</span>
         <span>Assigned to ${escapeHtml(assigneeLabel)}</span>
         ${task.taskRole === "collaborator" ? "<span>Support Task</span>" : ""}
-        <span>Due ${formatDate(task.dueDate)}</span>
-        ${isInProgress && !isComplete ? "<span>In Progress</span>" : ""}
-        ${isComplete ? "<span>Completed</span>" : ""}
         ${task.targetType === "general" && task.notes ? `<span class="task-notes">${escapeHtml(task.notes)}</span>` : ""}
       </div>
     </div>
     <div class="row-right task-actions">
+      <span class="mono">Due ${formatDate(task.dueDate)}</span>
+      ${stateChip}
       <button class="ghost-button progress-task" type="button" ${
         canToggleProgress && !isComplete ? "" : "disabled"
       }>${
@@ -155,11 +163,12 @@ const createBucketSection = (label, tasks) => {
   const section = document.createElement("section");
   section.className = "table-card weekly-task-section";
   const isCollapsed = collapsedWeeklyBuckets.has(label);
+  const isOverdueBucket = label === "OVERDUE";
   section.innerHTML = `
     <div class="info-card-header weekly-task-section-header">
       <div class="weekly-task-section-title">
         <h3>${label}</h3>
-        <div class="muted">${tasks.length} task${tasks.length === 1 ? "" : "s"}</div>
+        <span class="status-chip ${isOverdueBucket ? "status-chip-danger" : "status-chip-neutral"}">${tasks.length} task${tasks.length === 1 ? "" : "s"}</span>
       </div>
       <button class="ghost-button weekly-bucket-toggle" type="button" aria-expanded="${String(
         !isCollapsed
@@ -179,7 +188,7 @@ const createBucketSection = (label, tasks) => {
     empty.textContent = "No tasks.";
     list.appendChild(empty);
   } else {
-    tasks.forEach((task) => list.appendChild(createTaskCard(task)));
+    tasks.forEach((task) => list.appendChild(createTaskCard(task, { isOverdue: isOverdueBucket })));
   }
   section.querySelector(".weekly-bucket-toggle").addEventListener("click", () => {
     const nextCollapsed = !list.classList.contains("hidden");

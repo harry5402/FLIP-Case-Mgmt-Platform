@@ -404,6 +404,16 @@ h1 {
   border-color: var(--green-border);
 }
 
+.status-chip-neutral {
+  background: var(--line);
+  color: var(--muted);
+  border-color: var(--border);
+}
+
+.mono {
+  font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+}
+
 .link-list {
   display: grid;
   gap: 8px;
@@ -818,12 +828,17 @@ tbody td {
 }
 
 .weekly-task-section-header {
-  align-items: flex-start;
+  align-items: center;
 }
 
 .weekly-task-section-title {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.weekly-task-section-title h3 {
+  margin: 0;
 }
 
 .litigation-case {

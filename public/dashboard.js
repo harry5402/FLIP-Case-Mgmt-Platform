@@ -211,7 +211,7 @@ const renderTasks = (tasks) => {
         </div>
       </div>
       <div class="row-right task-actions">
-        <span>Due ${formatDate(task.dueDate)}</span>
+        <span class="mono">Due ${formatDate(task.dueDate)}</span>
         ${
           isOverdue
             ? '<span class="status-chip status-chip-danger">Overdue</span>'
