@@ -16,45 +16,40 @@
 
     <div id="app-nav"></div>
 
-    <main class="layout single">
-      <section class="panel" id="tasks">
-        <div class="panel-header">
-          <div class="panel-header-row">
-            <div>
-              <h2>My Tasks</h2>
-              <div class="muted">Assigned to you</div>
+    <main class="dashboard-main">
+      <div id="dashboard-stats" class="stats-grid"></div>
+
+      <div class="dashboard-columns">
+        <section class="panel" id="tasks">
+          <div class="panel-header">
+            <div class="panel-header-row">
+              <div>
+                <h2>My Tasks</h2>
+                <div class="muted">Assigned to you</div>
+              </div>
             </div>
           </div>
-        </div>
-        <div id="tasks-list" class="list"></div>
-      </section>
+          <div id="tasks-list" class="list"></div>
+        </section>
 
-      <section class="panel" id="statistics">
-        <div class="panel-header">
-          <div class="panel-header-row">
-            <div>
-              <h2>Statistics</h2>
-              <div class="muted">Litigation docket overview</div>
-            </div>
-          </div>
-        </div>
-        <div id="statistics-body"></div>
-      </section>
-
-      <section class="panel" id="dashboard">
-        <div class="panel-header">
-          <div class="panel-header-row">
-            <div>
-              <h2>Cases</h2>
-              <div class="muted">Grouped by status</div>
-            </div>
-            <div class="tab-switch">
+        <section class="panel" id="dashboard">
+          <div class="panel-header">
+            <div class="panel-header-row">
+              <div>
+                <h2>Cases by Status</h2>
+                <div class="muted">Grouped by status</div>
+              </div>
               <a class="ghost-button" href="new-case.html">New Case</a>
             </div>
+            <div id="case-status-tabs" class="tab-switch"></div>
           </div>
-        </div>
-        <div id="case-groups" class="group-stack"></div>
-      </section>
+          <div id="case-groups" class="list"></div>
+          <div class="info-card" id="jurisdiction-card">
+            <h3>Cases by Jurisdiction</h3>
+            <div id="jurisdiction-list" class="jurisdiction-list"></div>
+          </div>
+        </section>
+      </div>
     </main>
 
     <script src="auth.js"></script>

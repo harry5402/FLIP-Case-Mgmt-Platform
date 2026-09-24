@@ -1,5 +1,7 @@
 const caseGroups = document.getElementById("case-groups");
-const statisticsBody = document.getElementById("statistics-body");
+const caseStatusTabs = document.getElementById("case-status-tabs");
+const dashboardStats = document.getElementById("dashboard-stats");
+const jurisdictionList = document.getElementById("jurisdiction-list");
 
 const jurisdictionDisplayLabels = {
   NDIL: "ILND",
@@ -16,6 +18,19 @@ const formatJurisdictionLabel = (value) =>
   jurisdictionDisplayLabels[String(value || "").toUpperCase()] || String(value || "Unspecified");
 
 const tasksList = document.getElementById("tasks-list");
+
+const startOfDay = (date) => {
+  const next = new Date(date);
+  next.setHours(0, 0, 0, 0);
+  return next;
+};
+
+const isTaskOverdue = (task) => {
+  if (!task.dueDate) return false;
+  const due = parseDateValue(task.dueDate);
+  if (!due) return false;
+  return startOfDay(due) < startOfDay(new Date());
+};
 
 const statusToGroup = (status) => {
   if (!status) return "Undelivered";
@@ -43,88 +58,96 @@ const buildCaseRow = (item) => {
   return row;
 };
 
-const renderGroups = (cases) => {
-  const grouped = {
-    Undelivered: [],
-    Active: [],
-    "Fully Finished": [],
-  };
+const CASE_STATUS_GROUPS = ["Undelivered", "Active", "Fully Finished"];
+let groupedCasesByStatus = { Undelivered: [], Active: [], "Fully Finished": [] };
+let activeStatusGroup = "Active";
 
-  cases.forEach((item) => {
-    grouped[statusToGroup(item.status)].push(item);
-  });
-
+const renderCaseList = () => {
+  const items = groupedCasesByStatus[activeStatusGroup] || [];
   caseGroups.innerHTML = "";
-  Object.entries(grouped).forEach(([label, items]) => {
-    const details = document.createElement("details");
-    details.className = "group";
-    details.open = label === "Active";
-    const summary = document.createElement("summary");
-    summary.className = "group-title";
-    summary.textContent = `${label} (${items.length})`;
-    details.appendChild(summary);
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "No cases yet.";
+    caseGroups.appendChild(empty);
+    return;
+  }
+  items.forEach((item) => caseGroups.appendChild(buildCaseRow(item)));
+};
 
-    const list = document.createElement("div");
-    list.className = "list";
-    if (items.length === 0) {
-      const empty = document.createElement("div");
-      empty.className = "empty-state";
-      empty.textContent = "No cases yet.";
-      list.appendChild(empty);
-    } else {
-      items.forEach((item) => list.appendChild(buildCaseRow(item)));
-    }
-    details.appendChild(list);
-    caseGroups.appendChild(details);
+const renderCaseStatusTabs = () => {
+  caseStatusTabs.innerHTML = "";
+  CASE_STATUS_GROUPS.forEach((label) => {
+    const count = groupedCasesByStatus[label].length;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `ghost-button${label === activeStatusGroup ? " active" : ""}`;
+    button.textContent = `${label} (${count})`;
+    button.addEventListener("click", () => {
+      activeStatusGroup = label;
+      renderCaseStatusTabs();
+      renderCaseList();
+    });
+    caseStatusTabs.appendChild(button);
   });
 };
 
-const renderStatistics = (stats) => {
+const renderGroups = (cases) => {
+  groupedCasesByStatus = { Undelivered: [], Active: [], "Fully Finished": [] };
+  cases.forEach((item) => {
+    groupedCasesByStatus[statusToGroup(item.status)].push(item);
+  });
+  renderCaseStatusTabs();
+  renderCaseList();
+};
+
+const renderStatTiles = (stats) => {
   const overdueCount = stats.overdueTaskCount || 0;
   const avgDaysOpen = stats.avgDaysOpen === null || stats.avgDaysOpen === undefined
     ? "—"
     : `${stats.avgDaysOpen}d`;
 
+  dashboardStats.innerHTML = `
+    <div class="stat-tile">
+      <div class="stat-value">${stats.totalActiveCases || 0}</div>
+      <div class="stat-label">Active Cases</div>
+    </div>
+    <div class="stat-tile">
+      <div class="stat-value">${avgDaysOpen}</div>
+      <div class="stat-label">Avg. Time Open</div>
+    </div>
+    <div class="stat-tile${overdueCount > 0 ? " stat-tile-warning" : ""}">
+      <div class="stat-value">${overdueCount}</div>
+      <div class="stat-label">Overdue Tasks</div>
+    </div>
+  `;
+};
+
+const renderJurisdictionBars = (stats) => {
   const countsByLabel = new Map();
   (stats.byJurisdiction || []).forEach((row) => {
     const label = formatJurisdictionLabel(row.jurisdiction);
     countsByLabel.set(label, (countsByLabel.get(label) || 0) + row.caseCount);
   });
 
-  const jurisdictionRows = Array.from(countsByLabel.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(
-      ([label, count]) => `
-        <div class="info-row">
-          <span>${label}</span>
-          <span>${count}</span>
+  const entries = Array.from(countsByLabel.entries()).sort((a, b) => b[1] - a[1]);
+  const maxCount = entries.reduce((max, [, count]) => Math.max(max, count), 0) || 1;
+
+  jurisdictionList.innerHTML = entries.length
+    ? entries
+        .map(
+          ([label, count]) => `
+        <div class="jurisdiction-row">
+          <span class="jurisdiction-label">${label}</span>
+          <div class="jurisdiction-bar-track">
+            <div class="jurisdiction-bar-fill" style="width: ${Math.round((count / maxCount) * 100)}%"></div>
+          </div>
+          <span class="jurisdiction-count">${count}</span>
         </div>
       `
-    )
-    .join("");
-
-  statisticsBody.innerHTML = `
-    <div class="stats-grid">
-      <div class="stat-tile">
-        <div class="stat-value">${stats.totalActiveCases || 0}</div>
-        <div class="stat-label">Active Cases</div>
-      </div>
-      <div class="stat-tile">
-        <div class="stat-value">${avgDaysOpen}</div>
-        <div class="stat-label">Avg. Time Open</div>
-      </div>
-      <div class="stat-tile${overdueCount > 0 ? " stat-tile-warning" : ""}">
-        <div class="stat-value">${overdueCount}</div>
-        <div class="stat-label">Overdue Tasks</div>
-      </div>
-    </div>
-    <div class="info-card">
-      <h3>Cases by Jurisdiction</h3>
-      <div class="info-list">
-        ${jurisdictionRows || '<div class="empty-state">No active cases yet.</div>'}
-      </div>
-    </div>
-  `;
+        )
+        .join("")
+    : '<div class="empty-state">No active cases yet.</div>';
 };
 
 const renderTasks = (tasks) => {
@@ -140,7 +163,8 @@ const renderTasks = (tasks) => {
   tasks.forEach((task) => {
     const row = document.createElement("div");
     const isInProgress = task.status === "In Progress" || task.isInProgress;
-    row.className = `card row${isInProgress ? " is-in-progress" : ""}`;
+    const isOverdue = isTaskOverdue(task);
+    row.className = `card row${isOverdue ? " is-overdue" : isInProgress ? " is-in-progress" : ""}`;
     const targetUrl =
       task.targetType === "general"
         ? null
@@ -188,6 +212,13 @@ const renderTasks = (tasks) => {
       </div>
       <div class="row-right task-actions">
         <span>Due ${formatDate(task.dueDate)}</span>
+        ${
+          isOverdue
+            ? '<span class="status-chip status-chip-danger">Overdue</span>'
+            : isInProgress
+              ? '<span class="status-chip status-chip-amber">In Progress</span>'
+              : ""
+        }
         <button class="ghost-button progress-task" type="button">${
           isInProgress ? "Clear Progress" : "In Progress"
         }</button>
@@ -223,7 +254,8 @@ const init = async () => {
   const cases = await loadCases();
   renderGroups(cases);
   const stats = await loadLitigationStats();
-  renderStatistics(stats);
+  renderStatTiles(stats);
+  renderJurisdictionBars(stats);
 };
 
 init();
