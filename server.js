@@ -17,6 +17,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const { parse } = require("csv-parse/sync");
 const { query, withTransaction } = require("./db");
+const { ensureTrademarkTables } = require("./lib/trademark-schema");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -5154,6 +5155,7 @@ const start = async () => {
   await ensureCaseTypeColumn();
   await ensureCaseAssetRestraintColumn();
   await ensureLitigationTables();
+  await ensureTrademarkTables(query);
   await ensureEmailTables();
   await ensureDefendantEvidenceUrl();
   await ensureDefendantBookkeepingTable();
