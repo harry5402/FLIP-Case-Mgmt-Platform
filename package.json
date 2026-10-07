@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "postinstall": "playwright install chromium"
+    "postinstall": "playwright install chromium",
+    "test": "node --test \"test/**/*.test.js\"",
+    "import:trademark": "node scripts/import-trademark-workbook.js"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
@@ -15,6 +17,7 @@
     "cors": "^2.8.5",
     "csv-parse": "^5.5.6",
     "dotenv": "^16.4.5",
+    "exceljs": "^4.4.0",
     "express": "^4.19.2",
     "multer": "^1.4.5-lts.1",
     "node-cron": "^4.2.1",

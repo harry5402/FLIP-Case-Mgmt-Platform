@@ -2,3 +2,7 @@ node_modules/
 .env
 .DS_Store
 uploads/
+
+# Trademark workbook imports — never commit client data
+*.xlsx
+import-report*.json
