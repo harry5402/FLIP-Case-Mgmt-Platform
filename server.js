@@ -17,6 +17,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const { parse } = require("csv-parse/sync");
 const { query, withTransaction } = require("./db");
+const { ensureTrademarkTables } = require("./lib/trademark-schema");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1026,6 +1027,7 @@ app.post("/api/auth/login", async (req, res) => {
       email: user.email,
       role: user.role,
       allowWeeklyReport: Boolean(user.allow_weekly_report),
+      allowTrademarkDocket: user.role === "admin" || Boolean(user.allow_trademark_docket),
     },
     session: {
       idleTimeoutMinutes: IDLE_TIMEOUT_MINUTES,
@@ -1115,7 +1117,7 @@ app.post("/api/auth/change-password", requireSession, async (req, res) => {
 
 app.get("/api/users", requireSession, requireAdmin, async (req, res) => {
   const result = await query(
-    `SELECT id, name, email, role, allow_weekly_task_cleanup, allow_weekly_report, created_at
+    `SELECT id, name, email, role, allow_weekly_task_cleanup, allow_weekly_report, allow_trademark_docket, created_at
      FROM users
      ORDER BY created_at DESC`
   );
@@ -5103,6 +5105,11 @@ emailModule(app, { requireSession, query, withTransaction, writeAuditLog });
 const { notifyTaskAssigned, notifyOverdueSummary } = emailModule;
 
 // ---------------------------------------------------------------------------
+// Trademark Docket routes (/api/trademark/*)
+// ---------------------------------------------------------------------------
+require("./routes/trademark")(app, { query, withTransaction, writeAuditLog, requireAdmin });
+
+// ---------------------------------------------------------------------------
 // Automations routes (Exhibit 2, etc.)
 // ---------------------------------------------------------------------------
 const automationsRouter = require("./routes/automations");
@@ -5154,6 +5161,7 @@ const start = async () => {
   await ensureCaseTypeColumn();
   await ensureCaseAssetRestraintColumn();
   await ensureLitigationTables();
+  await ensureTrademarkTables(query);
   await ensureEmailTables();
   await ensureDefendantEvidenceUrl();
   await ensureDefendantBookkeepingTable();

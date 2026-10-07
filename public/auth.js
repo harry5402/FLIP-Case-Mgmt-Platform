@@ -14,7 +14,10 @@ let idleWarningShown = false;
 let idleMonitorStarted = false;
 let idleMonitorInterval = null;
 
+// Pages with the sidebar (#app-nav) show the logo there instead, so only
+// sidebar-less pages (login) get the header logo.
 const ensureHeaderLogo = () => {
+  if (document.getElementById("app-nav")) return;
   document.querySelectorAll(".app-header").forEach((header) => {
     if (header.querySelector(".header-logo")) return;
     const logo = document.createElement("img");

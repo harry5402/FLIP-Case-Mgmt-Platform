@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Trademark Docket</title>
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-nav="trademark">
+    <header class="app-header">
+      <div class="tab-switch"></div>
+      <a class="home-title" href="index.html">FLIP Matter Management</a>
+      <div class="tab-switch"></div>
+    </header>
+
+    <div id="app-nav"></div>
+
+    <main class="layout single">
+      <section class="panel docket-panel">
+        <div class="docket-layout">
+          <aside class="docket-sidebar tm-sidebar">
+            <div class="docket-sidebar-inner">
+              <div class="panel-header docket-sidebar-header">
+                <div>
+                  <h2>TRADEMARK DOCKET</h2>
+                  <div class="muted">Sorted by internal deadline, then response deadline.</div>
+                </div>
+                <div class="docket-sidebar-actions">
+                  <button id="tm-new-item" class="ghost-button" type="button">New Item</button>
+                  <button id="tm-view-deleted" class="ghost-button" type="button">View Deleted</button>
+                </div>
+              </div>
+              <nav id="tm-tabs" class="tab-switch docket-tabs tm-tabs" aria-label="Trademark docket views"></nav>
+            </div>
+          </aside>
+          <div class="docket-main">
+            <div class="docket-main-header tm-main-header">
+              <div class="tm-title-row">
+                <h2 id="tm-view-title">Due</h2>
+                <div id="tm-view-subtitle" class="muted"></div>
+              </div>
+              <div id="tm-filters" class="tm-filters">
+                <input id="tm-search" type="search" placeholder="Search matter, brand, client, comment…" aria-label="Search" />
+                <select id="tm-filter-client" aria-label="Client"><option value="">All clients</option></select>
+                <select id="tm-filter-state" aria-label="Work state"><option value="">Any state</option></select>
+                <select id="tm-filter-family" aria-label="Matter family"><option value="">Any family</option></select>
+                <label class="tm-check"><input id="tm-filter-closed" type="checkbox" /> Include closed</label>
+                <label class="tm-check"><input id="tm-filter-review" type="checkbox" /> Needs review only</label>
+              </div>
+              <div id="tm-subtabs" class="tab-switch tm-subtabs hidden"></div>
+            </div>
+            <div id="tm-error" class="form-error tm-page-error"></div>
+            <div id="tm-content" class="tm-content"></div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div id="tm-item-modal" class="modal hidden">
+      <div class="modal-card tm-modal-card">
+        <div class="info-card-header">
+          <h3 id="tm-item-modal-title">Docket Item</h3>
+          <button class="ghost-button" type="button" data-close-modal="tm-item-modal">Close</button>
+        </div>
+        <form id="tm-item-form" class="tm-item-form"></form>
+        <div class="form-actions">
+          <div id="tm-item-error" class="form-error"></div>
+          <div class="tm-modal-actions" id="tm-item-actions"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="tm-deleted-modal" class="modal hidden">
+      <div class="modal-card tm-modal-card">
+        <div class="info-card-header">
+          <h3>Deleted Items</h3>
+          <button class="ghost-button" type="button" data-close-modal="tm-deleted-modal">Close</button>
+        </div>
+        <div class="table-wrap tm-table-wrap" id="tm-deleted-body"></div>
+        <div class="form-actions">
+          <div id="tm-deleted-error" class="form-error"></div>
+          <div></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="auth.js"></script>
+    <script src="nav.js"></script>
+    <script src="data.js"></script>
+    <script src="trademark-docket.js"></script>
+  </body>
+</html>

@@ -1,12 +1,14 @@
-# FLIP — IP Litigation Case Management Platform
+# FLIP Matter Management
 
-A full-stack internal platform for managing IP (trademark/copyright) litigation caseloads end-to-end: docket tracking, defendant/case/group records, task assignment, weekly reporting, and third-party integrations — built to replace a spreadsheet-based workflow for a litigation team handling dozens of concurrent cases.
+A full-stack internal platform for managing the firm's IP matters end-to-end: Schedule A (trademark/copyright) litigation — docket tracking, defendant/case/group records, task assignment, weekly reporting — and trademark prosecution and maintenance through a dedicated Trademark Docket. Built to replace spreadsheet-based workflows for a team handling dozens of concurrent cases and hundreds of trademark matters.
 
 Server-rendered static frontend + a Node/Express API backed by Postgres, deployed on Railway with a Neon-hosted database.
 
 ## Features
 
 - **Litigation docket tracking** — per-case docket entries and actions, tabbed by status/jurisdiction, with cascading task generation when actions are logged
+- **Trademark docket** — applications, office actions, SOUs, maintenance filings, clearance, contentious matters and assignments in one deadline-sorted docket, with client portfolio views, billing flags (reported → ready to bill → invoiced), unresponsive-client flags, a to-do inbox, and per-user access control
+- **Workbook import** — idempotent CLI importer that loads the legacy trademark Excel workbook (dry run by default; re-runs refresh changed rows without overwriting edits made in the app)
 - **Case, defendant & group management** — structured records for IP claims, defendants, multi-defendant groups, and negotiation/collection status
 - **Task management** — personal and team task lists, due-date logic (internal vs. court deadlines), completion workflows, and recurring weekly cleanup
 - **Weekly reporting** — automated CSV report generation summarizing task completion by user/week
@@ -22,7 +24,8 @@ Server-rendered static frontend + a Node/Express API backed by Postgres, deploye
 - **Backend:** Node.js, Express, session-based auth
 - **Database:** PostgreSQL (Neon), raw SQL with a lightweight query helper — no ORM
 - **Frontend:** Static HTML/CSS/vanilla JS, page-per-view architecture
-- **Integrations:** DocketBird API, Microsoft Graph (email), Anthropic API, Playwright (PDF/document generation)
+- **Integrations:** DocketBird API, Microsoft Graph (email), Anthropic API, Playwright (PDF/document generation), ExcelJS (trademark workbook import)
+- **Tests:** `node:test` (`npm test`) — no database needed
 - **Hosting:** Railway (app), Neon (Postgres)
 
 ## Architecture Notes
@@ -54,6 +57,17 @@ Server-rendered static frontend + a Node/Express API backed by Postgres, deploye
    ```
 
    Open `http://localhost:3000`.
+
+5. Run the tests:
+   ```bash
+   npm test
+   ```
+
+6. (Optional) Import the trademark workbook — dry run first, then `--commit`. Keep the workbook outside the repo; `*.xlsx` is gitignored.
+   ```bash
+   node scripts/import-trademark-workbook.js /path/to/workbook.xlsx
+   node scripts/import-trademark-workbook.js /path/to/workbook.xlsx --commit
+   ```
 
 ## Deploy (Railway)
 
