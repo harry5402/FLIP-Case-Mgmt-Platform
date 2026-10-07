@@ -5104,6 +5104,11 @@ emailModule(app, { requireSession, query, withTransaction, writeAuditLog });
 const { notifyTaskAssigned, notifyOverdueSummary } = emailModule;
 
 // ---------------------------------------------------------------------------
+// Trademark Docket routes (/api/trademark/*)
+// ---------------------------------------------------------------------------
+require("./routes/trademark")(app, { query, withTransaction, writeAuditLog, requireAdmin });
+
+// ---------------------------------------------------------------------------
 // Automations routes (Exhibit 2, etc.)
 // ---------------------------------------------------------------------------
 const automationsRouter = require("./routes/automations");

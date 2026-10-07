@@ -16,6 +16,7 @@ const path = require("path");
 const crypto = require("crypto");
 const ExcelJS = require("exceljs");
 const { buildImportPlan } = require("../lib/trademark-import");
+const { normalizeClientName } = require("../lib/trademark");
 
 const IMPORT_ACTOR = "workbook-import";
 
@@ -119,9 +120,11 @@ const writePlan = async (db, plan, { batchId }) => {
   };
 
   // ---- Clients ----
-  const existingClients = new Map(
-    (await db.query("SELECT id, normalized_name, updated_by, aliases FROM trademark_clients")).rows.map((r) => [r.normalized_name, r])
-  );
+  // Match on aliases too, so clients merged in the app stay merged on re-import.
+  const clientRows = (await db.query("SELECT id, normalized_name, updated_by, aliases FROM trademark_clients")).rows;
+  const existingClients = new Map();
+  clientRows.forEach((r) => (r.aliases || []).forEach((alias) => existingClients.set(normalizeClientName(alias), r)));
+  clientRows.forEach((r) => existingClients.set(r.normalized_name, r));
   const clientIds = new Map();
   for (const c of plan.clients) {
     const found = existingClients.get(c.norm);
