@@ -1236,6 +1236,135 @@ app.post("/api/users/:id/logout-all", requireSession, requireAdmin, async (req, 
   res.json({ ok: true, sessionsInvalidated: deleted });
 });
 
+// What removing a user would touch — shown in the Users page confirm dialog.
+app.get("/api/users/:id/removal-summary", requireSession, requireAdmin, async (req, res, next) => {
+  try {
+    const userResult = await query("SELECT id, name, email, role FROM users WHERE id = $1", [req.params.id]);
+    if (!userResult.rows.length) return res.status(404).json({ error: "User not found." });
+    const { rows } = await query(
+      `SELECT
+         (SELECT COUNT(*) FROM tasks WHERE assigned_to_user_id = $1 AND status <> 'Complete')::int AS open_tasks,
+         (SELECT COUNT(*) FROM tasks WHERE assigned_to_user_id = $1 AND status = 'Complete')::int AS completed_tasks,
+         (SELECT COUNT(*) FROM litigation_actions WHERE assigned_to_user_id = $1)::int AS litigation_actions,
+         (SELECT COUNT(*) FROM litigation_action_collaborators WHERE user_id = $1)::int AS collaborations,
+         (SELECT COUNT(*) FROM trademark_docket_items WHERE assigned_to_user_id = $1)::int AS trademark_items,
+         (SELECT COUNT(*) FROM trademark_todos WHERE assigned_to_user_id = $1)::int AS trademark_todos`,
+      [req.params.id]
+    );
+    const counts = rows[0];
+    let activeSessions = 0;
+    for (const session of sessions.values()) if (session.userId === req.params.id) activeSessions += 1;
+    res.json({
+      user: userResult.rows[0],
+      isSelf: req.params.id === req.session.userId,
+      openTasks: counts.open_tasks,
+      completedTasks: counts.completed_tasks,
+      litigationActions: counts.litigation_actions,
+      collaborations: counts.collaborations,
+      trademarkItems: counts.trademark_items,
+      trademarkTodos: counts.trademark_todos,
+      activeSessions,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Permanently removes a user. Open work can be handed to another user;
+// completed tasks are kept (unassigned) so history isn't lost. Without the
+// explicit unassign, tasks.assigned_to_user_id's ON DELETE CASCADE would
+// delete every task the user ever had.
+app.delete("/api/users/:id", requireSession, requireAdmin, async (req, res, next) => {
+  try {
+    const userId = req.params.id;
+    const reassignTo = req.body?.reassignToUserId || null;
+    const confirmEmail = String(req.body?.confirmEmail || "").trim().toLowerCase();
+    if (userId === req.session.userId) {
+      return res.status(400).json({ error: "You can't remove your own account." });
+    }
+    if (reassignTo === userId) {
+      return res.status(400).json({ error: "Choose a different user to take over their work." });
+    }
+
+    const result = await withTransaction(async (client) => {
+      const target = await client.query("SELECT id, name, email, role FROM users WHERE id = $1 FOR UPDATE", [userId]);
+      if (!target.rows.length) return { status: 404, error: "User not found." };
+      const user = target.rows[0];
+      if (confirmEmail !== String(user.email).toLowerCase()) {
+        return { status: 400, error: "Type the user's email address to confirm." };
+      }
+      if (reassignTo) {
+        const receiver = await client.query("SELECT id FROM users WHERE id = $1", [reassignTo]);
+        if (!receiver.rows.length) return { status: 400, error: "The user chosen to take over their work doesn't exist." };
+      }
+
+      const moved = { openTasks: 0, duplicateTasksRemoved: 0, litigationActions: 0, collaborations: 0, trademarkItems: 0, trademarkTodos: 0 };
+      if (reassignTo) {
+        // An open docket task the receiver already has for the same action would be a duplicate.
+        moved.duplicateTasksRemoved = (await client.query(
+          `DELETE FROM tasks t
+           WHERE t.assigned_to_user_id = $1 AND t.status <> 'Complete' AND t.source_litigation_action_id IS NOT NULL
+             AND EXISTS (SELECT 1 FROM tasks x WHERE x.assigned_to_user_id = $2 AND x.status <> 'Complete'
+                           AND x.source_litigation_action_id = t.source_litigation_action_id)`,
+          [userId, reassignTo]
+        )).rowCount;
+        moved.openTasks = (await client.query(
+          `UPDATE tasks SET assigned_to_user_id = $2 WHERE assigned_to_user_id = $1 AND status <> 'Complete'`,
+          [userId, reassignTo]
+        )).rowCount;
+        moved.collaborations = (await client.query(
+          `UPDATE litigation_action_collaborators c SET user_id = $2
+           WHERE c.user_id = $1
+             AND NOT EXISTS (SELECT 1 FROM litigation_action_collaborators x WHERE x.action_id = c.action_id AND x.user_id = $2)`,
+          [userId, reassignTo]
+        )).rowCount;
+        moved.litigationActions = (await client.query(
+          "UPDATE litigation_actions SET assigned_to_user_id = $2 WHERE assigned_to_user_id = $1",
+          [userId, reassignTo]
+        )).rowCount;
+        moved.trademarkItems = (await client.query(
+          "UPDATE trademark_docket_items SET assigned_to_user_id = $2 WHERE assigned_to_user_id = $1",
+          [userId, reassignTo]
+        )).rowCount;
+        moved.trademarkTodos = (await client.query(
+          "UPDATE trademark_todos SET assigned_to_user_id = $2 WHERE assigned_to_user_id = $1",
+          [userId, reassignTo]
+        )).rowCount;
+      }
+      const unassignedTasks = (await client.query(
+        "UPDATE tasks SET assigned_to_user_id = NULL WHERE assigned_to_user_id = $1",
+        [userId]
+      )).rowCount;
+      // Remaining references are ON DELETE SET NULL (or collaborator rows, which cascade).
+      await client.query("DELETE FROM users WHERE id = $1", [userId]);
+      return { user, moved, unassignedTasks };
+    });
+
+    if (result.error) return res.status(result.status).json({ error: result.error });
+
+    let sessionsInvalidated = 0;
+    for (const [token, session] of sessions.entries()) {
+      if (session.userId === userId) {
+        sessions.delete(token);
+        sessionsInvalidated += 1;
+      }
+    }
+
+    await writeAuditLog(req, {
+      action: "users.delete",
+      entityType: "user",
+      entityId: userId,
+      before: result.user,
+      after: null,
+      metadata: { reassignedTo: reassignTo, moved: result.moved, unassignedTasks: result.unassignedTasks, sessionsInvalidated },
+    });
+
+    res.json({ ok: true, reassignedTo: reassignTo, moved: result.moved, unassignedTasks: result.unassignedTasks, sessionsInvalidated });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.get("/api/audit-logs", requireSession, requireAdmin, async (req, res) => {
   const limit = Math.min(parsePositiveInt(req.query.limit, 100), 500);
   const result = await query(
