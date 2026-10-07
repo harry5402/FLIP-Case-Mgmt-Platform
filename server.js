@@ -5062,59 +5062,6 @@ app.put("/api/defendants/:id/collection", async (req, res) => {
   res.json({ ok: true });
 });
 
-app.get("/api/defendants/:id/bookkeeping", async (req, res) => {
-  const result = await query(
-    "SELECT * FROM bookkeeping WHERE defendant_id = $1 ORDER BY id LIMIT 1",
-    [req.params.id]
-  );
-  if (!result.rows.length) {
-    return res.json({});
-  }
-  const row = result.rows[0];
-  res.json({
-    status: row.status,
-    agreementProcessed: row.agreement_processed,
-  });
-});
-
-app.put("/api/defendants/:id/bookkeeping", async (req, res) => {
-  const { status, agreementProcessed } = req.body;
-
-  const beforeResult = await query(
-    "SELECT * FROM bookkeeping WHERE defendant_id = $1 ORDER BY id LIMIT 1",
-    [req.params.id]
-  );
-  const updated = await query(
-    `UPDATE bookkeeping
-     SET status = $2,
-         agreement_processed = $3
-     WHERE defendant_id = $1
-     RETURNING *`,
-    [req.params.id, status || null, agreementProcessed || null]
-  );
-
-  if (!updated.rows.length) {
-    await query(
-      `INSERT INTO bookkeeping (defendant_id, status, agreement_processed)
-       VALUES ($1,$2,$3)`,
-      [req.params.id, status || null, agreementProcessed || null]
-    );
-  }
-  const afterResult = await query(
-    "SELECT * FROM bookkeeping WHERE defendant_id = $1 ORDER BY id LIMIT 1",
-    [req.params.id]
-  );
-  await writeAuditLog(req, {
-    action: "defendants.bookkeeping_update",
-    entityType: "defendant",
-    entityId: req.params.id,
-    before: beforeResult.rows[0] || null,
-    after: afterResult.rows[0] || null,
-  });
-
-  res.json({ ok: true });
-});
-
 app.get("/api/weekly-reports", requireWeeklyReportAccess, async (req, res) => {
   const { rows } = await query(
     `SELECT id, week_start, week_end, generated_at, generated_by

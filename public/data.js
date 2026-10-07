@@ -216,26 +216,6 @@ const saveCollection = async (defendantId, payload) => {
   return null;
 };
 
-const loadBookkeeping = async (defendantId) => {
-  if (USE_API) {
-    const response = await authFetch(`${API_BASE}/api/defendants/${defendantId}/bookkeeping`);
-    return response.json();
-  }
-  return null;
-};
-
-const saveBookkeeping = async (defendantId, payload) => {
-  if (USE_API) {
-    const response = await authFetch(`${API_BASE}/api/defendants/${defendantId}/bookkeeping`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    return response.json();
-  }
-  return null;
-};
-
 const loadUserOptions = async () => {
   if (USE_API) {
     const response = await authFetch(`${API_BASE}/api/users/options`);
