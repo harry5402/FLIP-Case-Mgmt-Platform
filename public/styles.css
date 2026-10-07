@@ -393,6 +393,34 @@ h1 {
   padding: 24px 48px 48px;
 }
 
+.dashboard-greeting {
+  display: grid;
+  gap: 4px;
+}
+
+.dashboard-greeting:empty {
+  display: none;
+}
+
+.dashboard-greeting-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.dashboard-greeting-sub {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.dashboard-greeting-sub a {
+  color: var(--rust-700);
+}
+
 .dashboard-columns {
   display: grid;
   grid-template-columns: 1.7fr 1fr;

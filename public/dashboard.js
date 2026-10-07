@@ -1,6 +1,7 @@
 const caseGroups = document.getElementById("case-groups");
 const caseStatusTabs = document.getElementById("case-status-tabs");
 const dashboardStats = document.getElementById("dashboard-stats");
+const dashboardGreeting = document.getElementById("dashboard-greeting");
 const jurisdictionList = document.getElementById("jurisdiction-list");
 
 const jurisdictionDisplayLabels = {
@@ -248,9 +249,82 @@ const renderTasks = (tasks) => {
   });
 };
 
+// Personal intro line under the header, e.g.
+//   "Good morning, Harry." / "You have 2 overdue tasks — they're at the top of My Tasks."
+//   "Good afternoon, Sam." / "Nothing due today. 3 tasks are due in the next 7 days."
+//   "Good evening, Alex." / "Your task list is clear. Nice work."
+const timeOfDayGreeting = (date) => {
+  const hour = date.getHours();
+  if (hour < 12) return "Good morning";
+  if (hour < 17) return "Good afternoon";
+  return "Good evening";
+};
+
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
+const taskSummaryLine = (tasks) => {
+  const today = startOfDay(new Date());
+  const weekOut = new Date(today);
+  weekOut.setDate(weekOut.getDate() + 7);
+  let overdue = 0;
+  let dueToday = 0;
+  let dueThisWeek = 0;
+  tasks.forEach((task) => {
+    const due = task.dueDate ? parseDateValue(task.dueDate) : null;
+    if (!due) return;
+    const day = startOfDay(due);
+    if (day < today) overdue += 1;
+    else if (day.getTime() === today.getTime()) dueToday += 1;
+    else if (day <= weekOut) dueThisWeek += 1;
+  });
+  if (overdue) {
+    const todayPart = dueToday ? `, plus ${dueToday} due today` : "";
+    return `You have ${plural(overdue, "overdue task")}${todayPart} — ${overdue === 1 ? "it's" : "they're"} at the top of My Tasks.`;
+  }
+  if (dueToday) return `${plural(dueToday, "task")} ${dueToday === 1 ? "is" : "are"} due today.`;
+  if (dueThisWeek) return `Nothing due today. ${plural(dueThisWeek, "task")} ${dueThisWeek === 1 ? "is" : "are"} due in the next 7 days.`;
+  if (tasks.length) return `Nothing due this week — ${plural(tasks.length, "open task")} on your list.`;
+  return "Your task list is clear. Nice work.";
+};
+
+const renderGreeting = (tasks, trademarkStats) => {
+  if (!dashboardGreeting) return;
+  const user = getUser();
+  const firstName = String(user?.name || "").trim().split(/\s+/)[0] || user?.email || "there";
+  const lines = [`<p class="dashboard-greeting-sub">${escapeHtml(taskSummaryLine(tasks))}</p>`];
+  if (trademarkStats && (trademarkStats.overdue || trademarkStats.dueSoon)) {
+    const parts = [];
+    if (trademarkStats.overdue) parts.push(`${trademarkStats.overdue} overdue`);
+    if (trademarkStats.dueSoon) parts.push(`${trademarkStats.dueSoon} due soon`);
+    lines.push(
+      `<p class="dashboard-greeting-sub">Trademark Docket: <a href="trademark-docket.html">${escapeHtml(parts.join(", "))}</a>.</p>`
+    );
+  }
+  dashboardGreeting.innerHTML = `
+    <h1 class="dashboard-greeting-title">${escapeHtml(timeOfDayGreeting(new Date()))}, ${escapeHtml(firstName)}.</h1>
+    ${lines.join("")}`;
+};
+
+const loadTrademarkStatsForGreeting = async () => {
+  const user = getUser();
+  if (!isAdmin() && !user?.allowTrademarkDocket) return null;
+  try {
+    const now = new Date();
+    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const response = await authFetch(`/api/trademark/stats?today=${today}`);
+    return response.ok ? response.json() : null;
+  } catch (err) {
+    return null;
+  }
+};
+
 const init = async () => {
   const tasks = await loadMyTasks();
   renderTasks(tasks);
+  renderGreeting(tasks, null);
+  loadTrademarkStatsForGreeting().then((stats) => {
+    if (stats) renderGreeting(tasks, stats);
+  });
   const cases = await loadCases();
   renderGroups(cases);
   const stats = await loadLitigationStats();
