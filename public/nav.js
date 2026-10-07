@@ -27,8 +27,7 @@ const NAV_LINKS = [
   { key: "docket", href: "litigation-docket.html", label: "Litigation Docket", icon: "docket" },
   { key: "trademark", href: "trademark-docket.html", label: "Trademark Docket", icon: "trademark", id: "trademark-docket-link", requires: "trademark" },
   { key: "tasklist", href: "weekly-tasklist.html", label: "Weekly Tasklist", icon: "tasklist" },
-  // Email Portal hidden for now — uncomment to restore the sidebar link.
-  // { key: "email", href: "email.html", label: "Email Portal", icon: "email" },
+  { key: "email", href: "email.html", label: "Email Portal", icon: "email" },
   { key: "automations", href: "automations.html", label: "Tools & Automations", icon: "automations" },
   { key: "users", href: "users.html", label: "Users", icon: "users", id: "users-link", requires: "admin" },
   { key: "reports", href: "weekly-report.html", label: "Reports", icon: "reports", id: "weekly-report-link", requires: "reports" },
