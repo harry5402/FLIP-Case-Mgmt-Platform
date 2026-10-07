@@ -1946,3 +1946,39 @@ body.sidebar-collapsed .app-sidebar-footer {
     max-height: none;
   }
 }
+
+/* Users page — remove user */
+.danger-button {
+  color: var(--danger-text);
+  border-color: var(--danger-border);
+  background: var(--danger-bg);
+}
+
+.danger-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#users-table .danger-button {
+  margin-left: 6px;
+}
+
+.remove-user-body {
+  display: grid;
+  gap: 12px;
+  padding: 0 16px;
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+.remove-user-body p {
+  margin: 0;
+}
+
+.remove-user-list {
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+}
