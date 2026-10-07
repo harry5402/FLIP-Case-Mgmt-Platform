@@ -289,7 +289,52 @@ h1 {
   gap: 10px 24px;
 }
 
+#case-info-list .info-row {
+  align-items: center;
+  min-width: 0;
+}
+
+#case-info-list .info-row > span:first-child {
+  flex: 0 0 92px;
+}
+
+#case-info-list .info-row > span:last-child {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#case-info-list .info-row input,
+#case-info-list .info-row select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Case page: Case Info gets the wide column so its two-column list fits */
+.case-detail-grid {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.case-detail-grid > .info-card {
+  min-width: 0;
+}
+
+@media (max-width: 1200px) {
+  .case-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .case-detail-grid > .case-info-card {
+    grid-column: 1 / -1;
+  }
+}
+
 @media (max-width: 700px) {
+  .case-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
   #case-info-list {
     grid-template-columns: 1fr;
   }
