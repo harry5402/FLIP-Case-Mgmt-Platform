@@ -6,6 +6,8 @@ const NAV_ICONS = {
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>',
   docket:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 17h6"/></svg>',
+  trademark:
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 16.5v-9h3.25a2.75 2.75 0 0 1 0 5.5H9.5M12.5 13l2.5 3.5"/></svg>',
   tasklist:
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1.2 1.2L7.5 4.8M4 12l1.2 1.2 2.3-2.4M4 18l1.2 1.2 2.3-2.4"/></svg>',
   email:
@@ -21,6 +23,7 @@ const NAV_ICONS = {
 const NAV_LINKS = [
   { key: "dashboard", href: "index.html", label: "Dashboard", icon: "dashboard" },
   { key: "docket", href: "litigation-docket.html", label: "Litigation Docket", icon: "docket" },
+  { key: "trademark", href: "trademark-docket.html", label: "Trademark Docket", icon: "trademark" },
   { key: "tasklist", href: "weekly-tasklist.html", label: "Weekly Tasklist", icon: "tasklist" },
   { key: "email", href: "email.html", label: "Email Portal", icon: "email" },
   { key: "automations", href: "automations.html", label: "Tools & Automations", icon: "automations" },

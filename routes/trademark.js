@@ -971,8 +971,17 @@ function registerTrademarkRoutes(app, { query, withTransaction, writeAuditLog, r
   }));
 
   app.post(`${base}/billing-questions`, handle(async (req, res) => {
-    const fields = pickFields(req.body || {}, BQ_FIELDS);
+    const body = req.body || {};
+    const fields = pickFields(body, BQ_FIELDS);
     if (!fields.question) throw new ValidationError("Question is required.");
+    const matterNo = textField(body.matterNo, "Matter no.");
+    if (matterNo && !fields.matter_id) {
+      const mn = tm.normalizeMatterNo(matterNo);
+      const found = await query("SELECT id FROM trademark_matters WHERE matter_no_norm = $1", [mn.norm]);
+      fields.matter_id = found.rows[0]?.id || null;
+      fields.matter_no_text = mn.norm || matterNo;
+      fields.scope = "matter";
+    }
     const ins = buildInsert("trademark_billing_questions", fields, actorOf(req));
     const id = (await query(ins.text, ins.values)).rows[0].id;
     const question = mapQuestion((await query(`${BQ_SELECT} WHERE q.id = $1`, [id])).rows[0]);
