@@ -16,6 +16,7 @@ Read this at the start of every session. It tells you what the project is, how t
 ## Verification
 - Harry verifies UI/frontend changes himself. Do not start the dev server or drive the Browser pane to check a change unless he explicitly asks — it burns tokens for no benefit here.
 - Still run cheap static checks (`node --check`, type checks, existing test suites) when relevant.
+- `npm test` runs the `node:test` suites in `test/` (no DB needed — route tests stub the database).
 
 ---
 
@@ -39,6 +40,13 @@ Read this at the start of every session. It tells you what the project is, how t
 /
 ├── server.js                        # Everything: all routes, migrations, business logic, scheduler (~4400 lines)
 ├── db.js                            # Postgres pool + query() helper
+├── lib/
+│   ├── trademark.js                 # Trademark constants + pure helpers (dates, matter nos., suggestions)
+│   ├── trademark-schema.js          # ensureTrademarkTables() — awaited in start()
+│   └── trademark-import.js          # Pure workbook → import-plan mapping
+├── scripts/
+│   └── import-trademark-workbook.js # CLI importer (dry run by default; --commit). Never commit the .xlsx
+├── test/                            # node:test suites (npm test)
 ├── schema.sql                       # Reference schema (not auto-run — migrations are in server.js)
 ├── package.json
 ├── .env                             # DATABASE_URL, DOCKETBIRD_API_TOKEN — never commit
@@ -48,12 +56,13 @@ Read this at the start of every session. It tells you what the project is, how t
 │   ├── index.html + dashboard.js    # Dashboard: My Tasks + Cases list
 │   ├── weekly-tasklist.html + .js   # All open tasks grouped by day/overdue
 │   ├── litigation-docket.html + .js # Docket tabs, actions, collections, MBFD
+│   ├── trademark-docket.html + .js  # Trademark docket: stage/portfolio/billing/to-do/client views
 │   ├── case.html + case.js          # Individual case page
 │   ├── defendant.html + .js         # Individual defendant page
 │   ├── group.html + group.js        # Group (multi-defendant) page
 │   ├── users.html + users.js        # Admin-only user management
 │   └── weekly-report.html + .js     # Weekly task completion reports
-├── routes/                          # (if route files extracted from server.js)
+├── routes/                          # email.js, automations.js, trademark.js (/api/trademark/*)
 ├── data/                            # Supporting data files
 ├── uploads/                         # Uploaded files
 └── skills/
@@ -73,7 +82,7 @@ Read this at the start of every session. It tells you what the project is, how t
 | 176–344 | Static file serving, session/CORS setup |
 | 345–919 | DB migration functions (`ensureAuditLogTable`, `ensureLitigationTables`, etc.) |
 | 919–1209 | Business logic helpers + auth routes + user management |
-| 1210 | `app.use("/api", requireSession)` — all protected routes registered after this |
+| 1250 | `app.use("/api", requireSession)` — all protected routes registered after this |
 | 1211–2354 | Litigation/docket routes (MBFD, cases, entries, actions, collections, archive, DocketBird) |
 | 2355–2951 | Task routes (`/api/tasks/my`, `/api/tasks`, complete, state, general tasks, templates upload) |
 | 2952–4479 | Cases, IP claims, defendants, groups, listings, negotiations, defendant bookkeeping entries |
@@ -81,7 +90,8 @@ Read this at the start of every session. It tells you what the project is, how t
 | 4540–4765 | Defendant negotiation, collection, bookkeeping (legacy) routes |
 | 4766–4802 | Weekly report routes |
 | 4803–4919 | Email integration tables + automations router |
-| 4920–4996 | `start()` — runs all migrations, cron jobs, `app.listen` |
+| ~5050 | Route modules registered: `routes/email.js`, `routes/trademark.js`, automations router, then the `/api` 404 catch-all |
+| ~5100–5180 | `start()` — runs all migrations (incl. `ensureTrademarkTables`), cron jobs, `app.listen` |
 
 ---
 
@@ -99,6 +109,10 @@ Read this at the start of every session. It tells you what the project is, how t
 | `audit_logs` | All significant mutations |
 | `weekly_reports` | Generated CSVs, unique per `week_start` |
 | `defendant_bookkeeping_entries` | Per-defendant modular bookkeeping rows (platform, amount_restrained, notes) |
+| `trademark_clients` | Billing clients for TM work; `is_unresponsive`, `payment_risk`, `has_portfolio_view`, `aliases` |
+| `trademark_matters` | One per firm matter no. (`matter_no_norm` unique); `application_status` (CHECK list in `lib/trademark.js`) |
+| `trademark_docket_items` | One row per docket task; `stage` discriminator, `internal_due_date`/`response_due_date`, `work_state`, 5 billing flags, `is_closed`, `is_hidden`, `import_key` |
+| `trademark_item_deadlines` / `trademark_todos` / `trademark_billing_questions` / `trademark_import_batches` | Extra dates per item; To Do & Sort; billing Q&A; importer runs |
 
 ---
 
@@ -112,13 +126,15 @@ Read this at the start of every session. It tells you what the project is, how t
 | GET | `/api/litigation/cases` | Docket cases by tab/district |
 | GET | `/api/litigation/collections-summary` | Unified collections view |
 | POST | `/api/weekly-reports/generate` | Manually generate weekly report (admin) |
+| GET | `/api/trademark/items?view=` | Trademark docket list (due, stage, portfolio, ready_to_bill, unbilled_closed, review, closed) |
+| PUT | `/api/trademark/items/:id/state` | Work state / close / soft-delete; 409 `UNBILLED` unless `confirmUnbilled` |
 
 ---
 
 ## Critical Rules (Non-Negotiable)
 - `cases.status` ≠ `litigation_case_state.docket_status` — completely separate fields for separate purposes
 - Due dates: always use `internalDueDate`; fall back to `finalDueDate` only if null — never reverse this
-- All new protected routes must be registered AFTER `app.use("/api", requireSession)` at line ~1007
+- All new protected routes must be registered AFTER `app.use("/api", requireSession)` at line ~1250
 - All multi-step writes must use `withTransaction()`
 - All significant mutations must write to `audit_logs`
 - DocketBird sync failures must NOT crash the app — catch and log only
@@ -137,3 +153,4 @@ Read this at the start of every session. It tells you what the project is, how t
 | Date | Change |
 |------|--------|
 | 2026-06-18 | Routing system initialized — skill files created, CLAUDE.md converted to router format |
+| 2026-10-07 | Trademark Docket added (lib/trademark*, routes/trademark.js, trademark-docket page, workbook importer, node:test suite). Design: TRADEMARK_DOCKET_DESIGN.md |
