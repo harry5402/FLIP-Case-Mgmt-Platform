@@ -1,4 +1,4 @@
-# CLAUDE.md — FLIP Case Management Router
+# CLAUDE.md — FLIP Matter Management Router
 
 ## How to Use This File
 Read this at the start of every session. It tells you what the project is, how to classify the task, which skill file to load, and where things live.
@@ -6,8 +6,8 @@ Read this at the start of every session. It tells you what the project is, how t
 ---
 
 ## Project Overview
-- **Name:** FLIP Case Management
-- **Purpose:** Internal platform for managing IP litigation cases, defendants, docket actions, tasks, and weekly reporting
+- **Name:** FLIP Matter Management (repo/folder still named "FLIP Case Management")
+- **Purpose:** Internal platform for managing IP matters — Schedule A litigation (cases, defendants, docket actions, tasks, weekly reporting) and the Trademark Docket (prosecution, maintenance, billing)
 - **Stack:** Node/Express (`server.js`) + Postgres (Neon) + static HTML/JS/CSS (`public/`)
 - **Hosting:** Railway (server), Neon (DB)
 
