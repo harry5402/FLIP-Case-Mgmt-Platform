@@ -414,8 +414,45 @@ const buildItemFilters = (q) => {
 
 const todayParam = (req) => (tm.isValidISODate(req.query.today) ? req.query.today : null);
 
+// Admins always have access; everyone else needs users.allow_trademark_docket.
+// Checked against the DB on every request so revoking access is immediate.
+const makeRequireTrademarkAccess = (query) => async (req, res, next) => {
+  try {
+    if (req.session?.role === "admin") return next();
+    const { rows } = await query("SELECT allow_trademark_docket FROM users WHERE id = $1 LIMIT 1", [req.session?.userId]);
+    if (rows[0]?.allow_trademark_docket) return next();
+    return res.status(403).json({ error: "You don't have access to the Trademark Docket.", code: "NO_TRADEMARK_ACCESS" });
+  } catch (err) {
+    return next(err);
+  }
+};
+
 function registerTrademarkRoutes(app, { query, withTransaction, writeAuditLog, requireAdmin }) {
   const base = "/api/trademark";
+  app.use(base, makeRequireTrademarkAccess(query));
+
+  // Admin toggle for the per-user permission (Users page).
+  app.put("/api/users/:id/trademark-access", requireAdmin, asyncRoute(async (req, res) => {
+    if (typeof req.body?.allowTrademarkDocket !== "boolean") {
+      return res.status(400).json({ error: "allowTrademarkDocket must be true or false." });
+    }
+    const allow = req.body.allowTrademarkDocket;
+    const existing = await query("SELECT id, email, allow_trademark_docket FROM users WHERE id = $1", [req.params.id]);
+    if (!existing.rows.length) return res.status(404).json({ error: "User not found." });
+    const result = await query(
+      `UPDATE users SET allow_trademark_docket = $2 WHERE id = $1
+       RETURNING id, name, email, role, allow_weekly_task_cleanup, allow_weekly_report, allow_trademark_docket, created_at`,
+      [req.params.id, allow]
+    );
+    await writeAuditLog(req, {
+      action: "users.trademark_access",
+      entityType: "user",
+      entityId: req.params.id,
+      before: { allowTrademarkDocket: existing.rows[0].allow_trademark_docket, email: existing.rows[0].email },
+      after: { allowTrademarkDocket: allow, email: existing.rows[0].email },
+    });
+    res.json(result.rows[0]);
+  }));
 
   const loadItem = async (id, db = { query }) => {
     const { rows } = await db.query(`${ITEM_SELECT} WHERE i.id = $1`, [id]);

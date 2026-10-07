@@ -31,11 +31,14 @@ const itemRow = (overrides = {}) => ({
   ...overrides,
 });
 
-const makeApp = ({ item = itemRow(), role = "user" } = {}) => {
+const makeApp = ({ item = itemRow(), role = "admin", allowTrademark = false } = {}) => {
   const calls = [];
   const audits = [];
   const state = { item };
   const query = async (text, params = []) => {
+    if (/SELECT allow_trademark_docket FROM users/.test(text)) {
+      return { rows: [{ allow_trademark_docket: allowTrademark }], rowCount: 1 };
+    }
     calls.push({ text, params });
     if (/FROM trademark_docket_items i/.test(text) && /WHERE i\.id = \$1/.test(text)) {
       return { rows: state.item && params[0] === state.item.id ? [state.item] : [], rowCount: state.item ? 1 : 0 };
@@ -155,7 +158,7 @@ test("PUT /items/:id/billing sets invoiced_at when invoiced flips on", async () 
 });
 
 test("client merge is admin-only", async () => {
-  const { app } = makeApp({ role: "user" });
+  const { app } = makeApp({ role: "user", allowTrademark: true });
   await withServer(app, async (call) => {
     const res = await call("POST", `/api/trademark/clients/${MATTER_ID}/merge`, { targetId: ITEM_ID });
     assert.equal(res.status, 403);
@@ -188,4 +191,33 @@ test("buildItemFilters: default view hides closed and archived; search terms are
   const search = buildItemFilters({ q: "50%_off" });
   assert.equal(search.params[0], "%50\\%\\_off%");
   assert.ok(!/\$T/.test(search.where.join(" ")));
+});
+
+test("non-admins need the Trademark Docket permission", async () => {
+  const blocked = makeApp({ role: "user", allowTrademark: false });
+  await withServer(blocked.app, async (call) => {
+    const res = await call("GET", "/api/trademark/items");
+    assert.equal(res.status, 403);
+    assert.equal(res.body.code, "NO_TRADEMARK_ACCESS");
+    assert.equal((await call("GET", "/api/trademark/meta")).status, 403);
+  });
+  assert.equal(blocked.calls.length, 0);
+
+  const allowed = makeApp({ role: "user", allowTrademark: true });
+  await withServer(allowed.app, async (call) => {
+    assert.equal((await call("GET", "/api/trademark/items")).status, 200);
+  });
+});
+
+test("only admins can toggle Trademark Docket access, with a boolean", async () => {
+  const user = makeApp({ role: "user", allowTrademark: true });
+  await withServer(user.app, async (call) => {
+    assert.equal((await call("PUT", `/api/users/${ITEM_ID}/trademark-access`, { allowTrademarkDocket: true })).status, 403);
+  });
+  const admin = makeApp();
+  await withServer(admin.app, async (call) => {
+    assert.equal((await call("PUT", `/api/users/${ITEM_ID}/trademark-access`, { allowTrademarkDocket: "yes" })).status, 400);
+    // stub returns no user rows
+    assert.equal((await call("PUT", `/api/users/${ITEM_ID}/trademark-access`, { allowTrademarkDocket: true })).status, 404);
+  });
 });

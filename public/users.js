@@ -32,6 +32,15 @@ const renderUsers = (users) => {
           ${user.allow_weekly_report ? "On" : "Off"}
         </button>
       </td>
+      <td>
+        ${
+          user.role === "admin"
+            ? `<span class="muted">Always (admin)</span>`
+            : `<button class="ghost-button trademark-access-toggle" type="button" data-user-id="${user.id}">
+          ${user.allow_trademark_docket ? "On" : "Off"}
+        </button>`
+        }
+      </td>
       <td>${formatDate(user.created_at)}</td>
       <td>
         <button class="ghost-button logout-all-user" type="button" data-user-id="${user.id}" ${
@@ -69,6 +78,21 @@ const renderUsers = (users) => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
         usersError.textContent = payload?.error || "Unable to update weekly report setting.";
+        return;
+      }
+      await loadUsers();
+    });
+    const trademarkButton = row.querySelector(".trademark-access-toggle");
+    trademarkButton?.addEventListener("click", async () => {
+      usersError.textContent = "";
+      const response = await authFetch(`/api/users/${user.id}/trademark-access`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allowTrademarkDocket: !user.allow_trademark_docket }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        usersError.textContent = payload?.error || "Unable to update Trademark Docket access.";
         return;
       }
       await loadUsers();

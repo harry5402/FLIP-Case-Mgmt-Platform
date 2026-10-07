@@ -1098,6 +1098,16 @@ const init = async () => {
   try {
     state.meta = await api("/meta");
   } catch (err) {
+    if (err.status === 403) {
+      els.tabs.innerHTML = "";
+      els.filters.classList.add("hidden");
+      els.newItem.classList.add("hidden");
+      els.viewDeleted.classList.add("hidden");
+      els.title.textContent = "No access";
+      els.subtitle.textContent = "";
+      els.content.innerHTML = `<div class="muted tm-empty">You don't have access to the Trademark Docket. Ask an admin to turn it on for you under Users.</div>`;
+      return;
+    }
     showError(err.message);
     return;
   }
