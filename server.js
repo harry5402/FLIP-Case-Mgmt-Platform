@@ -484,6 +484,10 @@ const ensureLitigationTables = async () => {
     ADD COLUMN IF NOT EXISTS docketbird_last_synced_at TIMESTAMPTZ
   `);
   await query(`
+    ALTER TABLE litigation_case_state
+    ADD COLUMN IF NOT EXISTS next_event TEXT
+  `);
+  await query(`
     CREATE TABLE IF NOT EXISTS litigation_actions (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       case_id UUID REFERENCES cases(id) ON DELETE CASCADE,
@@ -1668,6 +1672,7 @@ app.get("/api/litigation/cases", async (req, res) => {
         ) AS docket_status,
         state.docketbird_case_id,
         state.docketbird_last_synced_at,
+        state.next_event,
         COALESCE(state.docket_defendant_count, defs.count, 0) AS defendant_count,
         COALESCE(state.archived, FALSE) AS archived,
         COALESCE(a.created_at, c.updated_at, c.created_at) AS most_recent_edit_at,
@@ -1728,6 +1733,7 @@ app.get("/api/litigation/cases", async (req, res) => {
       docketStatus: row.docket_status || "",
       docketbirdCaseId: row.docketbird_case_id || "",
       docketbirdLastSyncedAt: row.docketbird_last_synced_at,
+      nextEvent: row.next_event || "",
       defendantCount: row.defendant_count,
       archived: row.archived,
       mostRecentEditAt: row.most_recent_edit_at,
@@ -2312,6 +2318,43 @@ app.put("/api/litigation/cases/:id/docket-status", async (req, res) => {
   });
 
   res.json({ ok: true, docketStatus: docketStatus || "" });
+});
+
+app.put("/api/litigation/cases/:id/next-event", async (req, res) => {
+  const nextEvent = String(req.body?.nextEvent || "").trim();
+  if (nextEvent.length > 500) {
+    return res.status(400).json({ error: "Next event must be 500 characters or fewer." });
+  }
+
+  const existing = await query(
+    `SELECT c.id, state.next_event
+     FROM cases c
+     LEFT JOIN litigation_case_state state ON state.case_id = c.id
+     WHERE c.id = $1`,
+    [req.params.id]
+  );
+  if (!existing.rows.length) {
+    return res.status(404).json({ error: "Case not found." });
+  }
+
+  await query(
+    `INSERT INTO litigation_case_state
+      (case_id, archived, next_event)
+     VALUES ($1, FALSE, $2)
+     ON CONFLICT (case_id)
+     DO UPDATE SET next_event = EXCLUDED.next_event`,
+    [req.params.id, nextEvent || null]
+  );
+
+  await writeAuditLog(req, {
+    action: "litigation.case.next_event",
+    entityType: "case",
+    entityId: req.params.id,
+    before: { nextEvent: existing.rows[0].next_event || "" },
+    after: { nextEvent },
+  });
+
+  res.json({ ok: true, nextEvent });
 });
 
 app.put("/api/litigation/cases/:id/case-type", async (req, res) => {
