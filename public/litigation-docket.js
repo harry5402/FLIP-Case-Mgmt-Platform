@@ -161,6 +161,12 @@ const updateDocketStatus = (caseId, docketStatus) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ docketStatus }),
   });
+const updateNextEvent = (caseId, nextEvent) =>
+  fetchJson(`/api/litigation/cases/${caseId}/next-event`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nextEvent }),
+  });
 const updateCaseType = (caseId, caseType) =>
   fetchJson(`/api/litigation/cases/${caseId}/case-type`, {
     method: "PUT",
@@ -1258,6 +1264,17 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
             </select>
           </label>
           <span class="case-status-feedback docket-status-feedback"></span>
+          <label class="inline-select-field">
+            <span>Next Event</span>
+            <input
+              class="lit-input next-event-input"
+              type="text"
+              maxlength="500"
+              data-case-id="${item.id}"
+              value="${escapeHtml(item.nextEvent || "")}"
+            />
+          </label>
+          <span class="case-status-feedback next-event-feedback"></span>
           <button class="ghost-button edit-title-button" type="button">Edit Title</button>
         </div>
         <div class="litigation-case-status-row default-judgment-row${
@@ -1500,6 +1517,25 @@ const renderCases = async (tab, renderId = latestTabRenderId) => {
         caseStatusFeedback.textContent = error.message || "Unable to save status.";
       } finally {
         caseStatusSelect.disabled = false;
+      }
+    });
+    const nextEventInput = card.querySelector(".next-event-input");
+    const nextEventFeedback = card.querySelector(".next-event-feedback");
+    nextEventInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") nextEventInput.blur();
+    });
+    nextEventInput.addEventListener("change", async () => {
+      nextEventFeedback.textContent = "";
+      nextEventInput.disabled = true;
+      try {
+        const result = await updateNextEvent(item.id, nextEventInput.value.trim());
+        item.nextEvent = result.nextEvent || "";
+        nextEventInput.value = item.nextEvent;
+        nextEventFeedback.textContent = "Saved";
+      } catch (error) {
+        nextEventFeedback.textContent = error.message || "Unable to save next event.";
+      } finally {
+        nextEventInput.disabled = false;
       }
     });
     const caseTypeSelect = card.querySelector(".case-type-select");
