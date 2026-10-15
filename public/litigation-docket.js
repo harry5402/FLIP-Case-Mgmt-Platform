@@ -71,7 +71,7 @@ const docketStatusOptions = [
 const caseTypeOptions = ["", "Coresearch", "FAIKERZ", "Knobbe Martens"];
 const assetRestraintOptions = ["", "Yes", "No"];
 
-const docketCaseTabs = ["NDIL", "GAND", "NDIN", "WDPA", "EDWI", "WDTX", "EDTX", "UNFILED"];
+const docketCaseTabs = ["NDIL", "GAND", "NDIN", "WDPA", "EDWI", "WDTX", "EDTX", "EDMO", "UNFILED"];
 const LEAD_COUNSEL_ASSIGNEE = "__lead_counsel__";
 const DEFENDANT_ASSIGNEE = "__defendant__";
 const jurisdictionDisplayLabels = {
@@ -82,6 +82,7 @@ const jurisdictionDisplayLabels = {
   EDWI: "WIED",
   WDTX: "TXWD",
   EDTX: "TXED",
+  EDMO: "MOED",
   UNFILED: "UNFILED",
   MBFD: "Money Back to Doe",
   ARCHIVED: "ARCHIVED",
