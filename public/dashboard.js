@@ -13,6 +13,7 @@ const jurisdictionDisplayLabels = {
   WDTX: "TXWD",
   EDTX: "TXED",
   EDMO: "MOED",
+  SDIL: "ILSD",
   UNFILED: "UNFILED",
 };
 

@@ -52,6 +52,7 @@ const LITIGATION_TABS = [
   "WDTX",
   "EDTX",
   "EDMO",
+  "SDIL",
   "UNFILED",
   "MBFD",
   "ARCHIVED",
@@ -82,6 +83,7 @@ const DOCKETBIRD_COURT_ID_BY_JURISDICTION = {
   WDTX: "txwd",
   EDTX: "txed",
   EDMO: "moed",
+  SDIL: "ilsd",
 };
 
 const toDateOnly = (value) => {

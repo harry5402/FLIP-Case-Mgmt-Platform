@@ -58,7 +58,7 @@ Shared: `auth.js`, `nav.js`, `data.js` (case loading helpers), `styles.css`.
 ---
 
 ## Docket Page Specifics
-- Tabs (internal key → label): `NDIL ILND | GAND | NDIN INND | WDPA PAWD | EDWI WIED | WDTX TXWD | EDTX TXED | EDMO MOED | UNFILED | Collections | Money Back to Doe | ARCHIVED`
+- Tabs (internal key → label): `NDIL ILND | GAND | NDIN INND | WDPA PAWD | EDWI WIED | WDTX TXWD | EDTX TXED | EDMO MOED | SDIL ILSD | UNFILED | Collections | Money Back to Doe | ARCHIVED`
 - Adding a court: update every list named in the 2026-10-15 EDMO row of CLAUDE.md → Recent Changes (server tabs + DocketBird map, page tabs, both dropdowns, both label maps)
 - Collections tab (`data-tab="COLLECTIONS"`): unified view of non-archived cases with ≥1 collections row; inline editable per card with per-card Save; "New Case" button hidden on this tab
 - Docket cases sort by `cv-xxxxx` case number, not recent edit
