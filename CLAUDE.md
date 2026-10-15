@@ -3,6 +3,20 @@
 ## How to Use This File
 Read this at the start of every session. It tells you what the project is, how to classify the task, which skill file to load, and where things live.
 
+## FLIP Commands (for the maintainer)
+Project slash commands live in `.claude/skills/`. If the user seems unsure how to start, suggest `/flip-help`.
+
+| Command | Purpose |
+|---------|---------|
+| `/flip-help` | Lists these commands with plain-language descriptions (named `flip-help` because `/help` is built into Claude Code) |
+| `/new-change` | Investigate → plan rundown with risk rating → wait for approval |
+| `/go-live` | Checks → automated code review → risk summary + approval → deploy → confirm |
+| `/something-broken` | Troubleshooting flow (`skills/troubleshooting.md`) |
+| `/status` | Read-only: unfinished changes, last thing made live, site up? |
+| `/routine-care` | Walk through `docs/routine-care.md` |
+
+Other project settings (`.claude/settings.json`): Plan mode by default, "Plain language" output style (`.claude/output-styles/`), permission locks, and a pre-push hook (`.claude/hooks/pre-push-tests.sh`) that runs `npm test` and blocks the push if tests fail. When adding or changing a command, update this table **and** `/flip-help`.
+
 ---
 
 ## Project Overview
@@ -114,19 +128,22 @@ Run `git status` and `git branch` quietly. If there's unfinished work, describe 
 
 ### When the user says "push", "ship", "deploy", or "make it live"
 1. **Check:** run `npm test` and `node --check` on changed `.js` files, and verify UI changes in the test server (see Verification). If anything fails, fix it or explain it — never ship failing tests.
+   - **Update the docs in the same change** (follow `skills/docs.md`): if code was added, moved, or removed in `server.js`, re-check the **server.js Line Map** below against the real line numbers (`grep -n` the landmarks) and fix any range that's drifted more than ~50 lines. Also update the structure map, tables, endpoints, skill-file tables, and `docs/routine-care.md` if the change touched them, and add a **Recent Changes** row for new features. Docs go live with the code — never as a "later" task.
 2. **Review what's going out:** run `git status` / `git diff` and give the user a short plain-English summary of what will change on the live site.
-3. **Stage files by name** — never `git add -A` or `git add .`. Never commit `.env`, `.xlsx` workbooks, `import-report*.json`, `uploads/`, DocketBird files, or `.claude/`.
-4. **Commit** with a short message in the existing style: `Area: what changed` (e.g. `Trademark docket: fix billing filter`).
-5. **Push the branch** to GitHub (`git push -u origin <branch>`) — this does not deploy.
-6. **Ask for an explicit go-ahead before going live.** Say clearly: "This will update the live site," and **restate the risk rating** (🟢/🟡/🔴, see Risk ratings) with what could go wrong. Call out specifically, in plain language:
+3. **Stage files by name** — never `git add -A` or `git add .`. Never commit `.env`, `.xlsx` workbooks, `import-report*.json`, `uploads/`, DocketBird files, `.claude/settings.local.json`, or `.claude/worktrees/` (the rest of `.claude/` is shared project config and *should* be committed when changed).
+4. **Automated code review:** invoke the `code-review` skill on the change (draft vs `main`). Fix real bugs it finds and re-run the tests; if it finds something you can't confidently fix or that raises the risk, stop and explain. Tell the user the result in one plain sentence.
+5. **Commit** with a short message in the existing style: `Area: what changed` (e.g. `Trademark docket: fix billing filter`).
+6. **Push the branch** to GitHub (`git push -u origin <branch>`) — this does not deploy.
+7. **Ask for an explicit go-ahead before going live.** Say clearly: "This will update the live site," and **restate the risk rating** (🟢/🟡/🔴, see Risk ratings) with what could go wrong. Call out specifically, in plain language:
    - A database migration (it runs against production automatically when the new version starts, and a rollback won't undo it)
    - Anything that changes or removes existing data
    - Changes to login, sessions, or user permissions
    - Changes to email/Teams sending, DocketBird sync, or the scheduler
    - For 🔴 High: repeat the recommendation to get a technical review, and require the same explicit confirmation as at the plan step.
+   - **Going live logs everyone out** (logins are kept in server memory, and the server restarts on every deploy). Tell the user, and suggest a quiet moment for any change.
    - Suggest timing for 🟡/🔴 changes: go live early in the day when staff are around to notice problems — not late on a Friday or right before a filing deadline.
-7. **On a clear yes:** `git checkout main && git pull`, `git merge <branch>`, run `npm test` again, then `git push origin main`. Delete the branch afterwards.
-8. **Confirm the deploy:** wait ~3 minutes, then `curl -sI https://www.flipcasemgmt.com` should return `200`. Tell the user to glance at Railway → Deployments to confirm the newest one says Success, and to spot-check the changed page.
+8. **On a clear yes:** `git checkout main && git pull`, `git merge <branch>`, run `npm test` again, then `git push origin main`. Delete the branch afterwards. Tell the user to expect a permission prompt for the push and to click Allow; the pre-push hook also re-runs the tests and blocks the push if they fail.
+9. **Confirm the deploy:** wait ~3 minutes, then `curl -sI https://www.flipcasemgmt.com` should return `200`. Tell the user to glance at Railway → Deployments to confirm the newest one says Success, and to spot-check the changed page.
 
 ### If something goes wrong
 - **Merge conflict:** resolve it yourself, explain in one sentence what overlapped, re-run tests before pushing.
@@ -144,6 +161,7 @@ Run `git status` and `git branch` quietly. If there's unfinished work, describe 
 | Pages in `public/`, UI, styling, client-side JS, `auth.js` usage | `skills/frontend.md` |
 | Finding vulnerabilities, testing auth/access control, security review | `skills/pen-testing.md` |
 | Load testing, performance, DB connection behavior under traffic | `skills/stress-testing.md` |
+| Something broken, not working, or looks wrong | `skills/troubleshooting.md` |
 | Updating this file after a structural change to the codebase | `skills/docs.md` |
 
 **Spans two lanes?** Load both skill files. Most features touch backend + frontend together.
@@ -154,7 +172,7 @@ Run `git status` and `git branch` quietly. If there's unfinished work, describe 
 
 ```
 /
-├── server.js                        # Everything: all routes, migrations, business logic, scheduler (~4400 lines)
+├── server.js                        # Everything: all routes, migrations, business logic, scheduler (~5,350 lines)
 ├── db.js                            # Postgres pool + query() helper
 ├── lib/
 │   ├── trademark.js                 # Trademark constants + pure helpers (dates, matter nos., suggestions)
@@ -179,6 +197,9 @@ Run `git status` and `git branch` quietly. If there's unfinished work, describe 
 │   ├── users.html + users.js        # Admin-only user management
 │   └── weekly-report.html + .js     # Weekly task completion reports
 ├── routes/                          # email.js, automations.js, trademark.js (/api/trademark/*)
+├── .claude/                         # settings.json (Plan mode, locks, hook, output style), skills/ (FLIP commands), hooks/, output-styles/, launch.json
+├── docs/
+│   └── routine-care.md              # Weekly/monthly/yearly upkeep checklist — walk the user through it when asked
 ├── data/                            # Supporting data files
 ├── uploads/                         # Uploaded files
 └── skills/
@@ -186,14 +207,35 @@ Run `git status` and `git branch` quietly. If there's unfinished work, describe 
     ├── frontend.md
     ├── pen-testing.md
     ├── stress-testing.md
+    ├── troubleshooting.md
     └── docs.md
 ```
 
 ---
 
 ## server.js Line Map
+Approximate (±50 lines) as of 2026-10-15 — ~5,350 lines total. This is the single source; skill files point here.
+
 | Lines | What's There |
 |-------|-------------|
+| 1–192 | Config, constants, helpers (`hashPassword`, `withTransaction`, etc.) |
+| 193–349 | Static file serving, in-memory `sessions` Map (~206), CORS, `requireSession` / `requireAdmin` |
+| 350–759 | DB migration functions (`ensureAuditLogTable`, `ensureLitigationTables`, etc.) |
+| 760–971 | Business logic helpers (`syncLitigationTasks`, `generateWeeklyReport`, `ensureAdminUser`) |
+| 972–1383 | Auth routes + user management |
+| 1384 | `app.use("/api", requireSession)` — all protected routes registered after this |
+| 1393–2750 | Litigation/docket routes (MBFD, cases, entries, actions, collections, archive, DocketBird) |
+| 2753–3400 | Task routes (`/api/tasks/my`, `/api/tasks`, complete, state, general tasks, templates upload) |
+| 3403–4870 | Cases, IP claims, defendants, groups, listings |
+| 4873–4934 | Defendant bookkeeping-entries CRUD |
+| 4935–5105 | Defendant negotiation, collection, bookkeeping (legacy) routes |
+| 5108–5148 | Weekly report routes |
+| 5149–5221 | Email integration tables |
+| 5222–5237 | Route modules registered: `routes/email.js`, `routes/trademark.js`, automations router |
+| 5238 | `/api` 404 catch-all |
+| 5270–5356 | `start()` — runs all migrations (incl. `ensureTrademarkTables`), Friday cron, weekly report scheduler, `app.listen` |
+
+-------|-------------|
 | 1–175 | Config, constants, helpers (`hashPassword`, `withTransaction`, etc.) |
 | 176–344 | Static file serving, session/CORS setup |
 | 345–919 | DB migration functions (`ensureAuditLogTable`, `ensureLitigationTables`, etc.) |
@@ -250,9 +292,10 @@ Run `git status` and `git branch` quietly. If there's unfinished work, describe 
 ## Critical Rules (Non-Negotiable)
 - The local DB is production — never remove, archive, hide, or overwrite real data; only test records you created this session may be deleted (see the production section at the top)
 - Explain the plan and get a go-ahead before touching any file; get a second go-ahead before anything goes live
+- Every change that adds features or moves code updates the line map and other CLAUDE.md/skill docs **before it goes live** (see `skills/docs.md`)
 - `cases.status` ≠ `litigation_case_state.docket_status` — completely separate fields for separate purposes
 - Due dates: always use `internalDueDate`; fall back to `finalDueDate` only if null — never reverse this
-- All new protected routes must be registered AFTER `app.use("/api", requireSession)` at line ~1250
+- All new protected routes must be registered AFTER `app.use("/api", requireSession)` at line ~1384
 - All multi-step writes must use `withTransaction()`
 - All significant mutations must write to `audit_logs`
 - DocketBird sync failures must NOT crash the app — catch and log only

@@ -1,7 +1,9 @@
-# Documentation Agent Skill File — FLIP Case Management
+# Documentation Agent Skill File — FLIP Matter Management
 
 ## Role
-Keep `CLAUDE.md` accurate after any task that modifies the codebase. Run at the end of those tasks only — not independently. Update structure, not narrative.
+Keep `CLAUDE.md`, the skill files, and `docs/routine-care.md` accurate after any task that modifies the codebase. Run at the end of those tasks only — not independently. Update structure, not narrative.
+
+The maintainer relies on Claude to navigate the codebase, so stale docs cost them more than they'd cost a developer. Keep these files current.
 
 ---
 
@@ -28,6 +30,13 @@ Do NOT run for:
 - **server.js line map** — did new route blocks shift the line ranges?
 - **Key database tables** — new table added by a migration? Column added that changes behavior?
 - **Active endpoints table** — new routes added or old ones removed?
+
+### Also check:
+- **`skills/backend.md` / `skills/frontend.md`** — "Where Things Live", "Pages", "Side Effects", and "Common Requests" tables when files, pages, or notification behaviour change
+- **FLIP commands** — if a command in `.claude/skills/` is added, renamed, or changes what it does, update both the commands table at the top of `CLAUDE.md` and `.claude/skills/flip-help/SKILL.md`
+- **`docs/routine-care.md`** — when an external service, scheduled job, secret, or notification path is added, removed, or changes (e.g. a new API key → add it to the yearly rotation list)
+
+The server.js line map lives **only** in `CLAUDE.md` — don't copy it into skill files.
 
 ### Never touch:
 - Task classification / routing table
