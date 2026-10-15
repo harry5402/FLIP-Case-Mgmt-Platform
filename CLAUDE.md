@@ -9,7 +9,8 @@ Project slash commands live in `.claude/skills/`. If the user seems unsure how t
 | Command | Purpose |
 |---------|---------|
 | `/flip-help` | Lists these commands with plain-language descriptions (named `flip-help` because `/help` is built into Claude Code) |
-| `/new-change` | Investigate → plan rundown with risk rating → wait for approval |
+| `/new-change` | Investigate → plan rundown with risk rating + impact picture → wait for approval |
+| `/show-me` | Picture of the platform, or of what a change affects — drawn from `docs/system-map.md` |
 | `/go-live` | Checks → automated code review → risk summary + approval → deploy → confirm |
 | `/something-broken` | Troubleshooting flow (`skills/troubleshooting.md`) |
 | `/status` | Read-only: unfinished changes, last thing made live, site up? |
@@ -199,7 +200,8 @@ Run `git status` and `git branch` quietly. If there's unfinished work, describe 
 ├── routes/                          # email.js, automations.js, trademark.js (/api/trademark/*)
 ├── .claude/                         # settings.json (Plan mode, locks, hook, output style), skills/ (FLIP commands), hooks/, output-styles/, launch.json
 ├── docs/
-│   └── routine-care.md              # Weekly/monthly/yearly upkeep checklist — walk the user through it when asked
+│   ├── routine-care.md              # Weekly/monthly/yearly upkeep checklist — walk the user through it when asked
+│   └── system-map.md                # Plain-language map of pages → server → database → outside services; source for /show-me
 ├── data/                            # Supporting data files
 ├── uploads/                         # Uploaded files
 └── skills/

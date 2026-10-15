@@ -34,6 +34,7 @@ Do NOT run for:
 ### Also check:
 - **`skills/backend.md` / `skills/frontend.md`** — "Where Things Live", "Pages", "Side Effects", and "Common Requests" tables when files, pages, or notification behaviour change
 - **FLIP commands** — if a command in `.claude/skills/` is added, renamed, or changes what it does, update both the commands table at the top of `CLAUDE.md` and `.claude/skills/flip-help/SKILL.md`
+- **`docs/system-map.md`** — when a page, server area, table, outside service, or connection (especially anything that messages people) is added, moved, or removed. `/show-me` draws only what's in this file, so a stale map means a wrong picture
 - **`docs/routine-care.md`** — when an external service, scheduled job, secret, or notification path is added, removed, or changes (e.g. a new API key → add it to the yearly rotation list)
 
 The server.js line map lives **only** in `CLAUDE.md` — don't copy it into skill files.

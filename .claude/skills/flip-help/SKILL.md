@@ -11,7 +11,8 @@ Show the user exactly this (you can adjust spacing, but keep the wording):
 
 | Command | What it does |
 |---------|--------------|
-| `/new-change` | Start a new change. Describe what you want (e.g. `/new-change add a "critical" flag to docket cases`) and Claude will look into it and explain a plan before touching anything. |
+| `/new-change` | Start a new change. Describe what you want (e.g. `/new-change add a "critical" flag to docket cases`) and Claude will look into it, show you a picture of what it affects, and explain a plan before touching anything. |
+| `/show-me` | See a picture of how the platform fits together (`/show-me`), or what a change would affect (`/show-me adding a critical flag`, or `/show-me my change`). |
 | `/go-live` | Make a finished change live on the website. Claude runs the checks, reviews its own work, tells you the risk, and asks before anything goes live. |
 | `/something-broken` | Report a problem (e.g. `/something-broken the docket page won't load`). Claude investigates, tells you how serious it is, and what to do right now. |
 | `/status` | See what's going on: any unfinished changes, what was last made live, and whether the site is up. |
