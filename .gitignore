@@ -6,3 +6,7 @@ uploads/
 # Trademark workbook imports — never commit client data
 *.xlsx
 import-report*.json
+
+# Claude Code: personal settings and worktrees stay local
+.claude/settings.local.json
+.claude/worktrees/
