@@ -32,7 +32,7 @@ Handle UI, pages, client-side logic, and styling across the static frontend in `
 | `index.html` + `dashboard.js` | Dashboard: My Tasks + Cases list |
 | `weekly-tasklist.html` + `.js` | All open tasks grouped by day/overdue |
 | `litigation-docket.html` + `.js` | Docket tabs, actions, collections, Money Back to Doe |
-| `trademark-docket.html` + `.js` | Trademark docket: stage / portfolio / billing / to-do / client views |
+| `trademark-docket.html` + `.js` | Trademark docket: stage / portfolio / billing / to-do / client views; ▸ Tasks panel under each item row (`?tasks=<itemId>` opens it) |
 | `case.html` + `case.js` | Individual case page |
 | `new-case.html` + `.js` | Create a case |
 | `defendant.html` + `.js` | Individual defendant page |

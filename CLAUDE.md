@@ -173,11 +173,12 @@ Run `git status` and `git branch` quietly. If there's unfinished work, describe 
 
 ```
 /
-├── server.js                        # Everything: all routes, migrations, business logic, scheduler (~5,350 lines)
+├── server.js                        # Everything: all routes, migrations, business logic, scheduler (~5,420 lines)
 ├── db.js                            # Postgres pool + query() helper
 ├── lib/
 │   ├── trademark.js                 # Trademark constants + pure helpers (dates, matter nos., suggestions)
 │   ├── trademark-schema.js          # ensureTrademarkTables() — awaited in start()
+│   ├── trademark-tasks.js           # Trademark item tasks: load, mirror into `tasks`, completion cascade
 │   └── trademark-import.js          # Pure workbook → import-plan mapping
 ├── scripts/
 │   └── import-trademark-workbook.js # CLI importer (dry run by default; --commit). Never commit the .xlsx
@@ -216,7 +217,7 @@ Run `git status` and `git branch` quietly. If there's unfinished work, describe 
 ---
 
 ## server.js Line Map
-Approximate (±50 lines) as of 2026-10-15 — ~5,350 lines total. This is the single source; skill files point here.
+Approximate (±50 lines) as of 2026-10-21 — ~5,420 lines total. This is the single source; skill files point here.
 
 | Lines | What's There |
 |-------|-------------|
@@ -224,18 +225,18 @@ Approximate (±50 lines) as of 2026-10-15 — ~5,350 lines total. This is the si
 | 193–349 | Static file serving, in-memory `sessions` Map (~206), CORS, `requireSession` / `requireAdmin` |
 | 350–759 | DB migration functions (`ensureAuditLogTable`, `ensureLitigationTables`, etc.) |
 | 760–971 | Business logic helpers (`syncLitigationTasks`, `generateWeeklyReport`, `ensureAdminUser`) |
-| 972–1383 | Auth routes + user management |
-| 1384 | `app.use("/api", requireSession)` — all protected routes registered after this |
-| 1393–2750 | Litigation/docket routes (MBFD, cases, entries, actions, collections, archive, DocketBird) |
-| 2753–3400 | Task routes (`/api/tasks/my`, `/api/tasks`, complete, state, general tasks, templates upload) |
-| 3403–4870 | Cases, IP claims, defendants, groups, listings |
-| 4873–4934 | Defendant bookkeeping-entries CRUD |
-| 4935–5105 | Defendant negotiation, collection, bookkeeping (legacy) routes |
-| 5108–5148 | Weekly report routes |
-| 5149–5221 | Email integration tables |
-| 5222–5237 | Route modules registered: `routes/email.js`, `routes/trademark.js`, automations router |
-| 5238 | `/api` 404 catch-all |
-| 5270–5356 | `start()` — runs all migrations (incl. `ensureTrademarkTables`), Friday cron, weekly report scheduler, `app.listen` |
+| 972–1408 | Auth routes + user management |
+| 1409 | `app.use("/api", requireSession)` — all protected routes registered after this |
+| 1418–2775 | Litigation/docket routes (MBFD, cases, entries, actions, collections, archive, DocketBird) |
+| 2778–3465 | Task routes (`/api/tasks/my`, `/api/tasks`, complete, state, general tasks, templates upload); complete/state also cascade to trademark tasks |
+| 3468–4935 | Cases, IP claims, defendants, groups, listings |
+| 4938–4999 | Defendant bookkeeping-entries CRUD |
+| 5000–5170 | Defendant negotiation, collection, bookkeeping (legacy) routes |
+| 5173–5212 | Weekly report routes |
+| 5214–5284 | Email integration tables |
+| 5285–5302 | Route modules registered: `routes/email.js`, `routes/trademark.js`, automations router |
+| 5303 | `/api` 404 catch-all |
+| 5335–5421 | `start()` — runs all migrations (incl. `ensureTrademarkTables`), Friday cron, weekly report scheduler, `app.listen` |
 
 -------|-------------|
 | 1–175 | Config, constants, helpers (`hashPassword`, `withTransaction`, etc.) |
@@ -273,6 +274,7 @@ Approximate (±50 lines) as of 2026-10-15 — ~5,350 lines total. This is the si
 | `trademark_matters` | One per firm matter no. (`matter_no_norm` unique); `application_status` (CHECK list in `lib/trademark.js`) |
 | `trademark_docket_items` | One row per docket task; `stage` discriminator, `internal_due_date`/`response_due_date`, `work_state`, 5 billing flags, `is_closed`, `is_hidden`, `import_key` |
 | `trademark_item_deadlines` / `trademark_todos` / `trademark_billing_questions` / `trademark_import_batches` | Extra dates per item; To Do & Sort; billing Q&A; importer runs |
+| `trademark_item_tasks` / `trademark_item_task_collaborators` | Assignable tasks under a docket item (like `litigation_actions`); mirrored into `tasks` via `tasks.source_trademark_task_id` (`task_type` `Trademark: …`) by `lib/trademark-tasks.js` |
 
 ---
 
@@ -288,6 +290,8 @@ Approximate (±50 lines) as of 2026-10-15 — ~5,350 lines total. This is the si
 | POST | `/api/weekly-reports/generate` | Manually generate weekly report (admin) |
 | GET | `/api/trademark/items?view=` | Trademark docket list (due, stage, portfolio, ready_to_bill, unbilled_closed, review, closed) |
 | PUT | `/api/trademark/items/:id/state` | Work state / close / soft-delete; 409 `UNBILLED` unless `confirmUnbilled` |
+| GET/PUT | `/api/trademark/items/:id/tasks` | An item's tasks; PUT saves the list, syncs My Tasks, Teams-notifies new assignees |
+| PUT | `/api/trademark/item-tasks/:id/state` | Task (or one collaborator's) in progress / complete / remove |
 
 ---
 
@@ -297,7 +301,7 @@ Approximate (±50 lines) as of 2026-10-15 — ~5,350 lines total. This is the si
 - Every change that adds features or moves code updates the line map and other CLAUDE.md/skill docs **before it goes live** (see `skills/docs.md`)
 - `cases.status` ≠ `litigation_case_state.docket_status` — completely separate fields for separate purposes
 - Due dates: always use `internalDueDate`; fall back to `finalDueDate` only if null — never reverse this
-- All new protected routes must be registered AFTER `app.use("/api", requireSession)` at line ~1384
+- All new protected routes must be registered AFTER `app.use("/api", requireSession)` at line ~1409
 - All multi-step writes must use `withTransaction()`
 - All significant mutations must write to `audit_logs`
 - DocketBird sync failures must NOT crash the app — catch and log only
@@ -318,5 +322,6 @@ Approximate (±50 lines) as of 2026-10-15 — ~5,350 lines total. This is the si
 | 2026-06-18 | Routing system initialized — skill files created, CLAUDE.md converted to router format |
 | 2026-10-07 | Trademark Docket added (lib/trademark*, routes/trademark.js, trademark-docket page, workbook importer, node:test suite). Design: TRADEMARK_DOCKET_DESIGN.md |
 | 2026-10-15 | Handoff to a non-technical, AI-assisted maintainer: local DB flagged as production (no removing real data; self-cleaned test data allowed); plan-before-code rule with Low/Medium/High risk ratings; Claude verifies UI changes in the test server; plain-language Shipping Changes guide; `.claude/settings.json` adds Plan mode default + permission locks |
+| 2026-10-21 | Trademark docket item tasks: ▸ Tasks panel on every item row (assignee, collaborators, internal/final due, notes, progress/complete); tasks show in My Tasks / Weekly Task List / Friday reminder / weekly report and Teams-notify assignees. New `trademark_item_tasks`, `trademark_item_task_collaborators`, `tasks.source_trademark_task_id`; `lib/trademark-tasks.js` |
 | 2026-10-15 | Litigation docket: added Eastern District of Missouri — key `EDMO`, shown as `MOED`, DocketBird court `moed`. Court lists live in `server.js` (`LITIGATION_TABS`, `DOCKETBIRD_COURT_ID_BY_JURISDICTION`), `litigation-docket.js`/`.html` (tabs + 2 dropdowns) and `dashboard.js` (labels) — update all of them when adding a court |
 | 2026-10-15 | Litigation docket: added Southern District of Illinois — key `SDIL`, shown as `ILSD`, DocketBird court `ilsd` (same lists as EDMO) |

@@ -37,7 +37,7 @@ Box IDs are used in the Connections section. Labels are what appears in the pict
 |----|-------|--------|
 | D-users | Users | `users` (logins themselves are in server memory, not the database) |
 | D-lit | Docket records | `litigation_case_state`, `litigation_actions`, `litigation_action_collaborators`, `litigation_collections`, `mbfd_items` |
-| D-tm | Trademark matters | `trademark_clients`, `trademark_matters`, `trademark_docket_items`, `trademark_item_deadlines`, `trademark_todos`, `trademark_billing_questions`, `trademark_import_batches` |
+| D-tm | Trademark matters | `trademark_clients`, `trademark_matters`, `trademark_docket_items`, `trademark_item_deadlines`, `trademark_item_tasks`, `trademark_item_task_collaborators`, `trademark_todos`, `trademark_billing_questions`, `trademark_import_batches` |
 | D-case | Cases, defendants | `cases`, `defendants`, `groups`, `ip_claims`, `listings`, `negotiations`, `group_negotiations`, `collections`, `bookkeeping`, `defendant_bookkeeping_entries`, `case_templates`, `docket_entries` |
 | D-tasks | Tasks and reports | `tasks`, `weekly_reports` |
 | D-email | Email links | `ms_connected_accounts`, `email_folder_mappings`, `email_thread_defendants`, `email_triage_queue` |
@@ -59,7 +59,7 @@ Box IDs are used in the Connections section. Labels are what appears in the pict
 Normal page → server → database flows:
 - P-dash → S-tasks, S-case → D-tasks, D-case
 - P-lit → S-lit → D-lit, D-tasks (docket actions create tasks via `syncLitigationTasks`)
-- P-tm → S-tm → D-tm
+- P-tm → S-tm → D-tm, D-tasks (trademark item tasks create tasks via `syncItemTaskMirrors` in `lib/trademark-tasks.js`)
 - P-case → S-case → D-case
 - P-tasks → S-tasks → D-tasks
 - P-users → S-auth → D-users
@@ -70,6 +70,7 @@ Normal page → server → database flows:
 Connections that reach **real people or paid services** — always call these out:
 - S-tasks → X-teams: **assigning a task sends the person a Teams message**; Friday 9 AM ET overdue reminders
 - S-lit → X-teams: **assigning a docket action sends a Teams message**
+- S-tm → X-teams: **assigning a trademark item task sends a Teams message**
 - S-email → X-email: sending email
 - S-email → X-ai: email triage
 - S-lit → X-db: DocketBird link / suggest / sync

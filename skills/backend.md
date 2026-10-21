@@ -30,6 +30,7 @@ Handle API routes, database access, auth, business logic, and scheduled jobs —
 | `routes/automations.js` | `/api/automations/*` — Playwright-driven jobs (e.g. Exhibit 2 PDF generation) |
 | `lib/trademark.js` | Trademark constants + pure helpers (dates, matter numbers, status list) |
 | `lib/trademark-schema.js` | `ensureTrademarkTables()` — trademark migrations |
+| `lib/trademark-tasks.js` | Trademark item tasks: load, mirror into `tasks` (`syncItemTaskMirrors`), completion/progress cascade from My Tasks |
 | `lib/trademark-import.js` | Workbook → import-plan mapping (pure) |
 | `scripts/import-trademark-workbook.js` | CLI importer — dry run by default; `--commit` writes to the DB (blocked for Claude) |
 | `schema.sql` | Reference only — not auto-run; real migrations are the `ensure*` functions |
@@ -60,13 +61,14 @@ See CLAUDE.md's **Key Database Tables** for the full list (litigation, tasks, tr
 - Due dates: always use `internalDueDate`; fall back to `finalDueDate` only if null — never reverse this
 - Docket tasks are rows in `tasks` with `task_type LIKE 'Docket:%'` and a `source_litigation_action_id` — sync via `syncLitigationTasks()`, do not manipulate directly
 - Completing a docket task as owner → marks `litigation_actions` complete + cascades to collaborator tasks; as collaborator → marks only `litigation_action_collaborators` row
+- Trademark item tasks work the same way: rows in `tasks` with `task_type LIKE 'Trademark:%'` and a `source_trademark_task_id`, rebuilt by `syncItemTaskMirrors()` in `lib/trademark-tasks.js`; deleting an item drops its tasks from My Tasks
 - Trademark items: closing an item with unbilled flags returns 409 `UNBILLED` unless `confirmUnbilled` is sent
 
 ---
 
 ## Side Effects to Watch For
 These reach real people — flag them in the plan and never trigger them with test data:
-- **Assigning a task or docket action to a user sends them a Teams DM** (`notifyTaskAssigned`, called from `server.js` ~2055, ~2944, ~2997)
+- **Assigning a task, docket action or trademark item task to a user sends them a Teams DM** (`notifyTaskAssigned`, called from `server.js` ~2080, ~3001, ~3054 and `PUT /api/trademark/items/:id/tasks` in `routes/trademark.js`)
 - Teams messages are sent from the **first connected Microsoft account** (`getDefaultSendingAccount` in `routes/email.js`)
 - `POST /api/email/send` sends real email; `/api/email/test-teams` sends a real Teams message
 - DocketBird calls hit an external paid API
@@ -82,7 +84,7 @@ These reach real people — flag them in the plan and never trigger them with te
 | Changing sorting, filtering, or calculations staff rely on (due dates, collections totals) | 🟡 Medium — 🔴 if due dates are involved |
 | Anything in auth, sessions, passwords, `requireAdmin`, user permissions | 🔴 High |
 | Changing or removing existing columns/data, or a migration that rewrites rows | 🔴 High |
-| Task-completion cascade, `syncLitigationTasks`, trademark billing flags | 🔴 High |
+| Task-completion cascade, `syncLitigationTasks`, `lib/trademark-tasks.js`, trademark billing flags | 🔴 High |
 | Email/Teams sending, DocketBird sync, the scheduler, automations | 🔴 High |
 | `package.json` dependency changes | 🔴 High |
 

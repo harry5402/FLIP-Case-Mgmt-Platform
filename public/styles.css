@@ -1982,3 +1982,35 @@ body.sidebar-collapsed .app-sidebar-footer {
   gap: 4px;
   color: var(--muted);
 }
+
+/* Trademark docket — task panel under each item row */
+.tm-task-toggle {
+  white-space: nowrap;
+}
+
+.tm-table tbody tr.tm-task-row:hover {
+  background: none;
+}
+
+.tm-task-row > td {
+  background: #fbf7f1;
+  padding: 10px 12px 14px;
+}
+
+.tm-task-panel {
+  display: grid;
+  gap: 8px;
+}
+
+.tm-task-panel-head,
+.tm-task-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.tm-task-table {
+  min-width: 900px;
+  background: var(--card);
+}

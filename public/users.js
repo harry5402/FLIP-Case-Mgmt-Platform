@@ -178,6 +178,7 @@ const openRemoveUserModal = async (user) => {
     summary.collaborations ? pluralize(summary.collaborations, "docket collaboration") : null,
     summary.trademarkItems ? pluralize(summary.trademarkItems, "trademark item") : null,
     summary.trademarkTodos ? pluralize(summary.trademarkTodos, "trademark to-do") : null,
+    summary.trademarkTasks ? pluralize(summary.trademarkTasks, "trademark task") : null,
   ].filter(Boolean);
   const others = allUsers.filter((u) => u.id !== user.id);
   removeBody.innerHTML = `

@@ -3,6 +3,7 @@
 // route here requires a session. Mutations are audit-logged as
 // trademark.<entity>.<verb>; multi-step writes use withTransaction.
 const tm = require("../lib/trademark");
+const tmTasks = require("../lib/trademark-tasks");
 
 const MAX_TEXT = 10000;
 
@@ -195,7 +196,9 @@ const ITEM_SELECT = `
          c.id AS client_id, c.name AS client_name, c.is_unresponsive, c.payment_risk,
          u.name AS assigned_to_name,
          (SELECT COUNT(*)::int FROM trademark_item_deadlines td
-           WHERE td.item_id = i.id AND NOT td.is_hidden AND NOT td.is_done) AS open_deadline_count
+           WHERE td.item_id = i.id AND NOT td.is_hidden AND NOT td.is_done) AS open_deadline_count,
+         (SELECT COUNT(*)::int FROM trademark_item_tasks tt
+           WHERE tt.item_id = i.id AND NOT tt.is_hidden AND NOT tt.is_completed) AS open_task_count
   FROM trademark_docket_items i
   JOIN trademark_matters m ON m.id = i.matter_id
   LEFT JOIN trademark_clients c ON c.id = m.client_id
@@ -248,6 +251,7 @@ const mapItem = (r) => ({
   sourceRow: r.source_row,
   extra: r.extra || {},
   openDeadlineCount: r.open_deadline_count || 0,
+  openTaskCount: r.open_task_count || 0,
   updatedAt: r.updated_at,
   updatedBy: r.updated_by,
   matter: {
@@ -427,7 +431,7 @@ const makeRequireTrademarkAccess = (query) => async (req, res, next) => {
   }
 };
 
-function registerTrademarkRoutes(app, { query, withTransaction, writeAuditLog, requireAdmin }) {
+function registerTrademarkRoutes(app, { query, withTransaction, writeAuditLog, requireAdmin, notifyTaskAssigned = null }) {
   const base = "/api/trademark";
   app.use(base, makeRequireTrademarkAccess(query));
 
@@ -691,7 +695,15 @@ function registerTrademarkRoutes(app, { query, withTransaction, writeAuditLog, r
     }
     if (Object.keys(fields).length) {
       const upd = buildUpdate("trademark_docket_items", req.params.id, fields, actor);
-      await query(upd.text, upd.values);
+      if (isHidden !== undefined && isHidden !== before.isHidden) {
+        // Deleting/restoring an item drops/restores its tasks in My Tasks.
+        await withTransaction(async (db) => {
+          await db.query(upd.text, upd.values);
+          await tmTasks.syncItemTaskMirrors(db, req.params.id, req.session?.userId || null);
+        });
+      } else {
+        await query(upd.text, upd.values);
+      }
     }
     const after = await loadItem(req.params.id);
     let action = "trademark.item.state";
@@ -701,6 +713,153 @@ function registerTrademarkRoutes(app, { query, withTransaction, writeAuditLog, r
     else if (fields.is_closed === false) action = "trademark.item.reopen";
     await writeAuditLog(req, { action, entityType: "trademark_item", entityId: req.params.id, before, after });
     res.json({ item: after });
+  }));
+
+  // ---- Item tasks (assignable, like litigation docket actions) ---------------
+  const itemTaskLabel = (item) =>
+    [item.matter.matterNo, item.brand || item.matter.markText || item.matter.title].filter(Boolean).join(" – ") || null;
+
+  app.get(`${base}/items/:id/tasks`, handle(async (req, res) => {
+    uuidField(req.params.id, "item");
+    res.json({ tasks: await tmTasks.loadItemTasks({ query }, req.params.id) });
+  }));
+
+  // Saves the item's task list (new rows have no id). Tasks left out are kept;
+  // removing one goes through /item-tasks/:id/state with isHidden.
+  app.put(`${base}/items/:id/tasks`, handle(async (req, res) => {
+    const input = req.body?.tasks;
+    if (!Array.isArray(input)) throw new ValidationError("tasks must be a list.");
+    if (input.length > 100) throw new ValidationError("Too many tasks on one item.");
+    const entries = input
+      .map((t) => {
+        const entry = t || {};
+        const collaborators = entry.collaboratorUserIds === undefined ? [] : entry.collaboratorUserIds;
+        if (!Array.isArray(collaborators)) throw new ValidationError("Collaborators must be a list.");
+        return {
+          id: uuidField(entry.id, "task") || null,
+          action: textField(entry.action, "Task") || null,
+          internalDueDate: dateField(entry.internalDueDate, "Internal due date") || null,
+          finalDueDate: dateField(entry.finalDueDate, "Final due date") || null,
+          notes: textField(entry.notes, "Notes") || null,
+          assignedToUserId: uuidField(entry.assignedToUserId, "assignee") || null,
+          collaboratorUserIds: collaborators.map((c) => uuidField(c, "collaborator")).filter(Boolean),
+        };
+      })
+      .filter((e) => e.id || e.action || e.assignedToUserId || e.internalDueDate || e.finalDueDate || e.notes);
+    if (entries.some((e) => !e.action)) throw new ValidationError("Each task needs a description.");
+
+    const item = await loadItem(req.params.id);
+    if (!item) return res.status(404).json({ error: "Item not found." });
+    const actor = actorOf(req);
+    const sessionUserId = req.session?.userId || null;
+    const toNotify = [];
+
+    await withTransaction(async (db) => {
+      for (let i = 0; i < entries.length; i += 1) {
+        const e = entries[i];
+        let taskId = e.id;
+        if (taskId) {
+          const prev = await db.query(
+            "SELECT assigned_to_user_id FROM trademark_item_tasks WHERE id = $1 AND item_id = $2",
+            [taskId, req.params.id]
+          );
+          if (!prev.rows.length) throw new ValidationError("A task in the list doesn't belong to this item.");
+          const prevAssignee = prev.rows[0].assigned_to_user_id || null;
+          if (e.assignedToUserId && e.assignedToUserId !== prevAssignee && e.assignedToUserId !== sessionUserId) {
+            toNotify.push(e);
+          }
+          await db.query(
+            `UPDATE trademark_item_tasks
+             SET action = $2, internal_due_date = $3, final_due_date = $4, notes = $5,
+                 assigned_to_user_id = $6, sort_order = $7, updated_at = NOW(), updated_by = $8
+             WHERE id = $1`,
+            [taskId, e.action, e.internalDueDate, e.finalDueDate, e.notes, e.assignedToUserId, i, actor]
+          );
+        } else {
+          if (e.assignedToUserId && e.assignedToUserId !== sessionUserId) toNotify.push(e);
+          taskId = (await db.query(
+            `INSERT INTO trademark_item_tasks
+              (item_id, action, internal_due_date, final_due_date, notes, assigned_to_user_id, sort_order, updated_by)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING id`,
+            [req.params.id, e.action, e.internalDueDate, e.finalDueDate, e.notes, e.assignedToUserId, i, actor]
+          )).rows[0].id;
+        }
+        await tmTasks.syncCollaborators(db, taskId, tmTasks.normalizeCollaboratorIds(e.collaboratorUserIds, e.assignedToUserId));
+      }
+      await tmTasks.syncItemTaskMirrors(db, req.params.id, sessionUserId);
+    });
+
+    const tasks = await tmTasks.loadItemTasks({ query }, req.params.id);
+    await writeAuditLog(req, {
+      action: "trademark.item.tasks.save",
+      entityType: "trademark_item",
+      entityId: req.params.id,
+      before: null,
+      after: { count: entries.length, tasks: tasks.map((t) => ({ id: t.id, action: t.action, assignedToUserId: t.assignedToUserId })) },
+    });
+    res.json({ tasks, item: await loadItem(req.params.id) });
+
+    // Teams notifications after responding — never block or fail the save.
+    if (notifyTaskAssigned && toNotify.length) {
+      const caseName = itemTaskLabel(item);
+      for (const n of toNotify) {
+        (async () => {
+          try {
+            const userRow = await query("SELECT email FROM users WHERE id = $1", [n.assignedToUserId]);
+            if (userRow.rows[0]?.email) {
+              await notifyTaskAssigned(userRow.rows[0].email, {
+                taskType: n.action,
+                dueDate: n.internalDueDate || n.finalDueDate || null,
+                caseName,
+                assignedByName: actor,
+                flipUserId: n.assignedToUserId,
+              }, query);
+            }
+          } catch (e) { console.error("[notify] trademark task assign:", e.message); }
+        })();
+      }
+    }
+  }));
+
+  app.put(`${base}/item-tasks/:id/state`, handle(async (req, res) => {
+    const body = req.body || {};
+    const isCompleted = boolField(body.isCompleted, "Completed");
+    const isInProgress = boolField(body.isInProgress, "In progress");
+    const isHidden = boolField(body.isHidden, "Hidden");
+    const collaboratorUserId = uuidField(body.collaboratorUserId, "collaborator");
+    if (isCompleted === undefined && isInProgress === undefined && isHidden === undefined) {
+      throw new ValidationError("Nothing to update.");
+    }
+    uuidField(req.params.id, "task");
+    const before = await tmTasks.loadTask({ query }, req.params.id);
+    if (!before) return res.status(404).json({ error: "Task not found." });
+    const collaborator = collaboratorUserId
+      ? before.collaborators.find((c) => String(c.userId) === collaboratorUserId)
+      : null;
+    if (collaboratorUserId && !collaborator) return res.status(404).json({ error: "Collaborator not found for this task." });
+    const current = collaborator
+      ? { isCompleted: collaborator.isComplete, isInProgress: collaborator.isInProgress, isHidden: before.isHidden }
+      : before;
+    const next = {
+      isCompleted: isCompleted ?? current.isCompleted,
+      isInProgress: isInProgress ?? current.isInProgress,
+      isHidden: isHidden ?? current.isHidden,
+      collaboratorUserId: collaboratorUserId || null,
+    };
+    await withTransaction(async (db) => {
+      await tmTasks.setTaskState(db, req.params.id, next, actorOf(req));
+      await tmTasks.syncItemTaskMirrors(db, before.itemId, req.session?.userId || null);
+    });
+    const after = await tmTasks.loadTask({ query }, req.params.id);
+    await writeAuditLog(req, {
+      action: collaboratorUserId ? "trademark.task.collaborator_state" : "trademark.task.state",
+      entityType: "trademark_item_task",
+      entityId: req.params.id,
+      before: { isCompleted: current.isCompleted, isInProgress: current.isInProgress, isHidden: current.isHidden, collaboratorUserId },
+      after: { isCompleted: next.isCompleted, isInProgress: next.isCompleted ? false : next.isInProgress, isHidden: next.isHidden, collaboratorUserId },
+    });
+    res.json({ task: after, item: await loadItem(before.itemId) });
   }));
 
   app.put(`${base}/items/:id/billing`, handle(async (req, res) => {

@@ -41,6 +41,10 @@ const state = {
   renderId: 0,
   clients: [],
   editing: null,
+  users: null,
+  expanded: new Set(), // item ids whose task panel is open
+  taskCache: new Map(), // item id -> tasks as last loaded/saved
+  focusTasks: null, // item id from ?tasks= (link from My Tasks)
 };
 
 const CROSS_STAGE_VIEWS = ["due", "review", "closed", "billing"];
@@ -123,6 +127,10 @@ const readUrlState = () => {
   state.filters.family = p.get("family") || "";
   state.filters.includeClosed = p.get("closed") === "1";
   state.filters.needsReview = p.get("review") === "1";
+  if (p.get("tasks")) {
+    state.expanded.add(p.get("tasks"));
+    state.focusTasks = p.get("tasks");
+  }
 };
 const writeUrlState = () => {
   const p = new URLSearchParams();
@@ -330,7 +338,7 @@ const columnsForView = () => {
   cols.push("brand", "action");
   if (stage === "application") cols.push("appStatus");
   if (portfolio) cols.push("clientRef", "clientDue", "clientComment");
-  cols.push("state", "comment", "billing", "edit");
+  cols.push("state", "comment", "billing", "tasks", "edit");
   return cols;
 };
 
@@ -349,6 +357,7 @@ const COLUMN_HEADERS = {
   state: ["State", "state"],
   comment: ["Comment / Notes", null],
   billing: ["Billing", null],
+  tasks: ["Tasks", null],
   edit: ["", null],
 };
 
@@ -448,6 +457,8 @@ const cellHtml = (col, item) => {
     }
     case "billing":
       return billingCell(item);
+    case "tasks":
+      return taskToggleHtml(item);
     case "edit":
       return `<button class="ghost-button" data-action="edit" data-id="${item.id}" type="button">${item.isClosed ? "Open" : "Edit"}</button>`;
     default:
@@ -471,12 +482,35 @@ const renderItems = () => {
     })
     .join("");
   const rows = items
-    .map((item) => `<tr class="${item.isClosed ? "tm-row-closed" : ""}" data-item-id="${item.id}">${cols.map((c) => `<td class="tm-col-${c}">${cellHtml(c, item)}</td>`).join("")}</tr>`)
+    .map(
+      (item) =>
+        `<tr class="${item.isClosed ? "tm-row-closed" : ""}" data-item-id="${item.id}">${cols.map((c) => `<td class="tm-col-${c}">${cellHtml(c, item)}</td>`).join("")}</tr>` +
+        (state.expanded.has(item.id)
+          ? `<tr class="tm-task-row"><td colspan="${cols.length}"><div class="tm-task-slot" data-task-slot="${item.id}"></div></td></tr>`
+          : "")
+    )
     .join("");
   const more = state.hasMore ? `<div class="tm-more"><button class="ghost-button" data-action="more" type="button">Load more</button></div>` : "";
+  // Keep open task panels (and any unsaved edits in them) across re-renders.
+  const openPanels = new Map(
+    Array.from(els.content.querySelectorAll("[data-task-panel]")).map((panel) => [panel.dataset.taskPanel, panel])
+  );
   els.content.innerHTML = `
     <div class="muted tm-count-line">${items.length} item${items.length === 1 ? "" : "s"}${state.hasMore ? "+" : ""}</div>
     <div class="table-wrap tm-table-wrap"><table class="tm-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>${more}`;
+  els.content.querySelectorAll("[data-task-slot]").forEach((slot) => {
+    const itemId = slot.dataset.taskSlot;
+    if (openPanels.has(itemId)) slot.replaceWith(openPanels.get(itemId));
+    else fillTaskPanel(slot, itemId);
+  });
+  if (state.focusTasks) {
+    const row = els.content.querySelector(`tr[data-item-id="${CSS.escape(state.focusTasks)}"]`);
+    if (row) {
+      row.classList.add("focused-docket-row");
+      row.scrollIntoView({ block: "center" });
+    }
+    state.focusTasks = null;
+  }
 };
 
 const replaceItem = (item) => {
@@ -493,6 +527,273 @@ const setItemState = async (id, body) => {
       return (await api(`/items/${id}/state`, "PUT", { ...body, confirmUnbilled: true })).item;
     }
     throw err;
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Item tasks — assignable tasks under each docket row (like litigation actions).
+// Saved tasks also appear in the assignee's My Tasks and the Weekly Task List.
+// ---------------------------------------------------------------------------
+const taskToggleHtml = (item) => {
+  const open = state.expanded.has(item.id);
+  const count = item.openTaskCount ? ` (${item.openTaskCount})` : "";
+  return `<button class="ghost-button tm-task-toggle" data-action="tasks" data-id="${item.id}" type="button" aria-expanded="${open}">${open ? "▾" : "▸"} Tasks${count}</button>`;
+};
+
+const refreshTaskToggle = (itemId) => {
+  const cell = els.content.querySelector(`tr[data-item-id="${CSS.escape(itemId)}"] .tm-col-tasks`);
+  const item = state.items.find((i) => i.id === itemId);
+  if (cell && item) cell.innerHTML = taskToggleHtml(item);
+};
+
+const loadUsers = async () => {
+  if (!state.users) {
+    try {
+      state.users = await loadUserOptions();
+    } catch (err) {
+      state.users = [];
+    }
+  }
+  return state.users;
+};
+
+const userLabel = (user) => user.name || user.email;
+const assigneeOptions = (selected) =>
+  `<option value="">Unassigned</option>` +
+  state.users
+    .map((u) => `<option value="${escapeHtml(u.id)}"${u.id === selected ? " selected" : ""}>${escapeHtml(userLabel(u))}</option>`)
+    .join("");
+const collaboratorOptions = (selectedIds) => {
+  const selected = new Set(selectedIds.map(String));
+  return state.users
+    .map((u) => `<option value="${escapeHtml(u.id)}"${selected.has(String(u.id)) ? " selected" : ""}>${escapeHtml(userLabel(u))}</option>`)
+    .join("");
+};
+
+const isTaskDueSoon = (iso) => {
+  const days = daysUntil(iso);
+  return days !== null && days <= 7;
+};
+
+// Row classes + chip + buttons, same rules as the litigation docket rows.
+const applyTaskRowState = (row, task) => {
+  const completed = Boolean(task.isCompleted);
+  const inProgress = !completed && Boolean(task.isInProgress);
+  const internal = row.querySelector('[data-f="internalDueDate"]').value;
+  const final = row.querySelector('[data-f="finalDueDate"]').value;
+  row.dataset.completed = String(completed);
+  row.dataset.inProgress = String(inProgress);
+  row.classList.toggle("is-completed", completed);
+  row.classList.toggle("is-in-progress", inProgress);
+  row.classList.toggle("due-soon", !completed && (isTaskDueSoon(internal) || isTaskDueSoon(final)));
+  const stateChip = row.querySelector(".row-state-chip");
+  const [label, tone] = completed
+    ? ["Completed", "green"]
+    : row.classList.contains("due-soon")
+      ? ["Due Soon", "danger"]
+      : inProgress
+        ? ["In Progress", "amber"]
+        : [null, null];
+  stateChip.className = `row-state-chip status-chip${label ? ` status-chip-${tone}` : " hidden"}`;
+  stateChip.textContent = label || "";
+  const progressBtn = row.querySelector('[data-action="task-progress"]');
+  const completeBtn = row.querySelector('[data-action="task-complete"]');
+  const removeBtn = row.querySelector('[data-action="task-remove"]');
+  const saved = Boolean(row.dataset.taskId);
+  progressBtn.textContent = inProgress ? "Clear Progress" : "In Progress";
+  progressBtn.disabled = !saved || completed;
+  completeBtn.textContent = completed ? "Incomplete" : "Complete";
+  completeBtn.disabled = !saved;
+  removeBtn.textContent = saved ? "Remove" : "Discard";
+};
+
+const renderCollaboratorPills = (row, task = {}) => {
+  const select = row.querySelector('[data-f="collaboratorUserIds"]');
+  const meta = new Map((task.collaborators || []).map((c) => [String(c.userId), c]));
+  const ids = Array.from(select.selectedOptions).map((o) => o.value);
+  const status = row.querySelector(".collaborator-status");
+  status.innerHTML = ids.length
+    ? ids
+        .map((id) => {
+          const m = meta.get(id) || {};
+          const user = state.users.find((u) => String(u.id) === id) || {};
+          const label = m.name || user.name || m.email || user.email || "Collaborator";
+          const cls = m.isComplete ? " is-complete" : m.isInProgress ? " is-in-progress" : "";
+          const suffix = m.isComplete ? " ✓" : m.isInProgress ? " • In Progress" : "";
+          return `<span class="collaborator-pill${cls}"><span>${escapeHtml(label + suffix)}</span><button class="collaborator-remove" data-action="task-collab-remove" data-user-id="${escapeHtml(id)}" type="button" aria-label="Remove ${escapeHtml(label)}">x</button></span>`;
+        })
+        .join("")
+    : `<div class="muted">No collaborators</div>`;
+  const toggle = row.querySelector('[data-action="task-collab-toggle"]');
+  toggle.textContent = !select.classList.contains("hidden") ? "Hide" : ids.length ? `Collaborators (${ids.length})` : "+ Collaborator";
+};
+
+const taskRowHtml = (task = {}) => `
+  <tr class="tm-task" data-task-id="${escapeHtml(task.id || "")}">
+    <td><textarea class="lit-input lit-textarea action-textarea" data-f="action" rows="2" placeholder="What needs doing?">${escapeHtml(task.action || "")}</textarea></td>
+    <td>
+      <div class="assignment-stack">
+        <select class="lit-input" data-f="assignedToUserId" aria-label="Assigned to">${assigneeOptions(task.assignedToUserId || "")}</select>
+        <button class="ghost-button collaborator-toggle" data-action="task-collab-toggle" type="button"></button>
+        <select class="lit-input collaborator-select hidden" data-f="collaboratorUserIds" multiple size="4" aria-label="Collaborators">${collaboratorOptions(
+          (task.collaborators || []).map((c) => c.userId)
+        )}</select>
+        <div class="collaborator-status"></div>
+      </div>
+    </td>
+    <td><input class="lit-input" data-f="internalDueDate" type="date" value="${escapeHtml(task.internalDueDate || "")}" aria-label="Internal due date" /></td>
+    <td><input class="lit-input" data-f="finalDueDate" type="date" value="${escapeHtml(task.finalDueDate || "")}" aria-label="Final due date" /></td>
+    <td><textarea class="lit-input lit-textarea notes-textarea" data-f="notes" rows="3">${escapeHtml(task.notes || "")}</textarea></td>
+    <td>
+      <div class="row-action-buttons">
+        <span class="row-state-chip status-chip hidden"></span>
+        <button class="ghost-button" data-action="task-progress" type="button">In Progress</button>
+        <button class="ghost-button" data-action="task-complete" type="button">Complete</button>
+        <button class="ghost-button" data-action="task-remove" type="button">Remove</button>
+      </div>
+    </td>
+  </tr>`;
+
+const wireTaskRow = (row, task = {}) => {
+  row._task = task;
+  applyTaskRowState(row, task);
+  renderCollaboratorPills(row, task);
+};
+
+const appendTaskRow = (panel, task = {}) => {
+  const tbody = panel.querySelector("tbody");
+  tbody.insertAdjacentHTML("beforeend", taskRowHtml(task));
+  wireTaskRow(tbody.lastElementChild, task);
+  return tbody.lastElementChild;
+};
+
+const renderTaskPanel = (panel, itemId, tasks) => {
+  panel.innerHTML = `
+    <div class="tm-task-panel-head">
+      <strong>Tasks</strong>
+      <span class="muted tm-small">Assigned tasks also appear in that person's My Tasks and the Weekly Task List.</span>
+    </div>
+    <div class="table-wrap">
+      <table class="tm-table entries-table tm-task-table">
+        <colgroup><col style="width:22%" /><col style="width:18%" /><col style="width:11%" /><col style="width:11%" /><col style="width:20%" /><col style="width:18%" /></colgroup>
+        <thead><tr><th>Task</th><th>Assigned to</th><th>Internal Due</th><th>Final Due</th><th>Notes</th><th></th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="tm-task-panel-actions">
+      <button class="ghost-button" data-action="task-add" data-id="${itemId}" type="button">+ Add Task</button>
+      <button class="ghost-button" data-action="task-save" data-id="${itemId}" type="button">Save Tasks</button>
+      <span class="muted tm-small" data-task-status></span>
+      <span class="form-error" data-task-error></span>
+    </div>`;
+  if (tasks.length) tasks.forEach((task) => appendTaskRow(panel, task));
+  else appendTaskRow(panel);
+};
+
+const fillTaskPanel = async (slot, itemId) => {
+  const panel = document.createElement("div");
+  panel.className = "tm-task-panel";
+  panel.dataset.taskPanel = itemId;
+  panel.innerHTML = `<div class="muted tm-small">Loading tasks…</div>`;
+  slot.replaceWith(panel);
+  try {
+    const [{ tasks }] = await Promise.all([api(`/items/${itemId}/tasks`), loadUsers()]);
+    state.taskCache.set(itemId, tasks);
+    renderTaskPanel(panel, itemId, tasks);
+  } catch (err) {
+    panel.innerHTML = `<div class="form-error">${escapeHtml(err.message)}</div>`;
+  }
+};
+
+const readTaskRows = (panel) =>
+  Array.from(panel.querySelectorAll("tr.tm-task")).map((row) => ({
+    id: row.dataset.taskId || null,
+    action: row.querySelector('[data-f="action"]').value.trim(),
+    assignedToUserId: row.querySelector('[data-f="assignedToUserId"]').value || null,
+    collaboratorUserIds: Array.from(row.querySelector('[data-f="collaboratorUserIds"]').selectedOptions).map((o) => o.value),
+    internalDueDate: row.querySelector('[data-f="internalDueDate"]').value || null,
+    finalDueDate: row.querySelector('[data-f="finalDueDate"]').value || null,
+    notes: row.querySelector('[data-f="notes"]').value.trim() || null,
+  }));
+
+const panelFor = (el) => el.closest("[data-task-panel]");
+const setTaskPanelMessage = (panel, { status = "", error = "" } = {}) => {
+  panel.querySelector("[data-task-status]").textContent = status;
+  panel.querySelector("[data-task-error]").textContent = error;
+};
+
+const afterTaskChange = (itemId, item) => {
+  if (item) replaceItem(item);
+  refreshTaskToggle(itemId);
+  loadStats();
+};
+
+const handleTaskAction = async (btn) => {
+  const { action } = btn.dataset;
+  if (action === "tasks") {
+    const itemId = btn.dataset.id;
+    if (state.expanded.has(itemId)) state.expanded.delete(itemId);
+    else state.expanded.add(itemId);
+    renderItems();
+    return;
+  }
+  const panel = panelFor(btn);
+  if (!panel) return;
+  const itemId = panel.dataset.taskPanel;
+  const row = btn.closest("tr.tm-task");
+  setTaskPanelMessage(panel);
+  try {
+    if (action === "task-add") {
+      appendTaskRow(panel).querySelector('[data-f="action"]').focus();
+    } else if (action === "task-collab-toggle") {
+      row.querySelector('[data-f="collaboratorUserIds"]').classList.toggle("hidden");
+      renderCollaboratorPills(row, row._task);
+    } else if (action === "task-collab-remove") {
+      const option = Array.from(row.querySelector('[data-f="collaboratorUserIds"]').options).find((o) => o.value === btn.dataset.userId);
+      if (option) option.selected = false;
+      renderCollaboratorPills(row, row._task);
+    } else if (action === "task-save") {
+      btn.disabled = true;
+      setTaskPanelMessage(panel, { status: "Saving…" });
+      try {
+        const { tasks, item } = await api(`/items/${itemId}/tasks`, "PUT", { tasks: readTaskRows(panel) });
+        state.taskCache.set(itemId, tasks);
+        renderTaskPanel(panel, itemId, tasks);
+        setTaskPanelMessage(panel, { status: "Saved." });
+        afterTaskChange(itemId, item);
+      } finally {
+        btn.disabled = false;
+      }
+    } else if (["task-progress", "task-complete", "task-remove"].includes(action)) {
+      const taskId = row.dataset.taskId;
+      if (!taskId) {
+        // Unsaved row: just drop it.
+        row.remove();
+        if (!panel.querySelector("tr.tm-task")) appendTaskRow(panel);
+        return;
+      }
+      const completed = row.dataset.completed === "true";
+      const inProgress = row.dataset.inProgress === "true";
+      let body;
+      if (action === "task-progress") body = { isInProgress: !inProgress };
+      else if (action === "task-complete") body = { isCompleted: !completed, isInProgress: false };
+      else {
+        if (!window.confirm("Remove this task? It will also disappear from My Tasks.")) return;
+        body = { isHidden: true };
+      }
+      const { task, item } = await api(`/item-tasks/${taskId}/state`, "PUT", body);
+      if (task.isHidden) {
+        row.remove();
+        if (!panel.querySelector("tr.tm-task")) appendTaskRow(panel);
+      } else {
+        row._task = { ...row._task, ...task };
+        applyTaskRowState(row, row._task);
+        renderCollaboratorPills(row, row._task);
+      }
+      afterTaskChange(itemId, item);
+    }
+  } catch (err) {
+    setTaskPanelMessage(panel, { error: err.message });
   }
 };
 
@@ -896,6 +1197,7 @@ els.content.addEventListener("click", async (event) => {
   const btn = event.target.closest("button[data-action]");
   if (!btn) return;
   const { action, id } = btn.dataset;
+  if (action === "tasks" || action.startsWith("task-")) return handleTaskAction(btn);
   showError("");
   try {
     if (action === "edit") await openItemModal(id);
@@ -930,6 +1232,12 @@ els.content.addEventListener("click", async (event) => {
 
 els.content.addEventListener("change", async (event) => {
   const el = event.target;
+  const taskRow = el.closest("tr.tm-task");
+  if (taskRow) {
+    if (el.dataset.f === "collaboratorUserIds") renderCollaboratorPills(taskRow, taskRow._task);
+    else if (el.type === "date") applyTaskRowState(taskRow, taskRow._task);
+    return;
+  }
   const { action, id, field: fieldName } = el.dataset;
   if (!action) return;
   showError("");

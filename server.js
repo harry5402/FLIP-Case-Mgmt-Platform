@@ -18,6 +18,7 @@ const fs = require("fs");
 const { parse } = require("csv-parse/sync");
 const { query, withTransaction } = require("./db");
 const { ensureTrademarkTables } = require("./lib/trademark-schema");
+const trademarkTasks = require("./lib/trademark-tasks");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -1256,7 +1257,12 @@ app.get("/api/users/:id/removal-summary", requireSession, requireAdmin, async (r
          (SELECT COUNT(*) FROM litigation_actions WHERE assigned_to_user_id = $1)::int AS litigation_actions,
          (SELECT COUNT(*) FROM litigation_action_collaborators WHERE user_id = $1)::int AS collaborations,
          (SELECT COUNT(*) FROM trademark_docket_items WHERE assigned_to_user_id = $1)::int AS trademark_items,
-         (SELECT COUNT(*) FROM trademark_todos WHERE assigned_to_user_id = $1)::int AS trademark_todos`,
+         (SELECT COUNT(*) FROM trademark_todos WHERE assigned_to_user_id = $1)::int AS trademark_todos,
+         (SELECT COUNT(*) FROM trademark_item_tasks
+           WHERE assigned_to_user_id = $1 AND NOT is_completed AND NOT is_hidden)::int
+           + (SELECT COUNT(*) FROM trademark_item_task_collaborators c
+                JOIN trademark_item_tasks t ON t.id = c.task_id
+              WHERE c.user_id = $1 AND NOT c.is_complete AND NOT t.is_completed AND NOT t.is_hidden)::int AS trademark_tasks`,
       [req.params.id]
     );
     const counts = rows[0];
@@ -1271,6 +1277,7 @@ app.get("/api/users/:id/removal-summary", requireSession, requireAdmin, async (r
       collaborations: counts.collaborations,
       trademarkItems: counts.trademark_items,
       trademarkTodos: counts.trademark_todos,
+      trademarkTasks: counts.trademark_tasks,
       activeSessions,
     });
   } catch (err) {
@@ -1306,7 +1313,7 @@ app.delete("/api/users/:id", requireSession, requireAdmin, async (req, res, next
         if (!receiver.rows.length) return { status: 400, error: "The user chosen to take over their work doesn't exist." };
       }
 
-      const moved = { openTasks: 0, duplicateTasksRemoved: 0, litigationActions: 0, collaborations: 0, trademarkItems: 0, trademarkTodos: 0 };
+      const moved = { openTasks: 0, duplicateTasksRemoved: 0, litigationActions: 0, collaborations: 0, trademarkItems: 0, trademarkTodos: 0, trademarkTasks: 0 };
       if (reassignTo) {
         // An open docket task the receiver already has for the same action would be a duplicate.
         moved.duplicateTasksRemoved = (await client.query(
@@ -1314,6 +1321,13 @@ app.delete("/api/users/:id", requireSession, requireAdmin, async (req, res, next
            WHERE t.assigned_to_user_id = $1 AND t.status <> 'Complete' AND t.source_litigation_action_id IS NOT NULL
              AND EXISTS (SELECT 1 FROM tasks x WHERE x.assigned_to_user_id = $2 AND x.status <> 'Complete'
                            AND x.source_litigation_action_id = t.source_litigation_action_id)`,
+          [userId, reassignTo]
+        )).rowCount;
+        moved.duplicateTasksRemoved += (await client.query(
+          `DELETE FROM tasks t
+           WHERE t.assigned_to_user_id = $1 AND t.status <> 'Complete' AND t.source_trademark_task_id IS NOT NULL
+             AND EXISTS (SELECT 1 FROM tasks x WHERE x.assigned_to_user_id = $2 AND x.status <> 'Complete'
+                           AND x.source_trademark_task_id = t.source_trademark_task_id)`,
           [userId, reassignTo]
         )).rowCount;
         moved.openTasks = (await client.query(
@@ -1336,6 +1350,16 @@ app.delete("/api/users/:id", requireSession, requireAdmin, async (req, res, next
         )).rowCount;
         moved.trademarkTodos = (await client.query(
           "UPDATE trademark_todos SET assigned_to_user_id = $2 WHERE assigned_to_user_id = $1",
+          [userId, reassignTo]
+        )).rowCount;
+        moved.trademarkTasks = (await client.query(
+          `UPDATE trademark_item_task_collaborators c SET user_id = $2
+           WHERE c.user_id = $1
+             AND NOT EXISTS (SELECT 1 FROM trademark_item_task_collaborators x WHERE x.task_id = c.task_id AND x.user_id = $2)`,
+          [userId, reassignTo]
+        )).rowCount;
+        moved.trademarkTasks += (await client.query(
+          "UPDATE trademark_item_tasks SET assigned_to_user_id = $2 WHERE assigned_to_user_id = $1",
           [userId, reassignTo]
         )).rowCount;
       }
@@ -2765,7 +2789,10 @@ app.get("/api/tasks/my", async (req, res) => {
             u.name AS assigned_user_name,
             u.email AS assigned_user_email,
             docket_action.final_due_date AS fallback_final_due_date,
-            docket_action.assigned_to_label AS source_action_assigned_to_label
+            docket_action.assigned_to_label AS source_action_assigned_to_label,
+            tm_task.item_id AS trademark_item_id,
+            tm_task.matter_no AS trademark_matter_no,
+            tm_task.brand AS trademark_brand
      FROM tasks t
      LEFT JOIN cases c ON c.id = t.case_id
      LEFT JOIN defendants d ON d.id = t.defendant_id
@@ -2780,6 +2807,13 @@ app.get("/api/tasks/my", async (req, res) => {
        ORDER BY la.updated_at DESC NULLS LAST, la.id DESC
        LIMIT 1
      ) docket_action ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT tt.item_id, tm.matter_no, COALESCE(ti.brand, tm.mark_text, tm.title) AS brand
+       FROM trademark_item_tasks tt
+       JOIN trademark_docket_items ti ON ti.id = tt.item_id
+       JOIN trademark_matters tm ON tm.id = ti.matter_id
+       WHERE tt.id = t.source_trademark_task_id
+     ) tm_task ON TRUE
      WHERE t.assigned_to_user_id = $1
        AND t.status <> 'Complete'
      ORDER BY COALESCE(t.due_date, docket_action.final_due_date) NULLS LAST, t.created_at DESC`,
@@ -2801,20 +2835,26 @@ app.get("/api/tasks/my", async (req, res) => {
         row.assigned_to_user_id === req.session.userId ||
         canCleanupWeeklyTasks,
       sourceLitigationActionId: row.source_litigation_action_id || null,
+      sourceTrademarkTaskId: row.source_trademark_task_id || null,
+      trademarkItemId: row.trademark_item_id || null,
+      trademarkMatterNo: row.trademark_matter_no || null,
+      trademarkBrand: row.trademark_brand || null,
       taskRole: row.task_role || "owner",
       targetType: row.group_id
         ? "group"
         : row.defendant_id
           ? "defendant"
-          : String(row.task_type || "").startsWith("Docket:")
-            ? "docket"
-            : row.case_id
-              ? "case"
-              : "general",
+          : row.source_trademark_task_id
+            ? "trademark"
+            : String(row.task_type || "").startsWith("Docket:")
+              ? "docket"
+              : row.case_id
+                ? "case"
+                : "general",
       taskType: row.task_type,
       dueDate: row.due_date || row.fallback_final_due_date,
       status: row.status,
-      caseName: row.case_name,
+      caseName: row.case_name || [row.trademark_matter_no, row.trademark_brand].filter(Boolean).join(" – ") || null,
       jurisdiction: row.jurisdiction,
       defendantName: row.defendant_name,
       groupName: row.group_name,
@@ -2835,7 +2875,10 @@ app.get("/api/tasks", async (req, res) => {
             u.email AS assigned_user_email,
             docket_action.final_due_date AS fallback_final_due_date,
             COALESCE(docket_action.is_hidden, FALSE) AS source_action_is_hidden,
-            docket_action.assigned_to_label AS source_action_assigned_to_label
+            docket_action.assigned_to_label AS source_action_assigned_to_label,
+            tm_task.item_id AS trademark_item_id,
+            tm_task.matter_no AS trademark_matter_no,
+            tm_task.brand AS trademark_brand
      FROM tasks t
      LEFT JOIN cases c ON c.id = t.case_id
      LEFT JOIN defendants d ON d.id = t.defendant_id
@@ -2848,6 +2891,13 @@ app.get("/api/tasks", async (req, res) => {
        ORDER BY la.updated_at DESC NULLS LAST, la.id DESC
        LIMIT 1
      ) docket_action ON TRUE
+     LEFT JOIN LATERAL (
+       SELECT tt.item_id, tm.matter_no, COALESCE(ti.brand, tm.mark_text, tm.title) AS brand
+       FROM trademark_item_tasks tt
+       JOIN trademark_docket_items ti ON ti.id = tt.item_id
+       JOIN trademark_matters tm ON tm.id = ti.matter_id
+       WHERE tt.id = t.source_trademark_task_id
+     ) tm_task ON TRUE
      WHERE COALESCE(docket_action.is_hidden, FALSE) = FALSE
      ORDER BY COALESCE(t.due_date, docket_action.final_due_date) NULLS LAST, t.created_at DESC`
   );
@@ -2867,21 +2917,27 @@ app.get("/api/tasks", async (req, res) => {
         row.assigned_to_user_id === req.session.userId ||
         canCleanupWeeklyTasks,
       sourceLitigationActionId: row.source_litigation_action_id || null,
+      sourceTrademarkTaskId: row.source_trademark_task_id || null,
+      trademarkItemId: row.trademark_item_id || null,
+      trademarkMatterNo: row.trademark_matter_no || null,
+      trademarkBrand: row.trademark_brand || null,
       taskRole: row.task_role || "owner",
       targetType: row.group_id
         ? "group"
         : row.defendant_id
           ? "defendant"
-          : String(row.task_type || "").startsWith("Docket:")
-            ? "docket"
-            : row.case_id
-              ? "case"
-              : "general",
+          : row.source_trademark_task_id
+            ? "trademark"
+            : String(row.task_type || "").startsWith("Docket:")
+              ? "docket"
+              : row.case_id
+                ? "case"
+                : "general",
       taskType: row.task_type,
       dueDate: row.due_date || row.fallback_final_due_date,
       status: row.status,
       isHidden: Boolean(row.source_action_is_hidden),
-      caseName: row.case_name,
+      caseName: row.case_name || [row.trademark_matter_no, row.trademark_brand].filter(Boolean).join(" – ") || null,
       jurisdiction: row.jurisdiction,
       defendantName: row.defendant_name,
       groupName: row.group_name,
@@ -3017,7 +3073,7 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
   const canCleanupWeeklyTasks = await loadWeeklyCleanupPermission(req.session.userId);
   const existing = await query(
     `SELECT id, case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status,
-            source_litigation_action_id, task_role
+            source_litigation_action_id, source_trademark_task_id, task_role
      FROM tasks
      WHERE id = $1
        AND (
@@ -3113,6 +3169,10 @@ app.put("/api/tasks/:id/complete", async (req, res) => {
     } else {
       currentTask.syncedDocketAction = false;
     }
+  } else if (currentTask.source_trademark_task_id) {
+    currentTask.syncedDocketAction = await withTransaction((client) =>
+      trademarkTasks.completeFromMirror(client, currentTask, req.session?.name || req.session?.email || null)
+    );
   }
 
   await writeAuditLog(req, {
@@ -3134,7 +3194,7 @@ app.put("/api/tasks/:id/state", async (req, res) => {
   const nextStatus = nextStatusRaw === "In Progress" ? "In Progress" : "Open";
   const existing = await query(
     `SELECT id, case_id, defendant_id, group_id, task_type, assigned_to_user_id, due_date, status,
-            source_litigation_action_id, task_role
+            source_litigation_action_id, source_trademark_task_id, task_role
      FROM tasks
      WHERE id = $1
        AND status <> 'Complete'
@@ -3228,6 +3288,10 @@ app.put("/api/tasks/:id/state", async (req, res) => {
         isHidden: row.is_hidden,
       })),
       req.session
+    );
+  } else if (currentTask.source_trademark_task_id) {
+    await withTransaction((client) =>
+      trademarkTasks.progressFromMirror(client, currentTask, nextStatus === "In Progress", actor, req.session.userId)
     );
   }
 
@@ -5230,7 +5294,7 @@ const { notifyTaskAssigned, notifyOverdueSummary } = emailModule;
 // ---------------------------------------------------------------------------
 // Trademark Docket routes (/api/trademark/*)
 // ---------------------------------------------------------------------------
-require("./routes/trademark")(app, { query, withTransaction, writeAuditLog, requireAdmin });
+require("./routes/trademark")(app, { query, withTransaction, writeAuditLog, requireAdmin, notifyTaskAssigned });
 
 // ---------------------------------------------------------------------------
 // Automations routes (Exhibit 2, etc.)

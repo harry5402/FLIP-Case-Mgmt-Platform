@@ -17,6 +17,8 @@ const getTaskTargetUrl = (task) =>
               ? `&actionId=${encodeURIComponent(task.sourceLitigationActionId)}`
               : `&action=${encodeURIComponent(String(task.taskType || "").replace(/^Docket:\s*/, ""))}`
           }`
+        : task.targetType === "trademark"
+          ? `trademark-docket.html?q=${encodeURIComponent(task.trademarkMatterNo || "")}&closed=1&tasks=${encodeURIComponent(task.trademarkItemId || "")}`
         : task.targetType === "case"
           ? `case.html?caseId=${encodeURIComponent(task.caseId)}`
           : `defendant.html?caseId=${encodeURIComponent(
@@ -30,6 +32,8 @@ const getTaskContextLabel = (task) =>
       ? escapeHtml(task.groupName || "Group")
       : task.targetType === "docket"
         ? "Docket Entry"
+        : task.targetType === "trademark"
+          ? "Trademark Docket"
         : task.targetType === "case"
           ? "Case Reminder"
           : escapeHtml(task.defendantName || "Defendant");
