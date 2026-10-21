@@ -1362,7 +1362,30 @@ app.delete("/api/users/:id", requireSession, requireAdmin, async (req, res, next
           "UPDATE trademark_item_tasks SET assigned_to_user_id = $2 WHERE assigned_to_user_id = $1",
           [userId, reassignTo]
         )).rowCount;
+        // The receiver may now own a task they were already helping on: drop the
+        // collaborator slot and treat their My Tasks copy as the owner's.
+        await client.query(
+          `DELETE FROM trademark_item_task_collaborators c
+           USING trademark_item_tasks t
+           WHERE c.task_id = t.id AND c.user_id = $1 AND t.assigned_to_user_id = $1`,
+          [reassignTo]
+        );
+        await client.query(
+          `UPDATE tasks x SET task_role = 'owner'
+           FROM trademark_item_tasks t
+           WHERE x.source_trademark_task_id = t.id AND x.assigned_to_user_id = $1
+             AND t.assigned_to_user_id = $1 AND x.task_role = 'collaborator'`,
+          [reassignTo]
+        );
       }
+      // Their open trademark support tasks go away with their collaborator rows
+      // (ON DELETE CASCADE) rather than lingering unassigned.
+      await client.query(
+        `DELETE FROM tasks
+         WHERE assigned_to_user_id = $1 AND status <> 'Complete'
+           AND source_trademark_task_id IS NOT NULL AND task_role = 'collaborator'`,
+        [userId]
+      );
       const unassignedTasks = (await client.query(
         "UPDATE tasks SET assigned_to_user_id = NULL WHERE assigned_to_user_id = $1",
         [userId]

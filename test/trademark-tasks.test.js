@@ -50,8 +50,10 @@ const makeDb = ({ item = itemRow(), tasks = [], existingAssignee = null } = {}) 
   const query = async (text, params = []) => {
     calls.push({ text, params });
     if (/SELECT allow_trademark_docket FROM users/.test(text)) return { rows: [{ allow_trademark_docket: true }] };
+    if (/AS inactive/.test(text)) {
+      return { rows: item ? [{ inactive: Boolean(item.is_hidden || item.is_closed || item.matter_archived) }] : [] };
+    }
     if (/FROM trademark_docket_items i/.test(text) && /WHERE i\.id = \$1/.test(text)) return { rows: item ? [item] : [] };
-    if (/SELECT is_hidden FROM trademark_docket_items/.test(text)) return { rows: item ? [{ is_hidden: item.is_hidden }] : [] };
     if (/FROM trademark_item_tasks t/.test(text) && /WHERE t\.item_id = \$1/.test(text)) return { rows: tasks };
     if (/FROM trademark_item_tasks t/.test(text) && /WHERE t\.id = \$1/.test(text)) {
       return { rows: tasks.filter((t) => t.id === params[0]) };
@@ -244,4 +246,32 @@ test("deleting an item rebuilds its task mirrors (drops them from My Tasks)", as
     assert.equal((await call("PUT", `/api/trademark/items/${ITEM_ID}/state`, { isHidden: true })).status, 200);
   });
   assert.ok(calls.some((c) => /DELETE FROM tasks/.test(c.text)));
+});
+
+test("closed items and archived matters get no My Tasks copies", async () => {
+  for (const item of [itemRow({ is_closed: true }), itemRow({ matter_archived: true })]) {
+    const db = makeDb({ item, tasks: [taskRow()] });
+    await tmTasks.syncItemTaskMirrors(db, ITEM_ID);
+    assert.ok(db.calls.some((c) => /DELETE FROM tasks/.test(c.text)));
+    assert.ok(!db.calls.some((c) => /INSERT INTO tasks/.test(c.text)));
+  }
+});
+
+test("closing or reopening an item rebuilds its task copies", async () => {
+  const { app, calls } = makeApp({ tasks: [taskRow()] });
+  await withServer(app, async (call) => {
+    assert.equal((await call("PUT", `/api/trademark/items/${ITEM_ID}/state`, { isClosed: true })).status, 200);
+  });
+  assert.ok(calls.some((c) => /DELETE FROM tasks/.test(c.text)));
+});
+
+test("removed tasks can be listed for restoring", async () => {
+  const { app, calls } = makeApp({ tasks: [taskRow({ is_hidden: true })] });
+  await withServer(app, async (call) => {
+    const res = await call("GET", `/api/trademark/items/${ITEM_ID}/tasks?removed=1`);
+    assert.equal(res.status, 200);
+  });
+  const list = calls.find((c) => /FROM trademark_item_tasks t/.test(c.text));
+  assert.match(list.text, /AND t\.is_hidden/);
+  assert.doesNotMatch(list.text, /NOT t\.is_hidden/);
 });

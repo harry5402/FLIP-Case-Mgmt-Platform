@@ -61,7 +61,7 @@ See CLAUDE.md's **Key Database Tables** for the full list (litigation, tasks, tr
 - Due dates: always use `internalDueDate`; fall back to `finalDueDate` only if null — never reverse this
 - Docket tasks are rows in `tasks` with `task_type LIKE 'Docket:%'` and a `source_litigation_action_id` — sync via `syncLitigationTasks()`, do not manipulate directly
 - Completing a docket task as owner → marks `litigation_actions` complete + cascades to collaborator tasks; as collaborator → marks only `litigation_action_collaborators` row
-- Trademark item tasks work the same way: rows in `tasks` with `task_type LIKE 'Trademark:%'` and a `source_trademark_task_id`, rebuilt by `syncItemTaskMirrors()` in `lib/trademark-tasks.js`; deleting an item drops its tasks from My Tasks
+- Trademark item tasks work the same way: rows in `tasks` with `task_type LIKE 'Trademark:%'` and a `source_trademark_task_id`, rebuilt by `syncItemTaskMirrors()` in `lib/trademark-tasks.js`; deleting/closing an item or archiving its matter drops its tasks from My Tasks (restoring/reopening brings them back)
 - Trademark items: closing an item with unbilled flags returns 409 `UNBILLED` unless `confirmUnbilled` is sent
 
 ---

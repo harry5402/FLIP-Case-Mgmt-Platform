@@ -695,8 +695,8 @@ function registerTrademarkRoutes(app, { query, withTransaction, writeAuditLog, r
     }
     if (Object.keys(fields).length) {
       const upd = buildUpdate("trademark_docket_items", req.params.id, fields, actor);
-      if (isHidden !== undefined && isHidden !== before.isHidden) {
-        // Deleting/restoring an item drops/restores its tasks in My Tasks.
+      if ((isHidden !== undefined && isHidden !== before.isHidden) || fields.is_closed !== undefined) {
+        // Deleting/closing an item drops its tasks from My Tasks; restoring/reopening brings them back.
         await withTransaction(async (db) => {
           await db.query(upd.text, upd.values);
           await tmTasks.syncItemTaskMirrors(db, req.params.id, req.session?.userId || null);
@@ -719,9 +719,11 @@ function registerTrademarkRoutes(app, { query, withTransaction, writeAuditLog, r
   const itemTaskLabel = (item) =>
     [item.matter.matterNo, item.brand || item.matter.markText || item.matter.title].filter(Boolean).join(" – ") || null;
 
+  // ?removed=1 lists removed tasks so they can be restored.
   app.get(`${base}/items/:id/tasks`, handle(async (req, res) => {
     uuidField(req.params.id, "item");
-    res.json({ tasks: await tmTasks.loadItemTasks({ query }, req.params.id) });
+    const removed = req.query.removed === "1";
+    res.json({ tasks: await tmTasks.loadItemTasks({ query }, req.params.id, { removed }) });
   }));
 
   // Saves the item's task list (new rows have no id). Tasks left out are kept;
@@ -1014,11 +1016,22 @@ function registerTrademarkRoutes(app, { query, withTransaction, writeAuditLog, r
     const before = await loadMatter(req.params.id);
     if (!before) return res.status(404).json({ error: "Matter not found." });
     const actor = actorOf(req);
-    await query(
-      `UPDATE trademark_matters SET archived = $2, archived_at = CASE WHEN $2 THEN NOW() ELSE NULL END,
-         archived_by = CASE WHEN $2 THEN $3 ELSE NULL END, updated_at = NOW(), updated_by = $3 WHERE id = $1`,
-      [req.params.id, archived, actor]
-    );
+    // Archiving drops the matter's item tasks from My Tasks; reopening brings them back.
+    await withTransaction(async (db) => {
+      await db.query(
+        `UPDATE trademark_matters SET archived = $2, archived_at = CASE WHEN $2 THEN NOW() ELSE NULL END,
+           archived_by = CASE WHEN $2 THEN $3 ELSE NULL END, updated_at = NOW(), updated_by = $3 WHERE id = $1`,
+        [req.params.id, archived, actor]
+      );
+      const items = await db.query(
+        `SELECT DISTINCT item_id FROM trademark_item_tasks t
+         JOIN trademark_docket_items i ON i.id = t.item_id WHERE i.matter_id = $1`,
+        [req.params.id]
+      );
+      for (const { item_id: itemId } of items.rows) {
+        await tmTasks.syncItemTaskMirrors(db, itemId, req.session?.userId || null);
+      }
+    });
     const after = await loadMatter(req.params.id);
     await writeAuditLog(req, {
       action: archived ? "trademark.matter.archive" : "trademark.matter.reopen",

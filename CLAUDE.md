@@ -290,7 +290,7 @@ Approximate (±50 lines) as of 2026-10-21 — ~5,420 lines total. This is the si
 | POST | `/api/weekly-reports/generate` | Manually generate weekly report (admin) |
 | GET | `/api/trademark/items?view=` | Trademark docket list (due, stage, portfolio, ready_to_bill, unbilled_closed, review, closed) |
 | PUT | `/api/trademark/items/:id/state` | Work state / close / soft-delete; 409 `UNBILLED` unless `confirmUnbilled` |
-| GET/PUT | `/api/trademark/items/:id/tasks` | An item's tasks; PUT saves the list, syncs My Tasks, Teams-notifies new assignees |
+| GET/PUT | `/api/trademark/items/:id/tasks` | An item's tasks (`?removed=1` lists removed ones); PUT saves the list, syncs My Tasks, Teams-notifies new assignees |
 | PUT | `/api/trademark/item-tasks/:id/state` | Task (or one collaborator's) in progress / complete / remove |
 
 ---

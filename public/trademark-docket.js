@@ -45,6 +45,7 @@ const state = {
   expanded: new Set(), // item ids whose task panel is open
   taskCache: new Map(), // item id -> tasks as last loaded/saved
   focusTasks: null, // item id from ?tasks= (link from My Tasks)
+  standaloneTasks: null, // same id; its panel shows on its own if the item isn't in the list
 };
 
 const CROSS_STAGE_VIEWS = ["due", "review", "closed", "billing"];
@@ -130,6 +131,7 @@ const readUrlState = () => {
   if (p.get("tasks")) {
     state.expanded.add(p.get("tasks"));
     state.focusTasks = p.get("tasks");
+    state.standaloneTasks = p.get("tasks");
   }
 };
 const writeUrlState = () => {
@@ -466,11 +468,39 @@ const cellHtml = (col, item) => {
   }
 };
 
+const taskSlotRowHtml = (itemId, colspan) =>
+  `<tr class="tm-task-row"><td colspan="${colspan}"><div data-task-slot="${itemId}"></div></td></tr>`;
+
+// Put task panels into their slots, reusing open ones so unsaved edits survive re-renders.
+const fillTaskSlots = (openPanels) =>
+  els.content.querySelectorAll("[data-task-slot]").forEach((slot) => {
+    const itemId = slot.dataset.taskSlot;
+    if (openPanels.has(itemId)) slot.replaceWith(openPanels.get(itemId));
+    else fillTaskPanel(slot, itemId);
+  });
+
 const renderItems = () => {
   const cols = columnsForView();
   const items = sortedItems();
+  const openPanels = new Map(
+    Array.from(els.content.querySelectorAll("[data-task-panel]")).map((panel) => [panel.dataset.taskPanel, panel])
+  );
+  // Linked from My Tasks but not in this list (e.g. its matter is archived): show its tasks on their own.
+  const standaloneId =
+    state.standaloneTasks && !items.some((i) => i.id === state.standaloneTasks) ? state.standaloneTasks : null;
+  const standalone = standaloneId
+    ? `<div class="tm-task-standalone">
+        <div class="tm-task-panel-head">
+          <strong>Tasks for ${escapeHtml(state.filters.q || "the linked item")}</strong>
+          <span class="muted tm-small">This item isn't in the list below (for example, its matter is archived).</span>
+          <button class="ghost-button" data-action="task-standalone-close" type="button">Close</button>
+        </div>
+        <div data-task-slot="${escapeHtml(standaloneId)}"></div>
+      </div>`
+    : "";
   if (!items.length) {
-    els.content.innerHTML = `<div class="muted tm-empty">Nothing here${state.filters.q ? " for that search" : ""}.</div>`;
+    els.content.innerHTML = `${standalone}<div class="muted tm-empty">Nothing here${state.filters.q ? " for that search" : ""}.</div>`;
+    fillTaskSlots(openPanels);
     return;
   }
   const head = cols
@@ -485,24 +515,14 @@ const renderItems = () => {
     .map(
       (item) =>
         `<tr class="${item.isClosed ? "tm-row-closed" : ""}" data-item-id="${item.id}">${cols.map((c) => `<td class="tm-col-${c}">${cellHtml(c, item)}</td>`).join("")}</tr>` +
-        (state.expanded.has(item.id)
-          ? `<tr class="tm-task-row"><td colspan="${cols.length}"><div class="tm-task-slot" data-task-slot="${item.id}"></div></td></tr>`
-          : "")
+        (state.expanded.has(item.id) ? taskSlotRowHtml(item.id, cols.length) : "")
     )
     .join("");
   const more = state.hasMore ? `<div class="tm-more"><button class="ghost-button" data-action="more" type="button">Load more</button></div>` : "";
-  // Keep open task panels (and any unsaved edits in them) across re-renders.
-  const openPanels = new Map(
-    Array.from(els.content.querySelectorAll("[data-task-panel]")).map((panel) => [panel.dataset.taskPanel, panel])
-  );
-  els.content.innerHTML = `
+  els.content.innerHTML = `${standalone}
     <div class="muted tm-count-line">${items.length} item${items.length === 1 ? "" : "s"}${state.hasMore ? "+" : ""}</div>
     <div class="table-wrap tm-table-wrap"><table class="tm-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>${more}`;
-  els.content.querySelectorAll("[data-task-slot]").forEach((slot) => {
-    const itemId = slot.dataset.taskSlot;
-    if (openPanels.has(itemId)) slot.replaceWith(openPanels.get(itemId));
-    else fillTaskPanel(slot, itemId);
-  });
+  fillTaskSlots(openPanels);
   if (state.focusTasks) {
     const row = els.content.querySelector(`tr[data-item-id="${CSS.escape(state.focusTasks)}"]`);
     if (row) {
@@ -671,7 +691,7 @@ const renderTaskPanel = (panel, itemId, tasks) => {
   panel.innerHTML = `
     <div class="tm-task-panel-head">
       <strong>Tasks</strong>
-      <span class="muted tm-small">Assigned tasks also appear in that person's My Tasks and the Weekly Task List.</span>
+      <span class="muted tm-small">While the item is open, assigned tasks also appear in that person's My Tasks and the Weekly Task List.</span>
     </div>
     <div class="table-wrap">
       <table class="tm-table entries-table tm-task-table">
@@ -683,9 +703,11 @@ const renderTaskPanel = (panel, itemId, tasks) => {
     <div class="tm-task-panel-actions">
       <button class="ghost-button" data-action="task-add" data-id="${itemId}" type="button">+ Add Task</button>
       <button class="ghost-button" data-action="task-save" data-id="${itemId}" type="button">Save Tasks</button>
+      <button class="ghost-button" data-action="task-show-removed" type="button">Show removed tasks</button>
       <span class="muted tm-small" data-task-status></span>
       <span class="form-error" data-task-error></span>
-    </div>`;
+    </div>
+    <div class="tm-task-removed" data-task-removed></div>`;
   if (tasks.length) tasks.forEach((task) => appendTaskRow(panel, task));
   else appendTaskRow(panel);
 };
@@ -731,10 +753,24 @@ const afterTaskChange = (itemId, item) => {
 const handleTaskAction = async (btn) => {
   const { action } = btn.dataset;
   if (action === "tasks") {
+    // Add/remove just this item's panel row rather than re-rendering the table.
     const itemId = btn.dataset.id;
-    if (state.expanded.has(itemId)) state.expanded.delete(itemId);
-    else state.expanded.add(itemId);
-    renderItems();
+    const itemRow = btn.closest("tr[data-item-id]");
+    const next = itemRow.nextElementSibling;
+    if (state.expanded.has(itemId)) {
+      state.expanded.delete(itemId);
+      if (next && next.classList.contains("tm-task-row")) next.remove();
+    } else {
+      state.expanded.add(itemId);
+      itemRow.insertAdjacentHTML("afterend", taskSlotRowHtml(itemId, itemRow.children.length));
+      fillTaskPanel(itemRow.nextElementSibling.querySelector("[data-task-slot]"), itemId);
+    }
+    refreshTaskToggle(itemId);
+    return;
+  }
+  if (action === "task-standalone-close") {
+    state.standaloneTasks = null;
+    btn.closest(".tm-task-standalone").remove();
     return;
   }
   const panel = panelFor(btn);
@@ -764,6 +800,32 @@ const handleTaskAction = async (btn) => {
       } finally {
         btn.disabled = false;
       }
+    } else if (action === "task-show-removed") {
+      const box = panel.querySelector("[data-task-removed]");
+      if (box.innerHTML) {
+        box.innerHTML = "";
+        btn.textContent = "Show removed tasks";
+        return;
+      }
+      const { tasks } = await api(`/items/${itemId}/tasks?removed=1`);
+      btn.textContent = "Hide removed tasks";
+      box.innerHTML = tasks.length
+        ? `<div class="muted tm-small">Removed tasks</div><ul>${tasks
+            .map(
+              (t) =>
+                `<li><span>${escapeHtml(t.action || "(no description)")}</span>${
+                  t.assignedToName ? ` <span class="muted tm-small">— ${escapeHtml(t.assignedToName)}</span>` : ""
+                } <button class="ghost-button" data-action="task-restore" data-task-id="${escapeHtml(t.id)}" type="button">Restore</button></li>`
+            )
+            .join("")}</ul>`
+        : `<div class="muted tm-small">No removed tasks.</div>`;
+    } else if (action === "task-restore") {
+      const { item } = await api(`/item-tasks/${btn.dataset.taskId}/state`, "PUT", { isHidden: false });
+      const { tasks } = await api(`/items/${itemId}/tasks`);
+      state.taskCache.set(itemId, tasks);
+      renderTaskPanel(panel, itemId, tasks);
+      setTaskPanelMessage(panel, { status: "Task restored." });
+      afterTaskChange(itemId, item);
     } else if (["task-progress", "task-complete", "task-remove"].includes(action)) {
       const taskId = row.dataset.taskId;
       if (!taskId) {
@@ -778,7 +840,7 @@ const handleTaskAction = async (btn) => {
       if (action === "task-progress") body = { isInProgress: !inProgress };
       else if (action === "task-complete") body = { isCompleted: !completed, isInProgress: false };
       else {
-        if (!window.confirm("Remove this task? It will also disappear from My Tasks.")) return;
+        if (!window.confirm("Remove this task? It will also disappear from My Tasks. You can bring it back with Show removed tasks.")) return;
         body = { isHidden: true };
       }
       const { task, item } = await api(`/item-tasks/${taskId}/state`, "PUT", body);

@@ -2014,3 +2014,20 @@ body.sidebar-collapsed .app-sidebar-footer {
   min-width: 900px;
   background: var(--card);
 }
+
+.tm-task-standalone {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #fbf7f1;
+}
+
+.tm-task-removed ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 4px;
+}
