@@ -181,7 +181,7 @@ Run `git status` and `git branch` quietly. If there's unfinished work, describe 
 │   ├── trademark-tasks.js           # Trademark item tasks: load, mirror into `tasks`, completion cascade
 │   └── trademark-import.js          # Pure workbook → import-plan mapping
 ├── scripts/
-│   └── import-trademark-workbook.js # CLI importer (dry run by default; --commit). Never commit the .xlsx
+│   └── import-trademark-workbook.js # CLI importer (dry run by default; --commit; --overwrite-app-edits + --report = workbook wins). Never commit the .xlsx
 ├── test/                            # node:test suites (npm test)
 ├── schema.sql                       # Reference schema (not auto-run — migrations are in server.js)
 ├── package.json

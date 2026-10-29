@@ -2,12 +2,17 @@
 // Imports the trademark docket workbook into the trademark_* tables.
 //
 //   node scripts/import-trademark-workbook.js <workbook.xlsx> [--commit] [--aliases aliases.json] [--report report.json]
+//                                             [--overwrite-app-edits]
 //
 // Dry run by default: the whole import runs inside a transaction that is rolled
 // back, so the counts are exact but nothing is saved. --commit saves it.
 // Safe to re-run: rows are matched by import key. A re-run inserts new rows and
 // refreshes rows that changed in the workbook, but never overwrites anything
 // edited in the app (updated_by <> 'workbook-import').
+// --overwrite-app-edits makes the workbook win over app edits too (requires
+// --report): every overwritten record's before/after goes to the report and to
+// audit_logs (trademark.import.overwrite). Hidden items and items missing from
+// the workbook are never changed — the latter are listed in the report.
 // Output contains counts only; client names are written only to the optional
 // --report file, which should live outside the repo.
 require("dotenv").config();
@@ -17,14 +22,16 @@ const crypto = require("crypto");
 const ExcelJS = require("exceljs");
 const { buildImportPlan } = require("../lib/trademark-import");
 const { normalizeClientName } = require("../lib/trademark");
+const { syncItemTaskMirrors } = require("../lib/trademark-tasks");
 
 const IMPORT_ACTOR = "workbook-import";
 
 const parseArgs = (argv) => {
-  const args = { file: null, commit: false, aliases: null, report: null };
+  const args = { file: null, commit: false, aliases: null, report: null, overwriteAppEdits: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === "--commit") args.commit = true;
+    else if (a === "--overwrite-app-edits") args.overwriteAppEdits = true;
     else if (a === "--aliases") args.aliases = argv[(i += 1)];
     else if (a === "--report") args.report = argv[(i += 1)];
     else if (a === "--help" || a === "-h") args.help = true;
@@ -109,11 +116,67 @@ const updateSql = (table, cols) =>
 
 class DryRunRollback extends Error {}
 
-const writePlan = async (db, plan, { batchId }) => {
+// Columns that only track where a row came from; never reported as changes.
+const BOOKKEEPING_COLUMNS = new Set([
+  "source", "source_tab", "source_row", "import_key", "import_hash", "import_batch_id", "updated_by",
+]);
+const DATE_COLUMNS = new Set(["internal_due_date", "response_due_date", "client_due_date", "received_date"]);
+const BILLING_COLUMNS = ["reported", "ready_to_bill", "services_entered", "expenses_entered", "invoiced", "cost_estimate"];
+
+// Order-independent string form so jsonb/array/date values compare by content.
+const canonical = (v) => {
+  if (v === null || v === undefined || v === "") return null;
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === "string" && /^[[{]/.test(v.trim())) {
+    try {
+      return canonical(JSON.parse(v));
+    } catch (err) {
+      return v;
+    }
+  }
+  if (Array.isArray(v)) return JSON.stringify(v.map(canonical));
+  if (typeof v === "object") {
+    return JSON.stringify(Object.keys(v).sort().map((k) => [k, canonical(v[k])]));
+  }
+  return String(v);
+};
+
+// { column: { before, after } } for columns whose value would change.
+const diffColumns = (before, after) => {
+  const changes = {};
+  Object.keys(after).forEach((col) => {
+    if (BOOKKEEPING_COLUMNS.has(col)) return;
+    if (canonical(before[col]) !== canonical(after[col])) changes[col] = { before: before[col] ?? null, after: after[col] ?? null };
+  });
+  return changes;
+};
+
+const itemBeforeSql = (cols) =>
+  `SELECT ${cols.map((c) => (DATE_COLUMNS.has(c) ? `to_char(${c}, 'YYYY-MM-DD') AS ${c}` : c)).join(", ")}
+   FROM trademark_docket_items WHERE id = $1`;
+
+const auditOverwrite = (db, entityType, entityId, changes) => {
+  const before = {};
+  const after = {};
+  Object.entries(changes).forEach(([col, v]) => {
+    before[col] = v.before;
+    after[col] = v.after;
+  });
+  return db.query(
+    `INSERT INTO audit_logs (user_email, action, entity_type, entity_id, before_data, after_data)
+     VALUES ($1, 'trademark.import.overwrite', $2, $3, $4::jsonb, $5::jsonb)`,
+    [IMPORT_ACTOR, entityType, entityId, JSON.stringify(before), JSON.stringify(after)]
+  );
+};
+
+// details (optional) collects record-level changes for the --report file:
+// { changes: [{ entity, id, label, overwrote, fields }], notInWorkbook: [...] }.
+const writePlan = async (db, plan, { batchId, overwriteAppEdits = false, details = null }) => {
+  const record = (entry) => details && details.changes.push(entry);
   const counts = {
-    clients: { inserted: 0, updated: 0, unchanged: 0, appEdited: 0 },
-    matters: { inserted: 0, updated: 0, appEdited: 0 },
-    items: { inserted: 0, updated: 0, unchanged: 0, appEdited: 0, notInWorkbook: 0 },
+    clients: { inserted: 0, updated: 0, unchanged: 0, appEdited: 0, overwritten: 0 },
+    matters: { inserted: 0, updated: 0, appEdited: 0, overwritten: 0 },
+    items: { inserted: 0, updated: 0, unchanged: 0, appEdited: 0, overwritten: 0, notInWorkbook: 0, appCreated: 0 },
     deadlines: { inserted: 0, existing: 0 },
     todos: { inserted: 0, existing: 0 },
     billingQuestions: { inserted: 0, existing: 0 },
@@ -141,7 +204,22 @@ const writePlan = async (db, plan, { batchId }) => {
       counts.clients.inserted += 1;
     } else {
       clientIds.set(c.norm, found.id);
-      if (found.updated_by !== IMPORT_ACTOR) {
+      const appEdited = found.updated_by !== IMPORT_ACTOR;
+      if (appEdited && !overwriteAppEdits) {
+        counts.clients.appEdited += 1;
+        continue;
+      }
+      const before = (await db.query(
+        "SELECT name, has_portfolio_view, is_unresponsive, payment_risk, contact_note FROM trademark_clients WHERE id = $1",
+        [found.id]
+      )).rows[0];
+      const changes = diffColumns(before, {
+        has_portfolio_view: before.has_portfolio_view || c.hasPortfolioView,
+        is_unresponsive: c.isUnresponsive,
+        payment_risk: c.paymentRisk,
+        contact_note: before.contact_note ?? c.contactNote ?? null,
+      });
+      if (appEdited && !Object.keys(changes).length) {
         counts.clients.appEdited += 1;
         continue;
       }
@@ -150,11 +228,19 @@ const writePlan = async (db, plan, { batchId }) => {
          SET aliases = (SELECT ARRAY(SELECT DISTINCT unnest(aliases || $2::text[]))),
              has_portfolio_view = has_portfolio_view OR $3,
              is_unresponsive = $4, payment_risk = $5,
-             contact_note = COALESCE(contact_note, $6), updated_at = NOW()
+             contact_note = COALESCE(contact_note, $6), updated_by = $7, updated_at = NOW()
          WHERE id = $1`,
-        [found.id, c.aliases, c.hasPortfolioView, c.isUnresponsive, c.paymentRisk, c.contactNote]
+        [found.id, c.aliases, c.hasPortfolioView, c.isUnresponsive, c.paymentRisk, c.contactNote, IMPORT_ACTOR]
       );
-      counts.clients.updated += 1;
+      if (appEdited) {
+        counts.clients.overwritten += 1;
+        await auditOverwrite(db, "trademark_client", found.id, changes);
+      } else {
+        counts.clients.updated += 1;
+      }
+      if (Object.keys(changes).length) {
+        record({ entity: "client", id: found.id, label: before.name, overwrote: appEdited, fields: changes });
+      }
     }
   }
 
@@ -185,7 +271,19 @@ const writePlan = async (db, plan, { batchId }) => {
       counts.matters.inserted += 1;
     } else {
       matterIds.set(m.key, found.id);
-      if (found.updated_by !== IMPORT_ACTOR) {
+      const appEdited = found.updated_by !== IMPORT_ACTOR;
+      if (appEdited && !overwriteAppEdits) {
+        counts.matters.appEdited += 1;
+        continue;
+      }
+      const matterCols = [
+        "matter_no", "matter_no_norm", "synthetic_key", "matter_family", "parent_matter_no_norm", "client_id", "client_ref",
+        "jurisdiction", "mark_text", "nice_classes", "title", "application_status", "proceeding_no", "needs_review",
+        "review_reasons",
+      ];
+      const before = (await db.query(`SELECT ${matterCols.join(", ")} FROM trademark_matters WHERE id = $1`, [found.id])).rows[0];
+      const changes = diffColumns(before, Object.fromEntries(matterCols.map((col, n) => [col, values[n]])));
+      if (appEdited && !Object.keys(changes).length) {
         counts.matters.appEdited += 1;
         continue;
       }
@@ -193,11 +291,20 @@ const writePlan = async (db, plan, { batchId }) => {
         `UPDATE trademark_matters
          SET matter_no=$2, matter_no_norm=$3, synthetic_key=$4, matter_family=$5, parent_matter_no_norm=$6,
              client_id=$7, client_ref=$8, jurisdiction=$9, mark_text=$10, nice_classes=$11, title=$12,
-             application_status=$13, proceeding_no=$14, needs_review=$15, review_reasons=$16, updated_at=NOW()
+             application_status=$13, proceeding_no=$14, needs_review=$15, review_reasons=$16,
+             updated_by='${IMPORT_ACTOR}', updated_at=NOW()
          WHERE id=$1`,
         [found.id, ...values]
       );
-      counts.matters.updated += 1;
+      if (appEdited) {
+        counts.matters.overwritten += 1;
+        await auditOverwrite(db, "trademark_matter", found.id, changes);
+      } else {
+        counts.matters.updated += 1;
+      }
+      if (Object.keys(changes).length) {
+        record({ entity: "matter", id: found.id, label: before.matter_no, overwrote: appEdited, fields: changes });
+      }
     }
   }
 
@@ -211,6 +318,10 @@ const writePlan = async (db, plan, { batchId }) => {
   const cols = Object.keys(ITEM_COLUMNS);
   const itemIds = new Map();
   const planKeys = new Set();
+  // Items with assignable tasks get their My Tasks copies rebuilt if they change.
+  const itemsWithTasks = new Set(
+    (await db.query("SELECT DISTINCT item_id FROM trademark_item_tasks")).rows.map((r) => r.item_id)
+  );
   for (const item of plan.items) {
     planKeys.add(item.importKey);
     const values = cols.map((c) => ITEM_COLUMNS[c](item, ctx));
@@ -221,17 +332,48 @@ const writePlan = async (db, plan, { batchId }) => {
       counts.items.inserted += 1;
     } else {
       itemIds.set(item.importKey, found.id);
-      if (found.updated_by !== IMPORT_ACTOR) counts.items.appEdited += 1;
-      else if (found.import_hash === item.importHash) counts.items.unchanged += 1;
-      else {
-        await db.query(updateSql("trademark_docket_items", cols), [found.id, ...values]);
+      const appEdited = found.updated_by !== IMPORT_ACTOR;
+      if (appEdited && !overwriteAppEdits) {
+        counts.items.appEdited += 1;
+        continue;
+      }
+      if (!appEdited && found.import_hash === item.importHash) {
+        counts.items.unchanged += 1;
+        continue;
+      }
+      const before = (await db.query(itemBeforeSql(cols), [found.id])).rows[0];
+      const changes = diffColumns(before, Object.fromEntries(cols.map((col, n) => [col, values[n]])));
+      if (appEdited && !Object.keys(changes).length) {
+        counts.items.appEdited += 1;
+        continue;
+      }
+      await db.query(updateSql("trademark_docket_items", cols), [found.id, ...values]);
+      if (appEdited) {
+        counts.items.overwritten += 1;
+        await auditOverwrite(db, "trademark_item", found.id, changes);
+      } else {
         counts.items.updated += 1;
       }
+      if (Object.keys(changes).length) {
+        record({ entity: "item", id: found.id, label: item.importKey, overwrote: appEdited, fields: changes });
+      }
+      if (itemsWithTasks.has(found.id)) await syncItemTaskMirrors(db, found.id);
     }
   }
   existingItems.forEach((_, key) => {
     if (!planKeys.has(key)) counts.items.notInWorkbook += 1;
   });
+  // Items in FLIP that this workbook doesn't cover (never changed; listed for review).
+  const missing = (await db.query(
+    `SELECT i.id, i.import_key, m.matter_no, COALESCE(i.brand, m.mark_text, m.title) AS brand, i.stage,
+            i.is_closed, (i.import_key IS NULL) AS created_in_app
+     FROM trademark_docket_items i JOIN trademark_matters m ON m.id = i.matter_id
+     WHERE NOT i.is_hidden AND (i.import_key IS NULL OR NOT (i.import_key = ANY($1::text[])))
+     ORDER BY m.matter_no, i.stage`,
+    [[...planKeys]]
+  )).rows;
+  counts.items.appCreated = missing.filter((r) => r.created_in_app).length;
+  if (details) details.notInWorkbook = missing;
 
   // ---- Extra deadlines (insert-only) ----
   const existingDeadlineKeys = new Set(
@@ -292,9 +434,31 @@ const writePlan = async (db, plan, { batchId }) => {
   return counts;
 };
 
-const printSummary = (plan, counts, { commit }) => {
+// Counts only (no client data) — the record-level detail goes to --report.
+const summarizeChanges = (details) => {
+  const items = details.changes.filter((c) => c.entity === "item");
+  const billing = items.filter((c) => BILLING_COLUMNS.some((col) => col in c.fields));
+  return {
+    itemsChanged: items.length,
+    itemsOverwritten: items.filter((c) => c.overwrote).length,
+    billingChanged: billing.length,
+    invoicedToNotInvoiced: billing.filter((c) => c.fields.invoiced && c.fields.invoiced.before === true && !c.fields.invoiced.after).length,
+    closedChanged: items.filter((c) => "is_closed" in c.fields).length,
+    notInWorkbook: details.notInWorkbook.length,
+  };
+};
+
+const printSummary = (plan, counts, { commit, overwriteAppEdits }, details) => {
   const { perTab, reviewCounts, warnings, nearDuplicateClientCount } = plan.summary;
-  console.log(`\nTrademark workbook import — ${commit ? "COMMITTED" : "DRY RUN (nothing saved; re-run with --commit)"}`);
+  console.log(`\nTrademark workbook import — ${commit ? "COMMITTED" : "DRY RUN (nothing saved; re-run with --commit)"}${overwriteAppEdits ? " — OVERWRITING APP EDITS" : ""}`);
+  if (details) {
+    const s = summarizeChanges(details);
+    console.log("\nChanges to existing items (details in --report):");
+    console.log(`  items changed            ${s.itemsChanged} (${s.itemsOverwritten} were edited in the app)`);
+    console.log(`  billing flags changed    ${s.billingChanged} (invoiced -> not invoiced: ${s.invoicedToNotInvoiced})`);
+    console.log(`  closed/open changed      ${s.closedChanged}`);
+    console.log(`  in FLIP, not in workbook ${s.notInWorkbook} (left as they are)`);
+  }
   console.log("\nPer tab (rows read / phantom skipped / imported / closed / flagged):");
   Object.entries(perTab).forEach(([tab, s], n) => {
     console.log(`  tab ${String(n + 1).padStart(2)}: ${s.read} / ${s.phantom} / ${s.imported} / ${s.closed} / ${s.review}`);
@@ -313,8 +477,12 @@ const printSummary = (plan, counts, { commit }) => {
 const main = async () => {
   const args = parseArgs(process.argv.slice(2));
   if (args.help || !args.file) {
-    console.log("Usage: node scripts/import-trademark-workbook.js <workbook.xlsx> [--commit] [--aliases aliases.json] [--report report.json]");
+    console.log("Usage: node scripts/import-trademark-workbook.js <workbook.xlsx> [--commit] [--aliases aliases.json] [--report report.json] [--overwrite-app-edits]");
     process.exit(args.help ? 0 : 1);
+  }
+  if (args.overwriteAppEdits && !args.report) {
+    console.log("--overwrite-app-edits needs --report <file outside the repo> so every overwritten value is recorded.");
+    process.exit(1);
   }
   const file = path.resolve(args.file);
   const aliases = args.aliases ? JSON.parse(fs.readFileSync(args.aliases, "utf8")) : {};
@@ -327,6 +495,7 @@ const main = async () => {
   await ensureTrademarkTables(query);
 
   let counts;
+  const details = args.report ? { changes: [], notInWorkbook: [] } : null;
   try {
     await withTransaction(async (db) => {
       let batchId = null;
@@ -338,9 +507,14 @@ const main = async () => {
         );
         batchId = rows[0].id;
       }
-      counts = await writePlan(db, plan, { batchId });
+      counts = await writePlan(db, plan, { batchId, overwriteAppEdits: args.overwriteAppEdits, details });
       if (!args.commit) throw new DryRunRollback();
-      const summary = { counts, reviewCounts: plan.summary.reviewCounts, perTab: Object.values(plan.summary.perTab) };
+      const summary = {
+        counts,
+        overwriteAppEdits: args.overwriteAppEdits,
+        reviewCounts: plan.summary.reviewCounts,
+        perTab: Object.values(plan.summary.perTab),
+      };
       await db.query(`UPDATE trademark_import_batches SET finished_at = NOW(), summary = $2 WHERE id = $1`, [batchId, JSON.stringify(summary)]);
       await db.query(
         `INSERT INTO audit_logs (user_email, action, entity_type, entity_id, after_data, metadata)
@@ -352,11 +526,28 @@ const main = async () => {
     if (!(err instanceof DryRunRollback)) throw err;
   }
 
-  printSummary(plan, counts, args);
+  printSummary(plan, counts, args, details);
   if (args.report) {
     fs.writeFileSync(
       args.report,
-      JSON.stringify({ summary: plan.summary, counts, nearDuplicateClients: plan.nearDuplicateClients }, null, 2)
+      JSON.stringify(
+        {
+          committed: args.commit,
+          overwriteAppEdits: args.overwriteAppEdits,
+          summary: plan.summary,
+          counts,
+          changeSummary: summarizeChanges(details),
+          // Billing changes first so they're easy to review.
+          changes: [...details.changes].sort(
+            (a, b) =>
+              Number(BILLING_COLUMNS.some((c) => c in b.fields)) - Number(BILLING_COLUMNS.some((c) => c in a.fields))
+          ),
+          notInWorkbook: details.notInWorkbook,
+          nearDuplicateClients: plan.nearDuplicateClients,
+        },
+        null,
+        2
+      )
     );
     console.log(`\nReport written to ${args.report}`);
   }
@@ -370,4 +561,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { readWorkbook, writePlan, toPrimitive };
+module.exports = { readWorkbook, writePlan, toPrimitive, diffColumns, summarizeChanges };
