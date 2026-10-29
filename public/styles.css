@@ -2031,3 +2031,17 @@ body.sidebar-collapsed .app-sidebar-footer {
   display: grid;
   gap: 4px;
 }
+
+/* Trademark docket lists: scroll inside a screen-height box so the sticky
+   column headings stay visible (a horizontal-scroll wrapper otherwise stops
+   them sticking to the page). */
+#tm-content .tm-table-wrap {
+  max-height: calc(100vh - 140px);
+  overflow: auto;
+}
+
+/* Task panels nested in a row keep normal headings, so they don't stack
+   under the list's pinned ones. */
+.tm-task-table thead th {
+  position: static;
+}
