@@ -72,6 +72,18 @@ test("the renamed Prosecution tab is read as Office Action Response with the sam
   assert.equal(after.summary.warnings.length, 0);
 });
 
+test("Priority Filing tab (and its misspelling) imports into the priority_filing stage with stable keys", () => {
+  const rows = [
+    { values: [d(2026, 11, 1), d(2026, 12, 1), null, "3T10001", "Client", "ALPHA", "", false, false, false, false, false, null] },
+  ];
+  const typo = buildImportPlan([sheet("Priroity Filing", STAGE_HEADER, rows)]);
+  const fixed = buildImportPlan([sheet("Priority Filing", STAGE_HEADER, rows)]);
+  assert.equal(typo.items[0].stage, "priority_filing");
+  assert.equal(typo.items[0].actionType, "priority_filing");
+  assert.equal(typo.items[0].importKey, fixed.items[0].importKey);
+  assert.equal(typo.summary.warnings.length, 0);
+});
+
 test("duplicate rows for the same matter get distinct keys", () => {
   const row = { values: [d(2026, 1, 1), null, null, "3T10001", "Client", "ALPHA", "", false, false, false, false, false, null] };
   const plan = buildImportPlan([sheet("SOU", STAGE_HEADER, [row, row])]);

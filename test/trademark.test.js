@@ -181,3 +181,10 @@ test("application statuses keep the workbook list minus the billing value", () =
     assert.ok(tm.APPLICATION_STATUSES.includes(added), added);
   }
 });
+
+test("Priority Filing is a stage with its own action type and the default due-soon window", () => {
+  assert.ok(tm.STAGE_KEYS.includes("priority_filing"));
+  assert.ok(tm.ACTION_TYPE_KEYS.includes("priority_filing"));
+  assert.equal(tm.actionTypeForStage("priority_filing", {}), "priority_filing");
+  assert.equal(tm.DUE_SOON_DAYS.priority_filing, undefined);
+});
