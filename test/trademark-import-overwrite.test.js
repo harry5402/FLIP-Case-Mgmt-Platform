@@ -39,12 +39,12 @@ const plan = (items = [planItem()]) => ({
 });
 
 // Item k1 exists, was last edited in the app, and is invoiced with a different comment.
-const makeDb = ({ updatedBy = "tnelson@example.test", withTasks = false } = {}) => {
+const makeDb = ({ updatedBy = "tnelson@example.test", withTasks = false, matterUpdatedBy = "workbook-import" } = {}) => {
   const calls = [];
   const query = async (text, params = []) => {
     calls.push({ text, params });
     if (/FROM trademark_matters$/.test(text.trim()) || /SELECT id, matter_no_norm, synthetic_key, updated_by FROM trademark_matters/.test(text)) {
-      return { rows: [{ id: MATTER_ID, matter_no_norm: "3T10001", updated_by: "workbook-import" }] };
+      return { rows: [{ id: MATTER_ID, matter_no_norm: "3T10001", updated_by: matterUpdatedBy }] };
     }
     if (/FROM trademark_matters WHERE id = \$1/.test(text)) return { rows: [{ matter_no: "3T10001", matter_no_norm: "3T10001" }] };
     if (/SELECT id, import_key, import_hash, updated_by FROM trademark_docket_items/.test(text)) {
@@ -58,6 +58,7 @@ const makeDb = ({ updatedBy = "tnelson@example.test", withTasks = false } = {}) 
           internal_due_date: "2026-11-01", response_due_date: "2026-12-01", work_state: "open", comment: "Edited in FLIP",
           reported: true, ready_to_bill: true, services_entered: true, expenses_entered: true, invoiced: true,
           is_closed: false, needs_review: false, review_reasons: [], extra: {},
+          invoiced_at: "2026-09-30T12:00:00.000Z", closed_at: null, closed_by: null,
         }],
       };
     }
@@ -95,9 +96,14 @@ test("with the flag, app edits are overwritten, audit-logged and reported (billi
 
   const change = details.changes.find((c) => c.entity === "item");
   assert.equal(change.overwrote, true);
+  assert.equal(change.label, "3T10001 – ACME – office_action");
   assert.deepEqual(Object.keys(change.fields).sort(), [
-    "comment", "expenses_entered", "invoiced", "ready_to_bill", "reported", "services_entered",
+    "comment", "expenses_entered", "invoiced", "invoiced_at", "ready_to_bill", "reported", "services_entered",
   ]);
+  // invoiced_at follows the flag, as the app's billing action does.
+  const stamp = db.calls.find((c) => /SET invoiced_at = \$2/.test(c.text));
+  assert.deepEqual(stamp.params, [ITEM_ID, null]);
+  assert.equal(change.fields.invoiced_at.before, "2026-09-30T12:00:00.000Z");
   const s = summarizeChanges(details);
   assert.equal(s.billingChanged, 1);
   assert.equal(s.invoicedToNotInvoiced, 1);
@@ -136,4 +142,29 @@ test("diffColumns ignores bookkeeping columns and compares jsonb/arrays/blank by
     { extra: JSON.stringify({ a: 1, b: 2 }), review_reasons: [], comment: "", import_hash: "y", brand: "B" }
   );
   assert.deepEqual(changes, { brand: { before: "A", after: "B" } });
+});
+
+test("matters edited in the app are overwritten with the flag and audit-logged", async () => {
+  const db = makeDb({ matterUpdatedBy: "mbina@example.test" });
+  const counts = await writePlan(db, plan(), { overwriteAppEdits: true, details: { changes: [], notInWorkbook: [] } });
+  assert.equal(counts.matters.overwritten, 1);
+  const update = db.calls.find((c) => /UPDATE trademark_matters/.test(c.text));
+  assert.match(update.text, /updated_by='workbook-import'/);
+  assert.equal(update.params[0], MATTER_ID);
+  assert.ok(db.calls.some((c) => /trademark\.import\.overwrite/.test(c.text) && c.params[1] === "trademark_matter"));
+
+  const skipped = makeDb({ matterUpdatedBy: "mbina@example.test" });
+  const without = await writePlan(skipped, plan(), { overwriteAppEdits: false });
+  assert.equal(without.matters.appEdited, 1);
+  assert.ok(!skipped.calls.some((c) => /UPDATE trademark_matters/.test(c.text)));
+});
+
+test("closing via the workbook stamps closed_at/closed_by; the missing-items count matches the list", async () => {
+  const db = makeDb();
+  const details = { changes: [], notInWorkbook: [] };
+  const counts = await writePlan(db, plan([planItem({ isClosed: true })]), { overwriteAppEdits: true, details });
+  const closed = db.calls.find((c) => /SET closed_at = \$2, closed_by = \$3/.test(c.text));
+  assert.equal(closed.params[2], "workbook-import");
+  assert.ok(closed.params[1] instanceof Date);
+  assert.equal(counts.items.notInWorkbook + counts.items.appCreated, details.notInWorkbook.length);
 });

@@ -2,7 +2,7 @@
 // Imports the trademark docket workbook into the trademark_* tables.
 //
 //   node scripts/import-trademark-workbook.js <workbook.xlsx> [--commit] [--aliases aliases.json] [--report report.json]
-//                                             [--overwrite-app-edits]
+//                                             [--overwrite-app-edits] [--ensure-schema]
 //
 // Dry run by default: the whole import runs inside a transaction that is rolled
 // back, so the counts are exact but nothing is saved. --commit saves it.
@@ -13,6 +13,9 @@
 // --report): every overwritten record's before/after goes to the report and to
 // audit_logs (trademark.import.overwrite). Hidden items and items missing from
 // the workbook are never changed — the latter are listed in the report.
+// The schema is created by the server on boot; --ensure-schema runs
+// ensureTrademarkTables() first (only needed on a fresh database). It is not
+// part of the rolled-back dry run, so it is never implied.
 // Output contains counts only; client names are written only to the optional
 // --report file, which should live outside the repo.
 require("dotenv").config();
@@ -27,11 +30,12 @@ const { syncItemTaskMirrors } = require("../lib/trademark-tasks");
 const IMPORT_ACTOR = "workbook-import";
 
 const parseArgs = (argv) => {
-  const args = { file: null, commit: false, aliases: null, report: null, overwriteAppEdits: false };
+  const args = { file: null, commit: false, aliases: null, report: null, overwriteAppEdits: false, ensureSchema: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     if (a === "--commit") args.commit = true;
     else if (a === "--overwrite-app-edits") args.overwriteAppEdits = true;
+    else if (a === "--ensure-schema") args.ensureSchema = true;
     else if (a === "--aliases") args.aliases = argv[(i += 1)];
     else if (a === "--report") args.report = argv[(i += 1)];
     else if (a === "--help" || a === "-h") args.help = true;
@@ -151,8 +155,10 @@ const diffColumns = (before, after) => {
   return changes;
 };
 
+// Also reads the timestamps that follow the invoiced/closed flags.
 const itemBeforeSql = (cols) =>
-  `SELECT ${cols.map((c) => (DATE_COLUMNS.has(c) ? `to_char(${c}, 'YYYY-MM-DD') AS ${c}` : c)).join(", ")}
+  `SELECT ${cols.map((c) => (DATE_COLUMNS.has(c) ? `to_char(${c}, 'YYYY-MM-DD') AS ${c}` : c)).join(", ")},
+          invoiced_at, closed_at, closed_by
    FROM trademark_docket_items WHERE id = $1`;
 
 const auditOverwrite = (db, entityType, entityId, changes) => {
@@ -173,6 +179,7 @@ const auditOverwrite = (db, entityType, entityId, changes) => {
 // { changes: [{ entity, id, label, overwrote, fields }], notInWorkbook: [...] }.
 const writePlan = async (db, plan, { batchId, overwriteAppEdits = false, details = null }) => {
   const record = (entry) => details && details.changes.push(entry);
+  const matterNoByKey = new Map(plan.matters.map((m) => [m.key, m.matterNo || m.norm || null]));
   const counts = {
     clients: { inserted: 0, updated: 0, unchanged: 0, appEdited: 0, overwritten: 0 },
     matters: { inserted: 0, updated: 0, appEdited: 0, overwritten: 0 },
@@ -348,6 +355,18 @@ const writePlan = async (db, plan, { batchId, overwriteAppEdits = false, details
         continue;
       }
       await db.query(updateSql("trademark_docket_items", cols), [found.id, ...values]);
+      // Keep the timestamps in step with the flags, as the app's own billing/close actions do.
+      if (changes.invoiced) {
+        const invoicedAt = changes.invoiced.after ? before.invoiced_at || new Date() : null;
+        await db.query("UPDATE trademark_docket_items SET invoiced_at = $2 WHERE id = $1", [found.id, invoicedAt]);
+        changes.invoiced_at = { before: before.invoiced_at ?? null, after: invoicedAt };
+      }
+      if (changes.is_closed) {
+        const closedAt = changes.is_closed.after ? before.closed_at || new Date() : null;
+        const closedBy = changes.is_closed.after ? before.closed_by || IMPORT_ACTOR : null;
+        await db.query("UPDATE trademark_docket_items SET closed_at = $2, closed_by = $3 WHERE id = $1", [found.id, closedAt, closedBy]);
+        changes.closed_at = { before: before.closed_at ?? null, after: closedAt };
+      }
       if (appEdited) {
         counts.items.overwritten += 1;
         await auditOverwrite(db, "trademark_item", found.id, changes);
@@ -355,14 +374,18 @@ const writePlan = async (db, plan, { batchId, overwriteAppEdits = false, details
         counts.items.updated += 1;
       }
       if (Object.keys(changes).length) {
-        record({ entity: "item", id: found.id, label: item.importKey, overwrote: appEdited, fields: changes });
+        record({
+          entity: "item",
+          id: found.id,
+          label: [matterNoByKey.get(item.matterKey), item.brand, item.stage].filter(Boolean).join(" – "),
+          importKey: item.importKey,
+          overwrote: appEdited,
+          fields: changes,
+        });
       }
       if (itemsWithTasks.has(found.id)) await syncItemTaskMirrors(db, found.id);
     }
   }
-  existingItems.forEach((_, key) => {
-    if (!planKeys.has(key)) counts.items.notInWorkbook += 1;
-  });
   // Items in FLIP that this workbook doesn't cover (never changed; listed for review).
   const missing = (await db.query(
     `SELECT i.id, i.import_key, m.matter_no, COALESCE(i.brand, m.mark_text, m.title) AS brand, i.stage,
@@ -373,6 +396,7 @@ const writePlan = async (db, plan, { batchId, overwriteAppEdits = false, details
     [[...planKeys]]
   )).rows;
   counts.items.appCreated = missing.filter((r) => r.created_in_app).length;
+  counts.items.notInWorkbook = missing.length - counts.items.appCreated;
   if (details) details.notInWorkbook = missing;
 
   // ---- Extra deadlines (insert-only) ----
@@ -477,7 +501,7 @@ const printSummary = (plan, counts, { commit, overwriteAppEdits }, details) => {
 const main = async () => {
   const args = parseArgs(process.argv.slice(2));
   if (args.help || !args.file) {
-    console.log("Usage: node scripts/import-trademark-workbook.js <workbook.xlsx> [--commit] [--aliases aliases.json] [--report report.json] [--overwrite-app-edits]");
+    console.log("Usage: node scripts/import-trademark-workbook.js <workbook.xlsx> [--commit] [--aliases aliases.json] [--report report.json] [--overwrite-app-edits] [--ensure-schema]");
     process.exit(args.help ? 0 : 1);
   }
   if (args.overwriteAppEdits && !args.report) {
@@ -491,8 +515,10 @@ const main = async () => {
 
   // Loaded lazily so `--help` works without DATABASE_URL.
   const { query, withTransaction } = require("../db");
-  const { ensureTrademarkTables } = require("../lib/trademark-schema");
-  await ensureTrademarkTables(query);
+  if (args.ensureSchema) {
+    const { ensureTrademarkTables } = require("../lib/trademark-schema");
+    await ensureTrademarkTables(query);
+  }
 
   let counts;
   const details = args.report ? { changes: [], notInWorkbook: [] } : null;

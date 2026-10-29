@@ -32,7 +32,7 @@ Handle API routes, database access, auth, business logic, and scheduled jobs —
 | `lib/trademark-schema.js` | `ensureTrademarkTables()` — trademark migrations |
 | `lib/trademark-tasks.js` | Trademark item tasks: load, mirror into `tasks` (`syncItemTaskMirrors`), completion/progress cascade from My Tasks |
 | `lib/trademark-import.js` | Workbook → import-plan mapping (pure) |
-| `scripts/import-trademark-workbook.js` | CLI importer — dry run by default; `--commit` writes to the DB (blocked for Claude). `--overwrite-app-edits` (needs `--report`) lets the workbook overwrite app edits, logging before/after to the report and `audit_logs` (`trademark.import.overwrite`) |
+| `scripts/import-trademark-workbook.js` | CLI importer — dry run by default; `--commit` writes to the DB (blocked for Claude). `--overwrite-app-edits` (needs `--report`) lets the workbook overwrite app edits, logging before/after to the report and `audit_logs` (`trademark.import.overwrite`). The importer no longer touches the schema unless `--ensure-schema` is passed — deploy stage/action-type changes before importing rows that use them |
 | `schema.sql` | Reference only — not auto-run; real migrations are the `ensure*` functions |
 | `test/` | `node:test` suites — `npm test`, no DB needed |
 
