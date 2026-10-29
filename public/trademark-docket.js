@@ -624,7 +624,8 @@ const applyTaskRowState = (row, task) => {
   progressBtn.disabled = !saved || completed;
   completeBtn.textContent = completed ? "Incomplete" : "Complete";
   completeBtn.disabled = !saved;
-  removeBtn.textContent = saved ? "Remove" : "Discard";
+  // Unsaved rows have nothing to remove (blank rows are ignored on save).
+  removeBtn.style.display = saved ? "" : "none";
 };
 
 const renderCollaboratorPills = (row, task = {}) => {

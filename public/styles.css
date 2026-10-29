@@ -1761,6 +1761,7 @@ body.sidebar-collapsed .app-sidebar-footer {
 .tm-col-clientDue {
   white-space: nowrap;
   min-width: 104px;
+  width: 1%; /* shrink to the dates; spare table width goes to wider columns */
 }
 
 .tm-col-comment,
