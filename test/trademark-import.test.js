@@ -60,6 +60,18 @@ test("import keys are stable across runs and ignore comment edits", () => {
   assert.equal(a.items[0].importHash, again.items[0].importHash);
 });
 
+test("the renamed Prosecution tab is read as Office Action Response with the same keys", () => {
+  const rows = [
+    { values: [d(2026, 11, 1), d(2026, 12, 1), null, "3T10001", "Client", "ALPHA", "", false, false, false, false, false, null] },
+  ];
+  const before = buildImportPlan([sheet("Office Action Response", STAGE_HEADER, rows)]);
+  const after = buildImportPlan([sheet("Prosecution", STAGE_HEADER, rows)]);
+  assert.equal(after.items.length, 1);
+  assert.equal(after.items[0].stage, "office_action");
+  assert.equal(after.items[0].importKey, before.items[0].importKey);
+  assert.equal(after.summary.warnings.length, 0);
+});
+
 test("duplicate rows for the same matter get distinct keys", () => {
   const row = { values: [d(2026, 1, 1), null, null, "3T10001", "Client", "ALPHA", "", false, false, false, false, false, null] };
   const plan = buildImportPlan([sheet("SOU", STAGE_HEADER, [row, row])]);
