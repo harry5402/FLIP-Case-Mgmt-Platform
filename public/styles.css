@@ -635,7 +635,8 @@ thead th {
 }
 
 #listings-table input,
-#listings-table select {
+#listings-table select,
+#listings-table textarea {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 4px 6px;
@@ -648,6 +649,28 @@ thead th {
 
 #listings-table input.mono {
   font-family: "IBM Plex Mono", "SFMono-Regular", monospace;
+}
+
+/* Long-text listing fields grow taller with their content (see autoGrow in defendant.js) */
+#listings-table textarea {
+  display: block;
+  min-width: 160px;
+  line-height: 1.4;
+  resize: none;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#listings-table textarea[name="title"],
+#listings-table textarea[name="url"],
+#listings-table textarea[name="notes"],
+#listings-table textarea[name="listingCopyrightLinks"] {
+  min-width: 220px;
+}
+
+#listings-table tbody td {
+  vertical-align: top;
 }
 
 tbody td {

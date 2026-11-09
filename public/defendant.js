@@ -323,20 +323,26 @@ const wireEditableSections = (defendantId, state) => {
   });
 };
 
+// [name, type, mono, multiline] — multiline fields render as textareas that grow with their content
 const listingFieldDefs = [
   ["productId", "text", true],
   ["marketplaceId", "text", true],
-  ["title", "text"],
-  ["infType", "text"],
-  ["url", "text"],
+  ["title", "text", false, true],
+  ["infType", "text", false, true],
+  ["url", "text", false, true],
   ["sales", "number", true],
   ["screenshotDate", "date", true],
-  ["screenshots", "text"],
-  ["testPurchase", "text"],
-  ["testPurchaseStatus", "text"],
-  ["notes", "text"],
-  ["listingCopyrightLinks", "text"],
+  ["screenshots", "text", false, true],
+  ["testPurchase", "text", false, true],
+  ["testPurchaseStatus", "text", false, true],
+  ["notes", "text", false, true],
+  ["listingCopyrightLinks", "text", false, true],
 ];
+
+const autoGrow = (el) => {
+  el.style.height = "auto";
+  el.style.height = `${el.scrollHeight}px`;
+};
 
 const renderListings = (listings) => {
   listingsTableBody.innerHTML = "";
@@ -344,11 +350,10 @@ const renderListings = (listings) => {
     const row = document.createElement("tr");
     row.dataset.listingId = listing.id;
     const cells = listingFieldDefs
-      .map(
-        ([name, type, mono]) =>
-          `<td><input name="${name}" type="${type}" class="${mono ? "mono" : ""}" value="${
-            listing[name] ?? ""
-          }" /></td>`
+      .map(([name, type, mono, multiline]) =>
+        multiline
+          ? `<td><textarea name="${name}" rows="1"></textarea></td>`
+          : `<td><input name="${name}" type="${type}" class="${mono ? "mono" : ""}" /></td>`
       )
       .join("");
     row.innerHTML = `
@@ -357,10 +362,18 @@ const renderListings = (listings) => {
     `;
     listingsTableBody.appendChild(row);
 
-    row.querySelectorAll("input").forEach((input) => {
+    row.querySelectorAll("input, textarea").forEach((el) => {
+      el.value = listing[el.name] ?? "";
+    });
+    row.querySelectorAll("textarea").forEach((el) => {
+      autoGrow(el);
+      el.addEventListener("input", () => autoGrow(el));
+    });
+
+    row.querySelectorAll("input, textarea").forEach((input) => {
       input.addEventListener("change", async () => {
         const fields = {};
-        row.querySelectorAll("input").forEach((el) => {
+        row.querySelectorAll("input, textarea").forEach((el) => {
           fields[el.name] =
             el.type === "number"
               ? el.value === "" ? null : Number(el.value)
